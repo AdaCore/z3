@@ -1,0 +1,5 @@
+[gerrit]
+host = git.adacore.com
+project = z3
+defaultbranch = master
+defaultremote = origin
