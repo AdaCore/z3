@@ -187,6 +187,10 @@ namespace smt {
         SASSERT(m_todo_js_qhead <= m_todo_js.size());
         m_antecedents = &result;
         mark_justification(js);
+        process_justifications();
+    }
+
+    void conflict_resolution::process_justifications() {
         while (true) {
             unsigned sz = m_todo_js.size();
             while (m_todo_js_qhead < sz) {
@@ -230,6 +234,17 @@ namespace smt {
         SASSERT(m_todo_js_qhead == 0);
         SASSERT(m_todo_eqs.empty());
         justification2literals_core(js, result);
+        unmark_justifications(0);
+        SASSERT(m_todo_eqs.empty());
+    }
+
+    void conflict_resolution::eq2literals(enode* n1, enode* n2, literal_vector & result) {
+        SASSERT(m_todo_js.empty());
+        SASSERT(m_todo_js_qhead == 0);
+        SASSERT(m_todo_eqs.empty());
+        m_antecedents = &result;
+        m_todo_eqs.push_back(enode_pair(n1, n2));
+        process_justifications();
         unmark_justifications(0);
         SASSERT(m_todo_eqs.empty());
     }
@@ -388,7 +403,6 @@ namespace smt {
         // the previous levels were already inconsistent, or the inconsistency was
         // triggered by an axiom or justification proof wrapper, this two kinds
         // of justification are considered level zero.
-
         if (m_conflict_lvl <= m_ctx.get_search_level()) {
             TRACE("conflict", tout << "problem is unsat\n";);
             if (m_manager.proofs_enabled())
@@ -1334,8 +1348,9 @@ namespace smt {
         if (!m_ctx.is_marked(var)) {
             m_ctx.set_mark(var);
             m_unmark.push_back(var);
-            if (m_ctx.is_assumption(var)) 
-                m_assumptions.push_back(antecedent);
+        }
+        if (m_ctx.is_assumption(var)) {
+            m_assumptions.push_back(antecedent);
         }
     }
     
@@ -1373,7 +1388,7 @@ namespace smt {
         }
         
         while (true) {
-            TRACE("unsat_core_bug", tout << "js.get_kind(): " << js.get_kind() << ", idx: " << idx << "\n";);
+            TRACE("unsat_core_bug", tout << consequent << " js.get_kind(): " << js.get_kind() << ", idx: " << idx << "\n";);
             switch (js.get_kind()) {
             case b_justification::CLAUSE: {
                 clause * cls = js.get_clause();
@@ -1410,17 +1425,21 @@ namespace smt {
             default:
                 UNREACHABLE();
             }
-            
-            while (true) {
-                if (idx < 0) 
-                    goto end_unsat_core;
+
+            if (m_ctx.is_assumption(consequent.var())) {
+                m_assumptions.push_back(consequent);
+            }            
+            while (idx >= 0) {
                 literal l = m_assigned_literals[idx];
                 TRACE("unsat_core_bug", tout << "l: " << l << ", get_assign_level(l): " << m_ctx.get_assign_level(l) << ", is_marked(l): " << m_ctx.is_marked(l.var()) << "\n";);
-                if (m_ctx.get_assign_level(l) < search_lvl || idx == 0) 
-                    goto end_unsat_core;
+                if (m_ctx.get_assign_level(l) < search_lvl) 
+                    goto end_unsat_core;                
                 if (m_ctx.is_marked(l.var())) 
                     break;
                 idx--;
+            }
+            if (idx < 0) { 
+                goto end_unsat_core;
             }
 
             SASSERT(idx >= 0);

@@ -35,6 +35,7 @@ Notes:
 #include "model_smt2_pp.h"
 #include "card2bv_tactic.h"
 #include "eq2bv_tactic.h"
+#include "dt2bv_tactic.h"
 #include "inc_sat_solver.h"
 #include "bv_decl_plugin.h"
 #include "pb_decl_plugin.h"
@@ -241,6 +242,7 @@ namespace opt {
             s.get_labels(m_labels);
         }
         if (is_sat != l_true) {
+            TRACE("opt", tout << m_hard_constraints << "\n";);
             return is_sat;
         }
         IF_VERBOSE(1, verbose_stream() << "(optimize:sat)\n";);
@@ -366,10 +368,15 @@ namespace opt {
     }    
 
     lbool context::execute_box() {
-        if (m_box_index < m_objectives.size()) {
+        if (m_box_index < m_box_models.size()) {
             m_model = m_box_models[m_box_index];
             ++m_box_index;           
             return l_true;
+        }
+        if (m_box_index < m_objectives.size()) {
+            m_model = 0;
+            ++m_box_index;
+            return l_undef;
         }
         if (m_box_index != UINT_MAX && m_box_index >= m_objectives.size()) {
             m_box_index = UINT_MAX;
@@ -383,14 +390,14 @@ namespace opt {
             if (obj.m_type == O_MAXSMT) {
                 solver::scoped_push _sp(get_solver());
                 r = execute(obj, false, false);
-                if (r == l_true) m_box_models.push_back(m_model.get());
+                m_box_models.push_back(m_model.get());
             }
             else {
                 m_box_models.push_back(m_optsmt.get_model(j));
                 ++j;
             }
         }
-        if (r == l_true && m_objectives.size() > 0) {
+        if (r == l_true && m_box_models.size() > 0) {
             m_model = m_box_models[0];
         }
         return r;
@@ -410,7 +417,7 @@ namespace opt {
     
     expr_ref context::mk_gt(unsigned i, model_ref& mdl) {
         expr_ref result = mk_le(i, mdl);
-        result = m.mk_not(result);
+        result = mk_not(m, result);
         return result;
     }
 
@@ -494,6 +501,9 @@ namespace opt {
     }
 
     std::string context::reason_unknown() const { 
+        if (m.canceled()) {
+            return Z3_CANCELED_MSG;
+        }
         if (m_solver.get()) {
             return m_solver->reason_unknown();
         }
@@ -552,13 +562,12 @@ namespace opt {
         if (opt_params(m_params).priority() == symbol("pareto")) {
             return;
         }
-        m_params.set_bool("minimize_core_partial", true); // false);
+        m_params.set_bool("minimize_core_partial", true);
         m_params.set_bool("minimize_core", true);
         m_sat_solver = mk_inc_sat_solver(m, m_params);
-        unsigned sz = get_solver().get_num_assertions();
-        for (unsigned i = 0; i < sz; ++i) {
-            m_sat_solver->assert_expr(get_solver().get_assertion(i));
-        }   
+        expr_ref_vector fmls(m);
+        get_solver().get_assertions(fmls);
+        m_sat_solver->assert_expr(fmls);
         m_solver = m_sat_solver.get();        
     }
 
@@ -680,21 +689,19 @@ namespace opt {
                      // NB: mk_elim_uncstr_tactic(m) is not sound with soft constraints
                      mk_simplify_tactic(m));   
         opt_params optp(m_params);
-        tactic_ref tac2, tac3, tac4;
+        tactic_ref tac1, tac2, tac3, tac4;
         if (optp.elim_01()) {
+            tac1 = mk_dt2bv_tactic(m);
             tac2 = mk_elim01_tactic(m);
             tac3 = mk_lia2card_tactic(m);
             tac4 = mk_eq2bv_tactic(m);
             params_ref lia_p;
             lia_p.set_bool("compile_equality", optp.pb_compile_equality());
             tac3->updt_params(lia_p);
-            set_simplify(and_then(tac0.get(), tac2.get(), tac3.get(), tac4.get(), mk_simplify_tactic(m)));
+            set_simplify(and_then(tac0.get(), tac1.get(), tac2.get(), tac3.get(), tac4.get(), mk_simplify_tactic(m)));
         }
         else {
-            tactic_ref tac1 = 
-                and_then(tac0.get(),
-                         mk_simplify_tactic(m));            
-            set_simplify(tac1.get());
+            set_simplify(tac0.get());
         }
         proof_converter_ref pc;
         expr_dependency_ref core(m);
@@ -769,7 +776,7 @@ namespace opt {
                     weights[i].neg();
                 }
                 else {
-                    terms[i] = m.mk_not(terms[i].get());
+                    terms[i] = mk_not(m, terms[i].get());
                 }
             }
             TRACE("opt", 
@@ -798,7 +805,7 @@ namespace opt {
             for (unsigned i = 0; i < weights.size(); ++i) {
                 if (weights[i].is_neg()) {
                     weights[i].neg();
-                    terms[i] = m.mk_not(terms[i].get());
+                    terms[i] = mk_not(m, terms[i].get());
                 }
                 offset += weights[i];
             }

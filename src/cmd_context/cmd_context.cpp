@@ -546,6 +546,7 @@ bool cmd_context::logic_has_arith_core(symbol const & s) const {
         s == "QF_FPBV" ||
         s == "QF_BVFP" ||
         s == "QF_S" ||
+        s == "ALL" ||
         s == "HORN";
 }
 
@@ -566,6 +567,7 @@ bool cmd_context::logic_has_bv_core(symbol const & s) const {
         s == "QF_BVRE" ||
         s == "QF_FPBV" ||
         s == "QF_BVFP" ||
+        s == "ALL" ||
         s == "HORN";
 }
 
@@ -578,7 +580,7 @@ bool cmd_context::logic_has_bv() const {
 }
 
 bool cmd_context::logic_has_seq_core(symbol const& s) const {
-    return s == "QF_BVRE" || s == "QF_S";
+    return s == "QF_BVRE" || s == "QF_S" || s == "ALL";
 }
 
 bool cmd_context::logic_has_seq() const {
@@ -586,7 +588,7 @@ bool cmd_context::logic_has_seq() const {
 }
 
 bool cmd_context::logic_has_fpa_core(symbol const& s) const {
-    return s == "QF_FP" || s == "QF_FPBV" || s == "QF_BVFP";
+    return s == "QF_FP" || s == "QF_FPBV" || s == "QF_BVFP" || s == "ALL";
 }
 
 bool cmd_context::logic_has_fpa() const {
@@ -609,6 +611,7 @@ bool cmd_context::logic_has_array_core(symbol const & s) const {
         s == "AUFNIRA" ||
         s == "AUFBV" ||
         s == "ABV" ||
+        s == "ALL" ||
         s == "QF_ABV" ||
         s == "QF_AUFBV" ||
         s == "HORN";
@@ -702,7 +705,7 @@ void cmd_context::init_external_manager() {
 }
 
 bool cmd_context::supported_logic(symbol const & s) const {
-    return s == "QF_UF" || s == "UF" ||
+    return s == "QF_UF" || s == "UF" || s == "ALL" ||
         logic_has_arith_core(s) || logic_has_bv_core(s) ||
         logic_has_array_core(s) || logic_has_seq_core(s) ||
         logic_has_horn(s) || logic_has_fpa_core(s);
@@ -1502,6 +1505,31 @@ void cmd_context::check_sat(unsigned num_assumptions, expr * const * assumptions
     }
 }
 
+void cmd_context::get_consequences(expr_ref_vector const& assumptions, expr_ref_vector const& vars, expr_ref_vector & conseq) {
+    unsigned timeout = m_params.m_timeout;
+    unsigned rlimit  = m_params.m_rlimit;
+    lbool r;
+    m_check_sat_result = m_solver.get(); // solver itself stores the result.
+    m_solver->set_progress_callback(this);
+    cancel_eh<reslimit> eh(m().limit());
+    scoped_ctrl_c ctrlc(eh);
+    scoped_timer timer(timeout, &eh);
+    scoped_rlimit _rlimit(m().limit(), rlimit);
+    try {
+        r = m_solver->get_consequences(assumptions, vars, conseq);
+    }
+    catch (z3_error & ex) {
+        throw ex;
+    }
+    catch (z3_exception & ex) {
+        m_solver->set_reason_unknown(ex.msg());
+        r = l_undef;
+    }
+    m_solver->set_status(r);
+    display_sat_result(r);
+}
+
+
 void cmd_context::reset_assertions() {
     if (!m_global_decls) {
         reset(false);
@@ -1631,6 +1659,7 @@ void cmd_context::validate_model() {
         scoped_ctrl_c ctrlc(eh);
         ptr_vector<expr>::const_iterator it  = begin_assertions();
         ptr_vector<expr>::const_iterator end = end_assertions();
+        bool invalid_model = false;
         for (; it != end; ++it) {
             expr * a = *it;
             if (is_ground(a)) {
@@ -1651,8 +1680,11 @@ void cmd_context::validate_model() {
                     continue;
                 }
                 TRACE("model_validate", model_smt2_pp(tout, *this, *(md.get()), 0););
-                throw cmd_exception("an invalid model was generated");
+                invalid_model = true;
             }
+        }
+        if (invalid_model) {
+            throw cmd_exception("an invalid model was generated");
         }
     }
 }

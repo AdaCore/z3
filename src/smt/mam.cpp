@@ -879,6 +879,9 @@ namespace smt {
         */
         void get_stats_core(app * n, unsigned & sz, unsigned & num_unbound_vars) {
             sz++;
+            if (n->is_ground()) {
+                return;
+            }
             unsigned num_args = n->get_num_args();
             for (unsigned i = 0; i < num_args; i++) {
                 expr * arg = n->get_arg(i);
@@ -901,7 +904,7 @@ namespace smt {
         void get_stats(app * n, unsigned & sz, unsigned & num_unbound_vars) {
             sz = 0;
             num_unbound_vars = 0;
-            return get_stats_core(n, sz, num_unbound_vars);
+            get_stats_core(n, sz, num_unbound_vars);
         }
 
         /**
@@ -1032,6 +1035,9 @@ namespace smt {
         */
         unsigned get_num_bound_vars_core(app * n, bool & has_unbound_vars) {
             unsigned r = 0;
+            if (n->is_ground()) {
+                return 0;
+            }
             unsigned num_args = n->get_num_args();
             for (unsigned i = 0; i < num_args; i++) {
                 expr * arg = n->get_arg(i);
@@ -2147,7 +2153,7 @@ namespace smt {
         enode_vector * best_v   = 0;
         for (unsigned i = 0; i < num_args; i++) {
             enode * bare          = c->m_joints[i];
-            enode_vector * curr_v;
+            enode_vector * curr_v = 0;
             switch (GET_TAG(bare)) {
             case NULL_TAG:
                 curr_v = 0;

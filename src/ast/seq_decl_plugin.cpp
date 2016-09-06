@@ -144,6 +144,9 @@ zstring zstring::replace(zstring const& src, zstring const& dst) const {
     if (length() < src.length()) {
         return zstring(*this);
     }
+    if (src.length() == 0) {
+        return zstring(*this);
+    }
     bool found = false;
     for (unsigned i = 0; i < length(); ++i) {
         bool eq = !found && i + src.length() <= length();
@@ -820,16 +823,6 @@ app*  seq_util::str::mk_char(zstring const& s, unsigned idx) {
 app*  seq_util::str::mk_char(char ch) {
     zstring s(ch, zstring::ascii);
     return mk_char(s, 0);
-}
-
-bool seq_util::str::is_char(expr* n, zstring& c) const {
-    if (u.is_char(n)) {
-        c = zstring(to_app(n)->get_decl()->get_parameter(0).get_symbol().bare_str());
-        return true;
-    }
-    else {
-        return false;
-    }
 }
 
 bool seq_util::str::is_string(expr const* n, zstring& s) const {

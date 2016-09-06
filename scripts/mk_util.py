@@ -70,6 +70,7 @@ IS_OSX=False
 IS_FREEBSD=False
 IS_OPENBSD=False
 IS_CYGWIN=False
+IS_CYGWIN_MINGW=False
 VERBOSE=True
 DEBUG_MODE=False
 SHOW_CPPS = True
@@ -81,6 +82,7 @@ Z3PY_SRC_DIR=None
 VS_PROJ = False
 TRACE = False
 DOTNET_ENABLED=False
+DOTNET_KEY_FILE=None
 JAVA_ENABLED=False
 ML_ENABLED=False
 PYTHON_INSTALL_ENABLED=False
@@ -98,6 +100,7 @@ VS_PAR=False
 VS_PAR_NUM=8
 GPROF=False
 GIT_HASH=False
+GIT_DESCRIBE=False
 SLOW_OPTIMIZE=False
 USE_OMP=True
 
@@ -142,6 +145,9 @@ def is_osx():
 
 def is_cygwin():
     return IS_CYGWIN
+
+def is_cygwin_mingw():
+    return IS_CYGWIN_MINGW
 
 def norm_path(p):
     # We use '/' on mk_project for convenience
@@ -219,7 +225,10 @@ def rmf(fname):
 
 def exec_compiler_cmd(cmd):
     r = exec_cmd(cmd)
-    rmf('a.out')
+    if is_windows() or is_cygwin_mingw():
+        rmf('a.exe')
+    else:
+        rmf('a.out')
     return r
 
 def test_cxx_compiler(cc):
@@ -527,11 +536,14 @@ def find_c_compiler():
     raise MKException('C compiler was not found. Try to set the environment variable CC with the C compiler available in your system.')
 
 def set_version(major, minor, build, revision):
-    global VER_MAJOR, VER_MINOR, VER_BUILD, VER_REVISION
+    global VER_MAJOR, VER_MINOR, VER_BUILD, VER_REVISION, GIT_DESCRIBE
     VER_MAJOR = major
     VER_MINOR = minor
     VER_BUILD = build
     VER_REVISION = revision
+    if GIT_DESCRIBE:
+        branch = check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
+        VER_REVISION = int(check_output(['git', 'rev-list', '--count', 'HEAD']))
 
 def get_version():
     return (VER_MAJOR, VER_MINOR, VER_BUILD, VER_REVISION)
@@ -597,6 +609,8 @@ elif os.name == 'posix':
         IS_OPENBSD=True
     elif os.uname()[0][:6] == 'CYGWIN':
         IS_CYGWIN=True
+        if (CC != None and "mingw" in CC):
+            IS_CYGWIN_MINGW=True
 
 def display_help(exit_code):
     print("mk_make.py: Z3 Makefile generator\n")
@@ -612,6 +626,7 @@ def display_help(exit_code):
     print("  --pypkgdir=<dir>              Force a particular Python package directory (default %s)" % PYTHON_PACKAGE_DIR)
     print("  -b <subdir>, --build=<subdir>  subdirectory where Z3 will be built (default: %s)." % BUILD_DIR)
     print("  --githash=hash                include the given hash in the binaries.")
+    print("  --git-describe                include the output of 'git describe' in the version information.")
     print("  -d, --debug                   compile Z3 in debug mode.")
     print("  -t, --trace                   enable tracing in release mode.")
     if IS_WINDOWS:
@@ -624,6 +639,7 @@ def display_help(exit_code):
     if IS_WINDOWS:
         print("  --optimize                    generate optimized code during linking.")
     print("  --dotnet                      generate .NET bindings.")
+    print("  --dotnet-key=<file>           sign the .NET assembly using the private key in <file>.")
     print("  --java                        generate Java bindings.")
     print("  --ml                          generate OCaml bindings.")
     print("  --python                      generate Python bindings.")
@@ -659,14 +675,14 @@ def display_help(exit_code):
 # Parse configuration option for mk_make script
 def parse_options():
     global VERBOSE, DEBUG_MODE, IS_WINDOWS, VS_X64, ONLY_MAKEFILES, SHOW_CPPS, VS_PROJ, TRACE, VS_PAR, VS_PAR_NUM
-    global DOTNET_ENABLED, JAVA_ENABLED, ML_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, FOCI2, FOCI2LIB, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, PYTHON_INSTALL_ENABLED
+    global DOTNET_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, FOCI2, FOCI2LIB, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED
     global LINUX_X64, SLOW_OPTIMIZE, USE_OMP
     try:
         options, remainder = getopt.gnu_getopt(sys.argv[1:],
                                                'b:df:sxhmcvtnp:gj',
                                                ['build=', 'debug', 'silent', 'x64', 'help', 'makefiles', 'showcpp', 'vsproj',
-                                                'trace', 'dotnet', 'staticlib', 'prefix=', 'gmp', 'foci2=', 'java', 'parallel=', 'gprof',
-                                                'githash=', 'x86', 'ml', 'optimize', 'noomp', 'pypkgdir=', 'python', 'staticbin'])
+                                                'trace', 'dotnet', 'dotnet-key=', 'staticlib', 'prefix=', 'gmp', 'foci2=', 'java', 'parallel=', 'gprof',
+                                                'githash=', 'git-describe', 'x86', 'ml', 'optimize', 'noomp', 'pypkgdir=', 'python', 'staticbin'])
     except:
         print("ERROR: Invalid command line option")
         display_help(1)
@@ -699,6 +715,8 @@ def parse_options():
             TRACE = True
         elif opt in ('-.net', '--dotnet'):
             DOTNET_ENABLED = True
+        elif opt in ('--dotnet-key'):
+            DOTNET_KEY_FILE = arg
         elif opt in ('--staticlib'):
             STATIC_LIB = True
         elif opt in ('--staticbin'):
@@ -723,6 +741,8 @@ def parse_options():
             GPROF = True
         elif opt == '--githash':
             GIT_HASH=arg
+        elif opt == '--git-describe':
+            GIT_DESCRIBE = True
         elif opt in ('', '--ml'):
             ML_ENABLED = True
         elif opt in ('', '--noomp'):
@@ -1482,7 +1502,7 @@ class PythonInstallComponent(Component):
         return
 
 class DotNetDLLComponent(Component):
-    def __init__(self, name, dll_name, path, deps, assembly_info_dir):
+    def __init__(self, name, dll_name, path, deps, assembly_info_dir, default_key_file):
         Component.__init__(self, name, path, deps)
         if dll_name is None:
             dll_name = name
@@ -1490,6 +1510,7 @@ class DotNetDLLComponent(Component):
             assembly_info_dir = "."
         self.dll_name          = dll_name
         self.assembly_info_dir = assembly_info_dir
+        self.key_file = default_key_file
 
     def mk_pkg_config_file(self):
         """
@@ -1515,6 +1536,8 @@ class DotNetDLLComponent(Component):
         configure_file(pkg_config_template, pkg_config_output, substitutions)
 
     def mk_makefile(self, out):
+        global DOTNET_KEY_FILE
+        
         if not is_dotnet_enabled():
             return
         cs_fp_files = []
@@ -1545,11 +1568,24 @@ class DotNetDLLComponent(Component):
                                 '/linkresource:{}.dll'.format(get_component(Z3_DLL_COMPONENT).dll_name),
                                ]
                              )
-        else:
-            # We need to give the assembly a strong name so that it
-            # can be installed into the GAC with ``make install``
-            pathToSnk = os.path.join(self.to_src_dir, 'Microsoft.Z3.mono.snk')
-            cscCmdLine.append('/keyfile:{}'.format(pathToSnk))
+
+        # We need to give the assembly a strong name so that it
+        # can be installed into the GAC with ``make install``
+        if not DOTNET_KEY_FILE is None:
+            self.key_file = DOTNET_KEY_FILE
+
+        if not self.key_file is None:
+            if os.path.isfile(self.key_file):
+                self.key_file = os.path.abspath(self.key_file)
+            elif os.path.isfile(os.path.join(self.src_dir, self.key_file)):
+                self.key_file = os.path.abspath(os.path.join(self.src_dir, self.key_file))
+            else:
+                print("Keyfile '%s' could not be found; %s.dll will be unsigned." % (self.dll_name, self.key_file))
+                self.key_file = None
+                
+        if not self.key_file is None:
+            print("%s.dll will be signed using key '%s'." % (self.dll_name, self.key_file))
+            cscCmdLine.append('/keyfile:{}'.format(self.key_file))
 
         cscCmdLine.extend( ['/unsafe+',
                             '/nowarn:1701,1702',
@@ -1573,6 +1609,7 @@ class DotNetDLLComponent(Component):
                              )
         else:
             cscCmdLine.extend(['/optimize+'])
+            
         if IS_WINDOWS:
             if VS_X64:
                 cscCmdLine.extend(['/platform:x64'])
@@ -1821,7 +1858,7 @@ class MLComponent(Component):
                 CP_CMD='copy'
 
             OCAML_FLAGS = ''
-            if DEBUG_MODE:             
+            if DEBUG_MODE:
                 OCAML_FLAGS += '-g'
             OCAMLCF = OCAMLC + ' ' + OCAML_FLAGS
             OCAMLOPTF = OCAMLOPT + ' ' + OCAML_FLAGS
@@ -1875,12 +1912,15 @@ class MLComponent(Component):
 
 
             OCAMLMKLIB = 'ocamlmklib'
-            LIBZ3 = '-L. -lz3'
-            if is_cygwin():
-                # Some ocamlmklib's don't like -g; observed on cygwin, but may be others as well.
+
+            LIBZ3 = '-L. -lz3'           
+            if is_cygwin() and not(is_cygwin_mingw()):
                 LIBZ3 = 'libz3.dll'
-            elif DEBUG_MODE:
+
+            if DEBUG_MODE and not(is_cygwin()):
+                # Some ocamlmklib's don't like -g; observed on cygwin, but may be others as well.
                 OCAMLMKLIB += ' -g'
+
             z3mls = os.path.join(self.sub_dir, 'z3ml')
             out.write('%s.cma: %s %s %s\n' % (z3mls, cmos, stubso, z3dllso))
             out.write('\t%s -o %s -I %s %s %s %s\n' % (OCAMLMKLIB, z3mls, self.sub_dir, stubso, cmos, LIBZ3))
@@ -1943,7 +1983,7 @@ class MLComponent(Component):
             out.write(' %s' % ((os.path.join(self.sub_dir, 'z3ml.cmxa'))))
             out.write(' %s' % ((os.path.join(self.sub_dir, 'z3ml.cmxs'))))
             out.write(' %s' % ((os.path.join(self.sub_dir, 'dllz3ml'))))
-            if IS_WINDOWS:
+            if is_windows() or is_cygwin_mingw():
                 out.write('.dll')
             else:
                 out.write('.so') # .so also on OSX!
@@ -2154,8 +2194,8 @@ def add_dll(name, deps=[], path=None, dll_name=None, export_files=[], reexports=
     reg_component(name, c)
     return c
 
-def add_dot_net_dll(name, deps=[], path=None, dll_name=None, assembly_info_dir=None):
-    c = DotNetDLLComponent(name, dll_name, path, deps, assembly_info_dir)
+def add_dot_net_dll(name, deps=[], path=None, dll_name=None, assembly_info_dir=None, default_key_file=None):
+    c = DotNetDLLComponent(name, dll_name, path, deps, assembly_info_dir, default_key_file)
     reg_component(name, c)
 
 def add_java_dll(name, deps=[], path=None, dll_name=None, package_name=None, manifest_file=None):
@@ -2382,6 +2422,12 @@ def mk_config():
             CPPFLAGS     = '%s -DNDEBUG -D_EXTERNAL_RELEASE' % CPPFLAGS
         if TRACE or DEBUG_MODE:
             CPPFLAGS     = '%s -D_TRACE' % CPPFLAGS
+        if is_cygwin_mingw():
+            # when cross-compiling with MinGW, we need to statically link its standard libraries
+            # and to make it create an import library.
+            SLIBEXTRAFLAGS = '%s -static-libgcc -static-libstdc++ -Wl,--out-implib,libz3.dll.a' % SLIBEXTRAFLAGS
+            LDFLAGS = '%s -static-libgcc -static-libstdc++' % LDFLAGS
+                        
         config.write('PREFIX=%s\n' % PREFIX)
         config.write('CC=%s\n' % CC)
         config.write('CXX=%s\n' % CXX)
@@ -2411,6 +2457,8 @@ def mk_config():
             print('Host platform:  %s' % sysname)
             print('C++ Compiler:   %s' % CXX)
             print('C Compiler  :   %s' % CC)
+            if is_cygwin_mingw():
+                print('MinGW32 cross:  %s' % (is_cygwin_mingw()))
             print('Archive Tool:   %s' % AR)
             print('Arithmetic:     %s' % ARITH)
             print('OpenMP:         %s' % HAS_OMP)
@@ -2472,7 +2520,8 @@ def mk_makefile():
             out.write(' %s' % c.name)
     out.write('\n\t@echo Z3 was successfully built.\n')
     out.write("\t@echo \"Z3Py scripts can already be executed in the \'%s\' directory.\"\n" % BUILD_DIR)
-    out.write("\t@echo \"Z3Py scripts stored in arbitrary directories can be executed if the \'%s\' directory is added to the PYTHONPATH environment variable.\"\n" % BUILD_DIR)
+    pathvar = "DYLD_LIBRARY_PATH" if IS_OSX else "PATH" if IS_WINDOWS else "LD_LIBRARY_PATH"
+    out.write("\t@echo \"Z3Py scripts stored in arbitrary directories can be executed if the \'%s\' directory is added to the PYTHONPATH and %s environment variables.\"\n" % (BUILD_DIR, pathvar))
     if not IS_WINDOWS:
         out.write("\t@echo Use the following command to install Z3 at prefix $(PREFIX).\n")
         out.write('\t@echo "    sudo make install"\n\n')
@@ -2566,6 +2615,16 @@ def update_version():
         mk_all_assembly_infos(major, minor, build, revision)
         mk_def_files()
 
+def get_full_version_string(major, minor, build, revision):
+    global GIT_HASH, GIT_DESCRIBE
+    res = "Z3 %s.%s.%s.%s" % (major, minor, build, revision)
+    if GIT_HASH:
+        res += " " + GIT_HASH
+    if GIT_DESCRIBE:
+        branch = check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD', '--long'])
+        res += " master " + check_output(['git', 'describe'])
+    return '"' + res + '"'
+        
 # Update files with the version number
 def mk_version_dot_h(major, minor, build, revision):
     c = get_component(UTIL_COMPONENT)
@@ -2579,6 +2638,7 @@ def mk_version_dot_h(major, minor, build, revision):
           'Z3_VERSION_MINOR': str(minor),
           'Z3_VERSION_PATCH': str(build),
           'Z3_VERSION_TWEAK': str(revision),
+          'Z3_FULL_VERSION': get_full_version_string(major, minor, build, revision)
         }
     )
     if VERBOSE:

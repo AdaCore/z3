@@ -62,7 +62,13 @@ struct append_assumptions {
 
 lbool solver_na2as::check_sat(unsigned num_assumptions, expr * const * assumptions) {
     append_assumptions app(m_assumptions, num_assumptions, assumptions);
+    TRACE("solver_na2as", display(tout););
     return check_sat_core(m_assumptions.size(), m_assumptions.c_ptr());
+}
+
+lbool solver_na2as::get_consequences(expr_ref_vector const& asms, expr_ref_vector const& vars, expr_ref_vector& consequences) {
+    append_assumptions app(m_assumptions, asms.size(), asms.c_ptr());
+    return get_consequences_core(m_assumptions, vars, consequences);
 }
 
 void solver_na2as::push() {

@@ -1273,10 +1273,10 @@ expr_ref fpa2bv_converter::mk_min_max_unspecified(func_decl * f, expr * x, expr 
     // There is no "hardware interpretation" for fp.min/fp.max.
 
     std::pair<app*, app*> decls(0, 0);
-    if (!m_specials.find(f, decls)) {
+    if (!m_min_max_specials.find(f, decls)) {
         decls.first = m.mk_fresh_const(0, m_bv_util.mk_sort(1));
         decls.second = m.mk_fresh_const(0, m_bv_util.mk_sort(1));
-        m_specials.insert(f, decls);
+        m_min_max_specials.insert(f, decls);
         m.inc_ref(f);
         m.inc_ref(decls.first);
         m.inc_ref(decls.second);
@@ -2267,6 +2267,7 @@ void fpa2bv_converter::mk_to_fp(func_decl * f, unsigned num, expr * const * args
 
         expr * bv = args[0];
         int sz = m_bv_util.get_bv_size(bv);
+        (void)to_sbits;
         SASSERT((unsigned)sz == to_sbits + to_ebits);
 
         result = m_util.mk_fp(m_bv_util.mk_extract(sz - 1, sz - 1, bv),
@@ -2399,6 +2400,7 @@ void fpa2bv_converter::mk_to_fp_float(sort * to_srt, expr * rm, expr * x, expr_r
 
         res_sig = m_bv_util.mk_zero_extend(1, res_sig); // extra zero in the front for the rounder.
         unsigned sig_sz = m_bv_util.get_bv_size(res_sig);
+        (void) sig_sz;
         SASSERT(sig_sz == to_sbits + 4);
 
         expr_ref exponent_overflow(m), exponent_underflow(m);
@@ -3639,11 +3641,11 @@ void fpa2bv_converter::unpack(expr * e, expr_ref & sgn, expr_ref & sig, expr_ref
             // the maximum shift is `sbits', because after that the mantissa
             // would be zero anyways. So we can safely cut the shift variable down,
             // as long as we check the higher bits.
-            expr_ref sh(m), is_sh_zero(m), sl(m), sbits_s(m), short_shift(m);
-            zero_s = m_bv_util.mk_numeral(0, sbits-1);
+            expr_ref zero_ems(m), sh(m), is_sh_zero(m), sl(m), sbits_s(m), short_shift(m);
+            zero_ems = m_bv_util.mk_numeral(0, ebits - sbits);
             sbits_s = m_bv_util.mk_numeral(sbits, sbits);
             sh = m_bv_util.mk_extract(ebits-1, sbits, shift);
-            m_simp.mk_eq(zero_s, sh, is_sh_zero);
+            m_simp.mk_eq(zero_ems, sh, is_sh_zero);
             short_shift = m_bv_util.mk_extract(sbits-1, 0, shift);
             m_simp.mk_ite(is_sh_zero, short_shift, sbits_s, sl);
             denormal_sig = m_bv_util.mk_bv_shl(denormal_sig, sl);
@@ -4100,12 +4102,13 @@ void fpa2bv_converter::reset(void) {
     dec_ref_map_key_values(m, m_const2bv);
     dec_ref_map_key_values(m, m_rm_const2bv);
     dec_ref_map_key_values(m, m_uf2bvuf);
-    for (obj_map<func_decl, std::pair<app*, app*> >::iterator it = m_specials.begin();
-        it != m_specials.end();
+    for (obj_map<func_decl, std::pair<app*, app*> >::iterator it = m_min_max_specials.begin();
+        it != m_min_max_specials.end();
         it++) {
         m.dec_ref(it->m_key);
         m.dec_ref(it->m_value.first);
         m.dec_ref(it->m_value.second);
     }
+    m_min_max_specials.reset();
     m_extra_assertions.reset();
 }

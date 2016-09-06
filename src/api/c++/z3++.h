@@ -127,7 +127,7 @@ namespace z3 {
     */
     class context {
         Z3_context m_ctx;
-        static void error_handler(Z3_context c, Z3_error_code e) { /* do nothing */ }
+        static void error_handler(Z3_context /*c*/, Z3_error_code /*e*/) { /* do nothing */ }
         void init(config & c) {
             m_ctx = Z3_mk_context_rc(c);
             Z3_set_error_handler(m_ctx, error_handler);
@@ -802,6 +802,9 @@ namespace z3 {
         friend expr implies(expr const & a, bool b);
         friend expr implies(bool a, expr const & b);
 
+        friend expr mk_or(expr_vector const& args);
+        friend expr mk_and(expr_vector const& args);
+
         friend expr ite(expr const & c, expr const & t, expr const & e);
 
         friend expr distinct(expr_vector const& args);
@@ -946,6 +949,7 @@ namespace z3 {
     }
     inline expr implies(expr const & a, bool b) { return implies(a, a.ctx().bool_val(b)); }
     inline expr implies(bool a, expr const & b) { return implies(b.ctx().bool_val(a), b); }
+
 
     inline expr pw(expr const & a, expr const & b) {
         assert(a.is_arith() && b.is_arith());
@@ -1497,6 +1501,20 @@ namespace z3 {
         return expr(ctx, r);
     }
 
+    inline expr mk_or(expr_vector const& args) { 
+        array<Z3_ast> _args(args);
+        Z3_ast r = Z3_mk_or(args.ctx(), _args.size(), _args.ptr());
+        args.check_error();
+        return expr(args.ctx(), r);
+    }
+    inline expr mk_and(expr_vector const& args) {
+        array<Z3_ast> _args(args);
+        Z3_ast r = Z3_mk_and(args.ctx(), _args.size(), _args.ptr());
+        args.check_error();
+        return expr(args.ctx(), r);
+    }
+
+
     class func_entry : public object {
         Z3_func_entry m_entry;
         void init(Z3_func_entry e) {
@@ -1705,6 +1723,11 @@ namespace z3 {
             return to_check_result(r);
         }
         model get_model() const { Z3_model m = Z3_solver_get_model(ctx(), m_solver); check_error(); return model(ctx(), m); }
+        check_result consequences(expr_vector& assumptions, expr_vector& vars, expr_vector& conseq) {
+            Z3_lbool r = Z3_solver_get_consequences(ctx(), m_solver, assumptions, vars, conseq);
+            check_error();
+            return to_check_result(r);
+        }
         std::string reason_unknown() const { Z3_string r = Z3_solver_get_reason_unknown(ctx(), m_solver); check_error(); return r; }
         stats statistics() const { Z3_stats r = Z3_solver_get_statistics(ctx(), m_solver); check_error(); return stats(ctx(), r); }
         expr_vector unsat_core() const { Z3_ast_vector r = Z3_solver_get_unsat_core(ctx(), m_solver); check_error(); return expr_vector(ctx(), r); }
@@ -2012,6 +2035,8 @@ namespace z3 {
         }
         stats statistics() const { Z3_stats r = Z3_optimize_get_statistics(ctx(), m_opt); check_error(); return stats(ctx(), r); }
         friend std::ostream & operator<<(std::ostream & out, optimize const & s);
+        void from_file(char const* filename) { Z3_optimize_from_file(ctx(), m_opt, filename); check_error(); }
+        void from_string(char const* constraints) { Z3_optimize_from_string(ctx(), m_opt, constraints); check_error(); }
         std::string help() const { char const * r = Z3_optimize_get_help(ctx(), m_opt); check_error();  return r; }
     };
     inline std::ostream & operator<<(std::ostream & out, optimize const & s) { out << Z3_optimize_to_string(s.ctx(), s.m_opt); return out; }

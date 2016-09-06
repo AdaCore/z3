@@ -17,6 +17,7 @@ Author:
 Revision History:
 
 --*/
+#include<typeinfo>
 #include"api_context.h"
 #include"smtparser.h"
 #include"version.h"
@@ -31,6 +32,28 @@ Revision History:
 void install_tactics(tactic_manager & ctx);
 
 namespace api {
+
+    object::object(context& c): m_ref_count(0), m_context(c) { this->m_id = m_context.add_object(this); }
+
+    void object::inc_ref() { m_ref_count++; }
+
+    void object::dec_ref() { SASSERT(m_ref_count > 0); m_ref_count--; if (m_ref_count == 0) m_context.del_object(this); }
+    
+    unsigned context::add_object(api::object* o) {
+        unsigned id = m_allocated_objects.size();
+        if (!m_free_object_ids.empty()) {
+            id = m_free_object_ids.back();
+            m_free_object_ids.pop_back();
+        }
+        m_allocated_objects.insert(id, o);
+        return id;
+    }
+
+    void context::del_object(api::object* o) {
+        m_free_object_ids.push_back(o->id());
+        m_allocated_objects.remove(o->id());
+        dealloc(o);
+    }
 
     static void default_error_handler(Z3_context ctx, Z3_error_code c) {
         printf("Error: %s\n", Z3_get_error_msg(ctx, c));
@@ -106,6 +129,14 @@ namespace api {
 
     context::~context() {
         reset_parser();
+        m_last_obj = 0;
+        u_map<api::object*>::iterator it = m_allocated_objects.begin();
+        while (it != m_allocated_objects.end()) {
+            DEBUG_CODE(warning_msg("Uncollected memory: %d: %s", it->m_key, typeid(*it->m_value).name()););
+            m_allocated_objects.remove(it->m_key);
+            dealloc(it->m_value);
+            it = m_allocated_objects.begin();
+        }
     }
 
     void context::interrupt() {
@@ -384,6 +415,7 @@ extern "C" {
             return;
         }
         mk_c(c)->m().dec_ref(to_ast(a));
+
         Z3_CATCH;
     }
 
@@ -397,6 +429,11 @@ extern "C" {
         *minor           = Z3_MINOR_VERSION;
         *build_number    = Z3_BUILD_NUMBER;
         *revision_number = Z3_REVISION_NUMBER;
+    }
+
+    Z3_string Z3_API Z3_get_full_version(void) {
+        LOG_Z3_get_full_version();
+        return Z3_FULL_VERSION;
     }
 
     void Z3_API Z3_enable_trace(Z3_string tag) {
@@ -461,6 +498,10 @@ extern "C" {
     Z3_API char const * Z3_get_error_msg(Z3_context c, Z3_error_code err) {
         LOG_Z3_get_error_msg(c, err);
         return _get_error_msg(c, err);
+    }
+
+    Z3_API char const * Z3_get_error_msg_ex(Z3_context c, Z3_error_code err) {
+        return Z3_get_error_msg(c, err);
     }
 
 
