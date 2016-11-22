@@ -2,3 +2,5 @@
 * text=auto
 
 src/api/dotnet/Properties/AssemblyInfo.cs text eol=crlf
+
+* no-precommit-check
