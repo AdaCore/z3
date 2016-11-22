@@ -28,6 +28,7 @@ DOTNET_ENABLED=True
 DOTNET_KEY_FILE=None
 JAVA_ENABLED=True
 GIT_HASH=False
+PYTHON_ENABLED=True
 
 def set_verbose(flag):
     global VERBOSE
@@ -60,12 +61,13 @@ def display_help():
     print("  --nodotnet                    do not include .NET bindings in the binary distribution files.")
     print("  --dotnet-key=<file>           sign the .NET assembly with the private key in <file>.")
     print("  --nojava                      do not include Java bindings in the binary distribution files.")
+    print("  --nopython                    do not include Python bindings in the binary distribution files.")
     print("  --githash                     include git hash in the Zip file.")
     exit(0)
 
 # Parse configuration option for mk_make script
 def parse_options():
-    global FORCE_MK, JAVA_ENABLED, GIT_HASH, DOTNET_ENABLED, DOTNET_KEY_FILE
+    global FORCE_MK, JAVA_ENABLED, GIT_HASH, DOTNET_ENABLED, DOTNET_KEY_FILE, PYTHON_ENABLED
     path = BUILD_DIR
     options, remainder = getopt.gnu_getopt(sys.argv[1:], 'b:hsf', ['build=', 
                                                                    'help',
@@ -74,7 +76,8 @@ def parse_options():
                                                                    'nojava',
                                                                    'nodotnet',
                                                                    'dotnet-key=',
-                                                                   'githash'
+                                                                   'githash',
+                                                                   'nopython'
                                                                    ])
     for opt, arg in options:
         if opt in ('-b', '--build'):
@@ -89,6 +92,8 @@ def parse_options():
             FORCE_MK = True
         elif opt == '--nodotnet':
             DOTNET_ENABLED = False
+        elif opt == '--nopython':
+            PYTHON_ENABLED = False
         elif opt == '--dotnet-key':
             DOTNET_KEY_FILE = arg            
         elif opt == '--nojava':
@@ -118,6 +123,8 @@ def mk_build_dir(path, x64):
         if GIT_HASH:
             opts.append('--githash=%s' % mk_util.git_hash())
             opts.append('--git-describe')
+        if PYTHON_ENABLED:
+            opts.append('--python')
         if subprocess.call(opts) != 0:
             raise MKException("Failed to generate build directory at '%s'" % path)
     
@@ -192,6 +199,7 @@ def mk_dist_dir_core(x64):
     mk_util.DOTNET_ENABLED = DOTNET_ENABLED
     mk_util.DOTNET_KEY_FILE = DOTNET_KEY_FILE
     mk_util.JAVA_ENABLED = JAVA_ENABLED
+    mk_util.PYTHON_ENABLED = PYTHON_ENABLED
     mk_win_dist(build_path, dist_path)
     if is_verbose():
         print("Generated %s distribution folder at '%s'" % (platform, dist_path))
@@ -228,23 +236,9 @@ def mk_zip():
 VS_RUNTIME_PATS = [re.compile('vcomp.*\.dll'),
                    re.compile('msvcp.*\.dll'),
                    re.compile('msvcr.*\.dll')]
-
-VS_RUNTIME_FILES = []
                               
-def cp_vs_runtime_visitor(pattern, dir, files):
-    global VS_RUNTIME_FILES
-    for filename in files:
-        for pat in VS_RUNTIME_PATS:
-            if pat.match(filename):
-                if fnmatch(filename, pattern):
-                    fname = os.path.join(dir, filename)
-                    if not os.path.isdir(fname):
-                        VS_RUNTIME_FILES.append(fname)
-                break
-
 # Copy Visual Studio Runtime libraries
-def cp_vs_runtime_core(x64):
-    global VS_RUNTIME_FILES
+def cp_vs_runtime_core(x64):    
     if x64:
         platform = "x64"
         
@@ -253,7 +247,15 @@ def cp_vs_runtime_core(x64):
     vcdir = os.environ['VCINSTALLDIR']
     path  = '%sredist\\%s' % (vcdir, platform)
     VS_RUNTIME_FILES = []
-    os.walk(path, cp_vs_runtime_visitor, '*.dll')
+    for root, dirs, files in os.walk(path):
+        for filename in files:
+            if fnmatch(filename, '*.dll'):            
+                for pat in VS_RUNTIME_PATS:
+                    if pat.match(filename):
+                        fname = os.path.join(root, filename)
+                        if not os.path.isdir(fname):
+                            VS_RUNTIME_FILES.append(fname)
+
     bin_dist_path = os.path.join(DIST_DIR, get_dist_path(x64), 'bin')
     for f in VS_RUNTIME_FILES:
         shutil.copy(f, bin_dist_path)

@@ -63,7 +63,6 @@ namespace z3 {
     class func_entry;
     class statistics;
     class apply_result;
-    class fixedpoint;
     template<typename T> class ast_vector_tpl;
     typedef ast_vector_tpl<ast>       ast_vector;
     typedef ast_vector_tpl<expr>      expr_vector;
@@ -122,6 +121,13 @@ namespace z3 {
         unsat, sat, unknown
     };
 
+    inline check_result to_check_result(Z3_lbool l) {
+        if (l == Z3_L_TRUE) return sat;
+        else if (l == Z3_L_FALSE) return unsat;
+        return unknown;
+    }
+
+
     /**
        \brief A Context manages all other Z3 objects, global configuration options, etc.
     */
@@ -146,7 +152,7 @@ namespace z3 {
         struct interpolation {};
         context() { config c; init(c); }
         context(config & c) { init(c); }
-	context(config & c, interpolation) { init_interp(c); }
+        context(config & c, interpolation) { init_interp(c); }
         ~context() { Z3_del_context(m_ctx); }
         operator Z3_context() const { return m_ctx; }
 
@@ -278,6 +284,15 @@ namespace z3 {
         expr string_val(std::string const& s);
 
         expr num_val(int n, sort const & s);
+
+        /**
+           \brief parsing
+         */
+        expr parse_string(char const* s);
+        expr parse_file(char const* file);
+
+        expr parse_string(char const* s, sort_vector const& sorts, func_decl_vector const& decls);
+        expr parse_file(char const* s, sort_vector const& sorts, func_decl_vector const& decls);
 
         /**
            \brief Interpolation support
@@ -435,7 +450,10 @@ namespace z3 {
            \brief Return the internal sort kind.
         */
         Z3_sort_kind sort_kind() const { return Z3_get_sort_kind(*m_ctx, *this); }
-
+        /**
+           \brief Return name of sort.
+        */
+        symbol name() const { Z3_symbol s = Z3_get_sort_name(ctx(), *this); check_error(); return symbol(ctx(), s); }
         /**
             \brief Return true if this sort is the Boolean sort.
         */
@@ -879,7 +897,7 @@ namespace z3 {
         unsigned lo() const { assert (is_app() && Z3_get_decl_num_parameters(ctx(), decl()) == 2); return static_cast<unsigned>(Z3_get_decl_int_parameter(ctx(), decl(), 1)); }
         unsigned hi() const { assert (is_app() && Z3_get_decl_num_parameters(ctx(), decl()) == 2); return static_cast<unsigned>(Z3_get_decl_int_parameter(ctx(), decl(), 0)); }
 
-		/**
+        /**
            \brief sequence and regular expression operations.
            + is overloaeded as sequence concatenation and regular expression union.
            concat is overloaded to handle sequences and regular expressions
@@ -1279,51 +1297,51 @@ namespace z3 {
     inline expr udiv(expr const & a, int b) { return udiv(a, a.ctx().num_val(b, a.get_sort())); }
     inline expr udiv(int a, expr const & b) { return udiv(b.ctx().num_val(a, b.get_sort()), b); }
 
-	/**
-		\brief signed reminder operator for bitvectors
-	*/
-	inline expr srem(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvsrem(a.ctx(), a, b)); }
-	inline expr srem(expr const & a, int b) { return srem(a, a.ctx().num_val(b, a.get_sort())); }
-	inline expr srem(int a, expr const & b) { return srem(b.ctx().num_val(a, b.get_sort()), b); }
-
-	/**
-	\brief unsigned reminder operator for bitvectors
-	*/
-	inline expr urem(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvurem(a.ctx(), a, b)); }
-	inline expr urem(expr const & a, int b) { return urem(a, a.ctx().num_val(b, a.get_sort())); }
-	inline expr urem(int a, expr const & b) { return urem(b.ctx().num_val(a, b.get_sort()), b); }
-
-	/**
-	\brief shift left operator for bitvectors
-	*/
-	inline expr shl(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvshl(a.ctx(), a, b)); }
-	inline expr shl(expr const & a, int b) { return shl(a, a.ctx().num_val(b, a.get_sort())); }
-	inline expr shl(int a, expr const & b) { return shl(b.ctx().num_val(a, b.get_sort()), b); }
-
-	/**
-	\brief logic shift right operator for bitvectors
-	*/
-	inline expr lshr(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvlshr(a.ctx(), a, b)); }
-	inline expr lshr(expr const & a, int b) { return lshr(a, a.ctx().num_val(b, a.get_sort())); }
-	inline expr lshr(int a, expr const & b) { return lshr(b.ctx().num_val(a, b.get_sort()), b); }
-
-	/**
-	\brief arithmetic shift right operator for bitvectors
-	*/
-	inline expr ashr(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvashr(a.ctx(), a, b)); }
-	inline expr ashr(expr const & a, int b) { return ashr(a, a.ctx().num_val(b, a.get_sort())); }
-	inline expr ashr(int a, expr const & b) { return ashr(b.ctx().num_val(a, b.get_sort()), b); }
-
-	/**
-	\brief Extend the given bit-vector with zeros to the (unsigned) equivalent bitvector of size m+i, where m is the size of the given bit-vector.
-	*/
-	inline expr zext(expr const & a, unsigned i) { return to_expr(a.ctx(), Z3_mk_zero_ext(a.ctx(), i, a)); }
-
-	/**
-	\brief Sign-extend of the given bit-vector to the (signed) equivalent bitvector of size m+i, where m is the size of the given bit-vector.
-	*/
-	inline expr sext(expr const & a, unsigned i) { return to_expr(a.ctx(), Z3_mk_sign_ext(a.ctx(), i, a)); }
-
+    /**
+       \brief signed reminder operator for bitvectors
+    */
+    inline expr srem(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvsrem(a.ctx(), a, b)); }
+    inline expr srem(expr const & a, int b) { return srem(a, a.ctx().num_val(b, a.get_sort())); }
+    inline expr srem(int a, expr const & b) { return srem(b.ctx().num_val(a, b.get_sort()), b); }
+    
+    /**
+       \brief unsigned reminder operator for bitvectors
+    */
+    inline expr urem(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvurem(a.ctx(), a, b)); }
+    inline expr urem(expr const & a, int b) { return urem(a, a.ctx().num_val(b, a.get_sort())); }
+    inline expr urem(int a, expr const & b) { return urem(b.ctx().num_val(a, b.get_sort()), b); }
+    
+    /**
+       \brief shift left operator for bitvectors
+    */
+    inline expr shl(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvshl(a.ctx(), a, b)); }
+    inline expr shl(expr const & a, int b) { return shl(a, a.ctx().num_val(b, a.get_sort())); }
+    inline expr shl(int a, expr const & b) { return shl(b.ctx().num_val(a, b.get_sort()), b); }
+    
+    /**
+       \brief logic shift right operator for bitvectors
+    */
+    inline expr lshr(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvlshr(a.ctx(), a, b)); }
+    inline expr lshr(expr const & a, int b) { return lshr(a, a.ctx().num_val(b, a.get_sort())); }
+    inline expr lshr(int a, expr const & b) { return lshr(b.ctx().num_val(a, b.get_sort()), b); }
+    
+    /**
+       \brief arithmetic shift right operator for bitvectors
+    */
+    inline expr ashr(expr const & a, expr const & b) { return to_expr(a.ctx(), Z3_mk_bvashr(a.ctx(), a, b)); }
+    inline expr ashr(expr const & a, int b) { return ashr(a, a.ctx().num_val(b, a.get_sort())); }
+    inline expr ashr(int a, expr const & b) { return ashr(b.ctx().num_val(a, b.get_sort()), b); }
+    
+    /**
+       \brief Extend the given bit-vector with zeros to the (unsigned) equivalent bitvector of size m+i, where m is the size of the given bit-vector.
+    */
+    inline expr zext(expr const & a, unsigned i) { return to_expr(a.ctx(), Z3_mk_zero_ext(a.ctx(), i, a)); }
+    
+    /**
+       \brief Sign-extend of the given bit-vector to the (signed) equivalent bitvector of size m+i, where m is the size of the given bit-vector.
+    */
+    inline expr sext(expr const & a, unsigned i) { return to_expr(a.ctx(), Z3_mk_sign_ext(a.ctx(), i, a)); }
+    
     template<typename T> class cast_ast;
 
     template<> class cast_ast<ast> {
@@ -1596,9 +1614,9 @@ namespace z3 {
         func_decl get_func_decl(unsigned i) const { Z3_func_decl r = Z3_model_get_func_decl(ctx(), m_model, i); check_error(); return func_decl(ctx(), r); }
         unsigned size() const { return num_consts() + num_funcs(); }
         func_decl operator[](int i) const {
-	    assert(0 <= i);
-	    return static_cast<unsigned>(i) < num_consts() ? get_const_decl(i) : get_func_decl(i - num_consts());
-	}
+            assert(0 <= i);
+            return static_cast<unsigned>(i) < num_consts() ? get_const_decl(i) : get_func_decl(i - num_consts());
+        }
 
         // returns interpretation of constant declaration c.
         // If c is not assigned any value in the model it returns 
@@ -1614,6 +1632,13 @@ namespace z3 {
             Z3_func_interp r = Z3_model_get_func_interp(ctx(), m_model, f);
             check_error();
             return func_interp(ctx(), r);
+        }
+        
+        // returns true iff the model contains an interpretation
+        // for function f.
+        bool has_interp(func_decl f) const {
+            check_context(*this, f);
+            return 0 != Z3_model_has_interp(ctx(), m_model, f);
         }
 
         friend std::ostream & operator<<(std::ostream & out, model const & m);
@@ -1657,11 +1682,6 @@ namespace z3 {
         return out;
     }
 
-    inline check_result to_check_result(Z3_lbool l) {
-        if (l == Z3_L_TRUE) return sat;
-        else if (l == Z3_L_FALSE) return unsat;
-        return unknown;
-    }
 
     class solver : public object {
         Z3_solver m_solver;
@@ -2033,6 +2053,8 @@ namespace z3 {
             check_error();
             return expr(ctx(), r);
         }
+        expr_vector assertions() const { Z3_ast_vector r = Z3_optimize_get_assertions(ctx(), m_opt); check_error(); return expr_vector(ctx(), r); }
+        expr_vector objectives() const { Z3_ast_vector r = Z3_optimize_get_objectives(ctx(), m_opt); check_error(); return expr_vector(ctx(), r); }
         stats statistics() const { Z3_stats r = Z3_optimize_get_statistics(ctx(), m_opt); check_error(); return stats(ctx(), r); }
         friend std::ostream & operator<<(std::ostream & out, optimize const & s);
         void from_file(char const* filename) { Z3_optimize_from_file(ctx(), m_opt, filename); check_error(); }
@@ -2322,11 +2344,68 @@ namespace z3 {
     inline expr store(expr const & a, int i, int v) {
         return store(a, a.ctx().num_val(i, a.get_sort().array_domain()), a.ctx().num_val(v, a.get_sort().array_range()));
     }
+
+#define MK_EXPR1(_fn, _arg)                     \
+    Z3_ast r = _fn(_arg.ctx(), _arg);           \
+    _arg.check_error();                         \
+    return expr(_arg.ctx(), r);
+
+#define MK_EXPR2(_fn, _arg1, _arg2)             \
+    check_context(_arg1, _arg2);                \
+    Z3_ast r = _fn(_arg1.ctx(), _arg1, _arg2);  \
+    _arg1.check_error();                        \
+    return expr(_arg1.ctx(), r);
+
     inline expr const_array(sort const & d, expr const & v) {
-        check_context(d, v);
-        Z3_ast r = Z3_mk_const_array(d.ctx(), d, v);
-        d.check_error();
-        return expr(d.ctx(), r);
+        MK_EXPR2(Z3_mk_const_array, d, v);
+    }
+
+    inline expr empty_set(sort const& s) {
+        MK_EXPR1(Z3_mk_empty_set, s);
+    }
+
+    inline expr full_set(sort const& s) {
+        MK_EXPR1(Z3_mk_full_set, s);
+    }
+
+    inline expr set_add(expr const& s, expr const& e) {
+        MK_EXPR2(Z3_mk_set_add, s, e);
+    }
+
+    inline expr set_del(expr const& s, expr const& e) {
+        MK_EXPR2(Z3_mk_set_del, s, e);
+    }    
+
+    inline expr set_union(expr const& a, expr const& b) {
+        check_context(a, b); 
+        Z3_ast es[2] = { a, b };
+        Z3_ast r = Z3_mk_set_union(a.ctx(), 2, es);
+        a.check_error();                    
+        return expr(a.ctx(), r);
+    }
+
+    inline expr set_intersect(expr const& a, expr const& b) {
+        check_context(a, b); 
+        Z3_ast es[2] = { a, b };
+        Z3_ast r = Z3_mk_set_intersect(a.ctx(), 2, es);
+        a.check_error();                    
+        return expr(a.ctx(), r);
+    }
+
+    inline expr set_difference(expr const& a, expr const& b) {
+        MK_EXPR2(Z3_mk_set_difference, a, b);
+    }
+
+    inline expr set_complement(expr const& a) {
+        MK_EXPR1(Z3_mk_set_complement, a);
+    }
+
+    inline expr set_member(expr const& s, expr const& e) {
+        MK_EXPR2(Z3_mk_set_member, s, e);
+    }
+
+    inline expr set_subset(expr const& a, expr const& b) {
+        MK_EXPR2(Z3_mk_set_subset, a, b);
     }
 
     // sequence and regular expression operations.
@@ -2383,10 +2462,54 @@ namespace z3 {
         return expr(re.ctx(), r);
     }
 
-
     inline expr interpolant(expr const& a) {
         return expr(a.ctx(), Z3_mk_interpolant(a.ctx(), a));
     }
+
+    inline expr context::parse_string(char const* s) {
+        Z3_ast r = Z3_parse_smtlib2_string(*this, s, 0, 0, 0, 0, 0, 0);
+        check_error();
+        return expr(*this, r);
+        
+    }
+    inline expr context::parse_file(char const* s) {
+        Z3_ast r = Z3_parse_smtlib2_file(*this, s, 0, 0, 0, 0, 0, 0);
+        check_error();
+        return expr(*this, r);
+    }
+
+    inline expr context::parse_string(char const* s, sort_vector const& sorts, func_decl_vector const& decls) {
+        array<Z3_symbol> sort_names(sorts.size());
+        array<Z3_symbol> decl_names(decls.size());
+        array<Z3_sort>   sorts1(sorts);
+        array<Z3_func_decl> decls1(decls);
+        for (unsigned i = 0; i < sorts.size(); ++i) {
+            sort_names[i] = sorts[i].name();
+        }
+        for (unsigned i = 0; i < decls.size(); ++i) {
+            decl_names[i] = decls[i].name();
+        }
+        Z3_ast r = Z3_parse_smtlib2_string(*this, s, sorts.size(), sort_names.ptr(), sorts1.ptr(), decls.size(), decl_names.ptr(), decls1.ptr());
+        check_error();
+        return expr(*this, r);
+    }
+
+    inline expr context::parse_file(char const* s, sort_vector const& sorts, func_decl_vector const& decls) {
+        array<Z3_symbol> sort_names(sorts.size());
+        array<Z3_symbol> decl_names(decls.size());
+        array<Z3_sort>   sorts1(sorts);
+        array<Z3_func_decl> decls1(decls);
+        for (unsigned i = 0; i < sorts.size(); ++i) {
+            sort_names[i] = sorts[i].name();
+        }
+        for (unsigned i = 0; i < decls.size(); ++i) {
+            decl_names[i] = decls[i].name();
+        }
+        Z3_ast r = Z3_parse_smtlib2_file(*this, s, sorts.size(), sort_names.ptr(), sorts1.ptr(), decls.size(), decl_names.ptr(), decls1.ptr());
+        check_error();
+        return expr(*this, r);
+    }
+
 
     inline check_result context::compute_interpolant(expr const& pat, params const& p, expr_vector& i, model& m) {
         Z3_ast_vector interp = 0;

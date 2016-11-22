@@ -5,10 +5,12 @@
 #
 # Author: Leonardo de Moura (leonardo)
 ############################################
-from z3 import *
-from z3core import *
-from z3printer import *
+from .z3 import *
+from .z3core import *
+from .z3printer import *
 from fractions import Fraction
+
+from .z3 import _get_ctx
 
 def _to_numeral(num, ctx=None):
     if isinstance(num, Numeral):
@@ -86,7 +88,7 @@ class Numeral:
     def __init__(self, num, ctx=None):
         if isinstance(num, Ast):
             self.ast  = num
-            self.ctx  = z3._get_ctx(ctx)
+            self.ctx  = _get_ctx(ctx)
         elif isinstance(num, RatNumRef) or isinstance(num, AlgebraicNumRef):
             self.ast = num.ast
             self.ctx = num.ctx
@@ -572,9 +574,4 @@ def isolate_roots(p, vs=[]):
         _vs[i] = vs[i].ast
     _roots = AstVector(Z3_algebraic_roots(p.ctx_ref(), p.as_ast(), num, _vs), p.ctx)
     return [ Numeral(r) for r in _roots ]
-        
-if __name__ == "__main__":
-    import doctest
-    if doctest.testmod().failed:
-        exit(1)
 

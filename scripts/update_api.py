@@ -363,7 +363,7 @@ def mk_dotnet(dotnet):
     dotnet.write('    {\n\n')
     dotnet.write('        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n')
     dotnet.write('        public delegate void Z3_error_handler(Z3_context c, Z3_error_code e);\n\n')
-    dotnet.write('        public unsafe class LIB\n')
+    dotnet.write('        public class LIB\n')
     dotnet.write('        {\n')
     dotnet.write('            const string Z3_DLL_NAME = \"libz3.dll\";\n'
                  '            \n')
@@ -1600,27 +1600,25 @@ def write_core_py_preamble(core_py):
   core_py.write('# Automatically generated file\n')
   core_py.write('import sys, os\n')
   core_py.write('import ctypes\n')
-  core_py.write('from z3types import *\n')
-  core_py.write('from z3consts import *\n')
+  core_py.write('import pkg_resources\n')
+  core_py.write('from .z3types import *\n')
+  core_py.write('from .z3consts import *\n')
   core_py.write(
 """
+_ext = 'dll' if sys.platform in ('win32', 'cygwin') else 'dylib' if sys.platform == 'darwin' else 'so'
+
 _lib = None
 def lib():
   global _lib
-  if _lib == None:
-    _dir = os.path.dirname(os.path.abspath(__file__))
-    for ext in ['dll', 'so', 'dylib']:
+  if _lib is None:
+    _dirs = ['.', pkg_resources.resource_filename('z3', 'lib'), os.path.join(sys.prefix, 'lib'), None]
+    for _dir in _dirs:
       try:
-        init('libz3.%s' % ext)
+        init(_dir)
         break
       except:
         pass
-      try:
-        init(os.path.join(_dir, 'libz3.%s' % ext))
-        break
-      except:
-        pass
-    if _lib == None:
+    if _lib is None:
         raise Z3Exception("init(Z3_LIBRARY_PATH) must be invoked before using Z3-python")
   return _lib
 
@@ -1643,6 +1641,13 @@ else:
         return ""
 
 def init(PATH):
+  if PATH:
+    PATH = os.path.realpath(PATH)
+    if os.path.isdir(PATH):
+      PATH = os.path.join(PATH, 'libz3.%s' % _ext)
+  else:
+    PATH = 'libz3.%s' % _ext
+
   global _lib
   _lib = ctypes.CDLL(PATH)
 """
@@ -1706,7 +1711,7 @@ def generate_files(api_files,
   with mk_file_or_temp(api_output_dir, 'api_log_macros.h') as log_h:
     with mk_file_or_temp(api_output_dir, 'api_log_macros.cpp') as log_c:
       with mk_file_or_temp(api_output_dir, 'api_commands.cpp') as exe_c:
-        with mk_file_or_temp(z3py_output_dir, 'z3core.py') as core_py:
+        with mk_file_or_temp(z3py_output_dir, os.path.join('z3', 'z3core.py')) as core_py:
           # Write preambles
           write_log_h_preamble(log_h)
           write_log_c_preamble(log_c)

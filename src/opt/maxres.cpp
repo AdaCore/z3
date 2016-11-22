@@ -155,14 +155,13 @@ public:
     
 
     void add_soft(expr* e, rational const& w) {
-        TRACE("opt", tout << mk_pp(e, m) << "\n";);
+        TRACE("opt", tout << mk_pp(e, m) << " |-> " << w << "\n";);
         expr_ref asum(m), fml(m);
         app_ref cls(m);
         rational weight(0);
         if (m_asm2weight.find(e, weight)) {
             weight += w;
             m_asm2weight.insert(e, weight);
-            m_upper += w;
             return;
         }
         if (is_literal(e)) {
@@ -174,7 +173,6 @@ public:
             s().assert_expr(fml);
         }
         new_assumption(asum, w);
-        m_upper += w;
     }
 
     void new_assumption(expr* e, rational const& w) {
@@ -192,9 +190,11 @@ public:
     lbool mus_solver() {
         lbool is_sat = l_true;
         if (!init()) return l_undef;
-        init_local();
+        is_sat = init_local();
         trace();
+        if (is_sat != l_true) return is_sat;
         while (m_lower < m_upper) {
+            if (m_lower >= m_upper) break;
             TRACE("opt", 
                   display_vec(tout, m_asms);
                   s().display(tout);
@@ -230,11 +230,12 @@ public:
 
     lbool primal_dual_solver() {
         if (!init()) return l_undef;
-        init_local();
+        lbool is_sat = init_local();
         trace();
         exprs cs;
+        if (is_sat != l_true) return is_sat;
         while (m_lower < m_upper) {
-            lbool is_sat = check_sat_hill_climb(m_asms);
+            is_sat = check_sat_hill_climb(m_asms);
             if (m.canceled()) {
                 return l_undef;
             }
@@ -268,7 +269,6 @@ public:
         trace();
         return l_true;
     }
-
 
     lbool check_sat_hill_climb(expr_ref_vector& asms1) {
         expr_ref_vector asms(asms1);
@@ -356,7 +356,7 @@ public:
         while (is_sat == l_false) {
             core.reset();
             s().get_unsat_core(core);
-            //verify_core(core);
+            // verify_core(core);
             model_ref mdl;
             get_mus_model(mdl);
             is_sat = minimize_core(core);
@@ -730,8 +730,6 @@ public:
         for (unsigned i = 0; i < m_soft.size(); ++i) {
             m_assignment[i] = is_true(m_soft[i]);
         }
-
-
        
         DEBUG_CODE(verify_assignment(););
 
@@ -804,12 +802,17 @@ public:
         m_dump_benchmarks = _p.dump_benchmarks();
     }
 
-    void init_local() {
-        m_upper.reset();
+    lbool init_local() {
         m_lower.reset();
         m_trail.reset();
-        for (unsigned i = 0; i < m_soft.size(); ++i) {
-            add_soft(m_soft[i], m_weights[i]);
+        obj_map<expr, rational> new_soft;
+        lbool is_sat = find_mutexes(new_soft);
+        if (is_sat != l_true) {
+            return is_sat;
+        }
+        obj_map<expr, rational>::iterator it = new_soft.begin(), end = new_soft.end();
+        for (; it != end; ++it) {
+            add_soft(it->m_key, it->m_value);
         }
         m_max_upper = m_upper;
         m_found_feasible_optimum = false;
@@ -817,6 +820,7 @@ public:
         add_upper_bound_block();
         m_csmodel = 0;
         m_correction_set_size = 0;
+        return l_true;
     }
 
     virtual void commit_assignment() {

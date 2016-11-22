@@ -78,6 +78,9 @@ namespace opt {
     }
     
     void opt_solver::assert_expr(expr * t) {
+        if (has_quantifiers(t)) {
+            m_params.m_relevancy_lvl = 2;
+        }
         m_context.assert_expr(t);
     }
     
@@ -190,6 +193,11 @@ namespace opt {
             blockers.push_back(blocker);
         }
     }
+
+    lbool opt_solver::find_mutexes(expr_ref_vector const& vars, vector<expr_ref_vector>& mutexes) {
+        return m_context.find_mutexes(vars, mutexes);
+    }
+
 
 
     /**

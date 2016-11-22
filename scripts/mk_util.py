@@ -63,6 +63,7 @@ DOTNET_COMPONENT='dotnet'
 JAVA_COMPONENT='java'
 ML_COMPONENT='ml'
 CPP_COMPONENT='cpp'
+PYTHON_COMPONENT='python'
 #####################
 IS_WINDOWS=False
 IS_LINUX=False
@@ -81,8 +82,9 @@ ONLY_MAKEFILES = False
 Z3PY_SRC_DIR=None
 VS_PROJ = False
 TRACE = False
+PYTHON_ENABLED=False
 DOTNET_ENABLED=False
-DOTNET_KEY_FILE=None
+DOTNET_KEY_FILE=getenv("Z3_DOTNET_KEY_FILE", None)
 JAVA_ENABLED=False
 ML_ENABLED=False
 PYTHON_INSTALL_ENABLED=False
@@ -675,7 +677,7 @@ def display_help(exit_code):
 # Parse configuration option for mk_make script
 def parse_options():
     global VERBOSE, DEBUG_MODE, IS_WINDOWS, VS_X64, ONLY_MAKEFILES, SHOW_CPPS, VS_PROJ, TRACE, VS_PAR, VS_PAR_NUM
-    global DOTNET_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, FOCI2, FOCI2LIB, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED
+    global DOTNET_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, FOCI2, FOCI2LIB, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED, PYTHON_ENABLED
     global LINUX_X64, SLOW_OPTIMIZE, USE_OMP
     try:
         options, remainder = getopt.gnu_getopt(sys.argv[1:],
@@ -748,6 +750,7 @@ def parse_options():
         elif opt in ('', '--noomp'):
             USE_OMP = False
         elif opt in ('--python'):
+            PYTHON_ENABLED = True
             PYTHON_INSTALL_ENABLED = True
         else:
             print("ERROR: Invalid command line option '%s'" % opt)
@@ -843,6 +846,9 @@ def is_ml_enabled():
 
 def is_dotnet_enabled():
     return DOTNET_ENABLED
+
+def is_python_enabled():
+    return PYTHON_ENABLED
 
 def is_python_install_enabled():
     return PYTHON_INSTALL_ENABLED
@@ -1230,7 +1236,7 @@ def get_so_ext():
         return 'dll'
 
 class DLLComponent(Component):
-    def __init__(self, name, dll_name, path, deps, export_files, reexports, install, static):
+    def __init__(self, name, dll_name, path, deps, export_files, reexports, install, static, staging_link=None):
         Component.__init__(self, name, path, deps)
         if dll_name is None:
             dll_name = name
@@ -1239,6 +1245,7 @@ class DLLComponent(Component):
         self.reexports = reexports
         self.install = install
         self.static = static
+        self.staging_link = staging_link    # link a copy of the shared object into this directory on build
 
     def get_link_name(self):
         if self.static:
@@ -1294,6 +1301,13 @@ class DLLComponent(Component):
         out.write(' $(SLINK_EXTRA_FLAGS)')
         if IS_WINDOWS:
             out.write(' /DEF:%s.def' % os.path.join(self.to_src_dir, self.name))
+        if self.staging_link:
+            if IS_WINDOWS:
+                out.write('\n\tcopy %s %s' % (self.dll_file(), self.staging_link))
+            elif IS_OSX:
+                out.write('\n\tcp %s %s' % (self.dll_file(), self.staging_link))
+            else:
+                out.write('\n\tln -f -s %s %s' % (os.path.join(reverse_path(self.staging_link), self.dll_file()), self.staging_link))
         out.write('\n')
         if self.static:
             if IS_WINDOWS:
@@ -1374,6 +1388,32 @@ class DLLComponent(Component):
             shutil.copy('%s.a' % os.path.join(build_path, self.dll_name),
                         '%s.a' % os.path.join(dist_path, INSTALL_BIN_DIR, self.dll_name))
 
+class PythonComponent(Component): 
+    def __init__(self, name, libz3Component):
+        assert isinstance(libz3Component, DLLComponent)
+        global PYTHON_ENABLED
+        Component.__init__(self, name, None, [])
+        self.libz3Component = libz3Component
+
+    def main_component(self):
+        return False
+
+    def mk_win_dist(self, build_path, dist_path):
+        if not is_python_enabled():
+            return
+
+        src = os.path.join(build_path, 'python', 'z3')
+        dst = os.path.join(dist_path, INSTALL_BIN_DIR, 'python', 'z3')
+        if os.path.exists(dst):
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+
+    def mk_unix_dist(self, build_path, dist_path):
+        self.mk_win_dist(build_path, dist_path)
+
+    def mk_makefile(self, out):
+        return
+   
 class PythonInstallComponent(Component):
     def __init__(self, name, libz3Component):
         assert isinstance(libz3Component, DLLComponent)
@@ -1432,13 +1472,18 @@ class PythonInstallComponent(Component):
     def mk_install(self, out):
         if not is_python_install_enabled():
             return
-        MakeRuleCmd.make_install_directory(out, self.pythonPkgDir, in_prefix=self.in_prefix_install)
+        MakeRuleCmd.make_install_directory(out,
+                                           os.path.join(self.pythonPkgDir, 'z3'),
+                                           in_prefix=self.in_prefix_install)
+        MakeRuleCmd.make_install_directory(out,
+                                           os.path.join(self.pythonPkgDir, 'z3', 'lib'),
+                                           in_prefix=self.in_prefix_install)
 
         # Sym-link or copy libz3 into python package directory
         if IS_WINDOWS or IS_OSX:
             MakeRuleCmd.install_files(out,
                                       self.libz3Component.dll_file(),
-                                      os.path.join(self.pythonPkgDir,
+                                      os.path.join(self.pythonPkgDir, 'z3', 'lib',
                                                    self.libz3Component.dll_file()),
                                       in_prefix=self.in_prefix_install
                                      )
@@ -1449,34 +1494,30 @@ class PythonInstallComponent(Component):
             # staged installs that use DESTDIR).
             MakeRuleCmd.create_relative_symbolic_link(out,
                                                       self.libz3Component.install_path(),
-                                                      os.path.join(self.pythonPkgDir,
+                                                      os.path.join(self.pythonPkgDir, 'z3', 'lib',
                                                                    self.libz3Component.dll_file()
                                                                   ),
                                                      )
 
-        MakeRuleCmd.install_files(out, 'z3*.py', self.pythonPkgDir,
+        MakeRuleCmd.install_files(out, os.path.join('python', 'z3', '*.py'),
+                                  os.path.join(self.pythonPkgDir, 'z3'),
                                   in_prefix=self.in_prefix_install)
         if sys.version >= "3":
-            pythonPycacheDir = os.path.join(self.pythonPkgDir, '__pycache__')
+            pythonPycacheDir = os.path.join(self.pythonPkgDir, 'z3', '__pycache__')
             MakeRuleCmd.make_install_directory(out,
                                                pythonPycacheDir,
                                                in_prefix=self.in_prefix_install)
             MakeRuleCmd.install_files(out,
-                                      '{}*.pyc'.format(os.path.join('__pycache__', 'z3')),
+                                      os.path.join('python', 'z3', '__pycache__', '*.pyc'),
                                       pythonPycacheDir,
                                       in_prefix=self.in_prefix_install)
         else:
             MakeRuleCmd.install_files(out,
-                                      'z3*.pyc',
-                                      self.pythonPkgDir,
+                                      os.path.join('python', 'z3', '*.pyc'),
+                                      os.path.join(self.pythonPkgDir,'z3'),
                                       in_prefix=self.in_prefix_install)
+            
         if PYTHON_PACKAGE_DIR != distutils.sysconfig.get_python_lib():
-            if os.uname()[0] == 'Darwin':
-                LD_LIBRARY_PATH = "DYLD_LIBRARY_PATH"
-            else:
-                LD_LIBRARY_PATH = "LD_LIBRARY_PATH"
-            out.write('\t@echo Z3 shared libraries were installed at \'%s\', make sure this directory is in your %s environment variable.\n' %
-                      (os.path.join(PREFIX, INSTALL_LIB_DIR), LD_LIBRARY_PATH))
             out.write('\t@echo Z3Py was installed at \'%s\', make sure this directory is in your PYTHONPATH environment variable.' % PYTHON_PACKAGE_DIR)
 
     def mk_uninstall(self, out):
@@ -1488,15 +1529,18 @@ class PythonInstallComponent(Component):
                                            in_prefix=self.in_prefix_install
                                           )
         MakeRuleCmd.remove_installed_files(out,
-                                           '{}*.py'.format(os.path.join(self.pythonPkgDir, 'z3')),
+                                           os.path.join(self.pythonPkgDir, 'z3', '*.py'),
                                            in_prefix=self.in_prefix_install)
         MakeRuleCmd.remove_installed_files(out,
-                                           '{}*.pyc'.format(os.path.join(self.pythonPkgDir, 'z3')),
+                                           os.path.join(self.pythonPkgDir, 'z3', '*.pyc'),
                                            in_prefix=self.in_prefix_install)
         MakeRuleCmd.remove_installed_files(out,
-                                           '{}*.pyc'.format(os.path.join(self.pythonPkgDir, '__pycache__', 'z3')),
+                                           os.path.join(self.pythonPkgDir, 'z3', '__pycache__', '*.pyc'),
                                            in_prefix=self.in_prefix_install
                                           )
+        MakeRuleCmd.remove_installed_files(out,
+                                           os.path.join(self.pythonPkgDir, 'z3', 'lib',
+                                                        self.libz3Component.dll_file()))
 
     def mk_makefile(self, out):
         return
@@ -1580,7 +1624,7 @@ class DotNetDLLComponent(Component):
             elif os.path.isfile(os.path.join(self.src_dir, self.key_file)):
                 self.key_file = os.path.abspath(os.path.join(self.src_dir, self.key_file))
             else:
-                print("Keyfile '%s' could not be found; %s.dll will be unsigned." % (self.dll_name, self.key_file))
+                print("Keyfile '%s' could not be found; %s.dll will be unsigned." % (self.key_file, self.dll_name))
                 self.key_file = None
                 
         if not self.key_file is None:
@@ -2157,10 +2201,19 @@ class PythonExampleComponent(ExampleComponent):
     def mk_makefile(self, out):
         full = os.path.join(EXAMPLE_DIR, self.path)
         for py in filter(lambda f: f.endswith('.py'), os.listdir(full)):
-            shutil.copyfile(os.path.join(full, py), os.path.join(BUILD_DIR, py))
+            shutil.copyfile(os.path.join(full, py), os.path.join(BUILD_DIR, 'python', py))
             if is_verbose():
-                print("Copied Z3Py example '%s' to '%s'" % (py, BUILD_DIR))
+                print("Copied Z3Py example '%s' to '%s'" % (py, os.path.join(BUILD_DIR, 'python')))
         out.write('_ex_%s: \n\n' % self.name)
+
+    def mk_win_dist(self, build_path, dist_path):
+        full = os.path.join(EXAMPLE_DIR, self.path)
+        py = 'example.py'
+        shutil.copyfile(os.path.join(full, py), 
+                        os.path.join(dist_path, INSTALL_BIN_DIR, 'python', py))
+
+    def mk_unix_dist(self, build_path, dist_path):
+        self.mk_win_dist(build_path, dist_path)
 
 
 def reg_component(name, c):
@@ -2189,8 +2242,8 @@ def add_extra_exe(name, deps=[], path=None, exe_name=None, install=True):
     c = ExtraExeComponent(name, exe_name, path, deps, install)
     reg_component(name, c)
 
-def add_dll(name, deps=[], path=None, dll_name=None, export_files=[], reexports=[], install=True, static=False):
-    c = DLLComponent(name, dll_name, path, deps, export_files, reexports, install, static)
+def add_dll(name, deps=[], path=None, dll_name=None, export_files=[], reexports=[], install=True, static=False, staging_link=None):
+    c = DLLComponent(name, dll_name, path, deps, export_files, reexports, install, static, staging_link)
     reg_component(name, c)
     return c
 
@@ -2202,6 +2255,10 @@ def add_java_dll(name, deps=[], path=None, dll_name=None, package_name=None, man
     c = JavaDLLComponent(name, dll_name, package_name, manifest_file, path, deps)
     reg_component(name, c)
 
+def add_python(libz3Component):
+    name = 'python'
+    reg_component(name, PythonComponent(name, libz3Component))
+    
 def add_python_install(libz3Component):
     name = 'python_install'
     reg_component(name, PythonInstallComponent(name, libz3Component))
@@ -2519,9 +2576,9 @@ def mk_makefile():
         if c.main_component():
             out.write(' %s' % c.name)
     out.write('\n\t@echo Z3 was successfully built.\n')
-    out.write("\t@echo \"Z3Py scripts can already be executed in the \'%s\' directory.\"\n" % BUILD_DIR)
+    out.write("\t@echo \"Z3Py scripts can already be executed in the \'%s\' directory.\"\n" % os.path.join(BUILD_DIR, 'python'))
     pathvar = "DYLD_LIBRARY_PATH" if IS_OSX else "PATH" if IS_WINDOWS else "LD_LIBRARY_PATH"
-    out.write("\t@echo \"Z3Py scripts stored in arbitrary directories can be executed if the \'%s\' directory is added to the PYTHONPATH and %s environment variables.\"\n" % (BUILD_DIR, pathvar))
+    out.write("\t@echo \"Z3Py scripts stored in arbitrary directories can be executed if the \'%s\' directory is added to the PYTHONPATH environment variable and the \'%s\' directory is added to the %s environment variable.\"\n" % (os.path.join(BUILD_DIR, 'python'), BUILD_DIR, pathvar))
     if not IS_WINDOWS:
         out.write("\t@echo Use the following command to install Z3 at prefix $(PREFIX).\n")
         out.write('\t@echo "    sudo make install"\n\n')
@@ -2737,33 +2794,42 @@ def mk_def_files():
 
 def cp_z3py_to_build():
     mk_dir(BUILD_DIR)
+    mk_dir(os.path.join(BUILD_DIR, 'python'))
+    z3py_dest = os.path.join(BUILD_DIR, 'python', 'z3')
+    z3py_src = os.path.join(Z3PY_SRC_DIR, 'z3')
+
     # Erase existing .pyc files
     for root, dirs, files in os.walk(Z3PY_SRC_DIR):
         for f in files:
             if f.endswith('.pyc'):
                 rmf(os.path.join(root, f))
     # Compile Z3Py files
-    if compileall.compile_dir(Z3PY_SRC_DIR, force=1) != 1:
+    if compileall.compile_dir(z3py_src, force=1) != 1:
         raise MKException("failed to compile Z3Py sources")
+    if is_verbose:
+        print("Generated python bytecode")
     # Copy sources to build
-    for py in filter(lambda f: f.endswith('.py'), os.listdir(Z3PY_SRC_DIR)):
-        shutil.copyfile(os.path.join(Z3PY_SRC_DIR, py), os.path.join(BUILD_DIR, py))
+    mk_dir(z3py_dest)
+    for py in filter(lambda f: f.endswith('.py'), os.listdir(z3py_src)):
+        shutil.copyfile(os.path.join(z3py_src, py), os.path.join(z3py_dest, py))
         if is_verbose():
             print("Copied '%s'" % py)
     # Python 2.x support
-    for pyc in filter(lambda f: f.endswith('.pyc'), os.listdir(Z3PY_SRC_DIR)):
-        shutil.copyfile(os.path.join(Z3PY_SRC_DIR, pyc), os.path.join(BUILD_DIR, pyc))
+    for pyc in filter(lambda f: f.endswith('.pyc'), os.listdir(z3py_src)):
+        shutil.copyfile(os.path.join(z3py_src, pyc), os.path.join(z3py_dest, pyc))
         if is_verbose():
-            print("Generated '%s'" % pyc)
+            print("Copied '%s'" % pyc)
     # Python 3.x support
-    src_pycache = os.path.join(Z3PY_SRC_DIR, '__pycache__')
+    src_pycache = os.path.join(z3py_src, '__pycache__')
+    target_pycache = os.path.join(z3py_dest, '__pycache__')
     if os.path.exists(src_pycache):
         for pyc in filter(lambda f: f.endswith('.pyc'), os.listdir(src_pycache)):
-            target_pycache = os.path.join(BUILD_DIR, '__pycache__')
             mk_dir(target_pycache)
             shutil.copyfile(os.path.join(src_pycache, pyc), os.path.join(target_pycache, pyc))
             if is_verbose():
-                print("Generated '%s'" % pyc)
+                print("Copied '%s'" % pyc)
+    # Copy z3test.py
+    shutil.copyfile(os.path.join(Z3PY_SRC_DIR, 'z3test.py'), os.path.join(BUILD_DIR, 'python', 'z3test.py'))
 
 def mk_bindings(api_files):
     if not ONLY_MAKEFILES:
@@ -3056,6 +3122,11 @@ def mk_vs_proj_property_groups(f, name, target_ext, type):
     f.write('    <CharacterSet>Unicode</CharacterSet>\n')
     f.write('    <UseOfMfc>false</UseOfMfc>\n')
     f.write('  </PropertyGroup>\n')
+    f.write('  <PropertyGroup Condition="\'$(Configuration)|$(Platform)\'==\'Release|Win32\'" Label="Configuration">\n')
+    f.write('    <ConfigurationType>%s</ConfigurationType>\n' % type)
+    f.write('    <CharacterSet>Unicode</CharacterSet>\n')
+    f.write('    <UseOfMfc>false</UseOfMfc>\n')
+    f.write('  </PropertyGroup>\n')
     f.write('  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />\n')
     f.write('  <ImportGroup Label="ExtensionSettings" />\n')
     f.write('   <ImportGroup Label="PropertySheets">\n')
@@ -3205,11 +3276,6 @@ def mk_vs_proj_dll(name, components):
 def mk_win_dist(build_path, dist_path):
     for c in get_components():
         c.mk_win_dist(build_path, dist_path)
-    # Add Z3Py to bin directory
-    print("Adding to %s\n" % dist_path)
-    for pyc in filter(lambda f: f.endswith('.pyc') or f.endswith('.py'), os.listdir(build_path)):
-        shutil.copy(os.path.join(build_path, pyc),
-                    os.path.join(dist_path, INSTALL_BIN_DIR, pyc))
 
 def mk_unix_dist(build_path, dist_path):
     for c in get_components():
@@ -3258,7 +3324,7 @@ class MakeRuleCmd(object):
             #print("WARNING: Generating makefile rule that {}s {} '{}' which is outside the installation prefix '{}'.".format(
             #        action_string, 'to' if is_install else 'from', path, PREFIX))
         else:
-            assert not os.path.isabs(path)
+            # assert not os.path.isabs(path)
             install_root = cls.install_root()
         return install_root
 

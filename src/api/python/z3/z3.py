@@ -41,10 +41,11 @@ Z3 exceptions:
 ...   print("failed: %s" % ex)
 failed: sort mismatch
 """
-from z3core import *
-from z3types import *
-from z3consts import *
-from z3printer import *
+from . import z3core
+from .z3core import *
+from .z3types import *
+from .z3consts import *
+from .z3printer import *
 from fractions import Fraction
 import sys
 import io
@@ -1290,6 +1291,19 @@ class BoolRef(ExprRef):
     def sort(self):
         return BoolSortRef(Z3_get_sort(self.ctx_ref(), self.as_ast()), self.ctx)
 
+    def __rmul__(self, other):
+        return self * other
+    
+    def __mul__(self, other):
+        """Create the Z3 expression `self * other`.
+        """
+        if other == 1:
+            return self
+        if other == 0:
+            return 0        
+        return If(self, other, 0)
+
+
 def is_bool(a):
     """Return `True` if `a` is a Z3 Boolean expression.
 
@@ -1549,6 +1563,9 @@ def And(*args):
     if isinstance(last_arg, Context):
         ctx = args[len(args)-1]
         args = args[:len(args)-1]
+    elif len(args) == 1 and isinstance(args[0], AstVector):
+        ctx = args[0].ctx
+        args = [a for a in args[0]]
     else:
         ctx = main_ctx()
     args = _get_args(args)
@@ -1800,7 +1817,7 @@ class QuantifierRef(BoolRef):
         """
         if __debug__:
             _z3_assert(idx < self.num_vars(), "Invalid variable idx")
-        return SortRef(Z3_get_quantifier_bound_sort(self.ctx_ref(), self.ast, idx), self.ctx)
+        return _to_sort_ref(Z3_get_quantifier_bound_sort(self.ctx_ref(), self.ast, idx), self.ctx)
 
     def children(self):
         """Return a list containing a single element self.body()
@@ -5997,6 +6014,10 @@ class Solver(Z3PPObject):
         """
         self.assert_exprs(*args)
 
+    def __iadd__(self, fml):
+        self.add(fml)
+        return self
+
     def append(self, *args):
         """Assert constraints into the solver.
 
@@ -6344,6 +6365,10 @@ class Fixedpoint(Z3PPObject):
     def add(self, *args):
         """Assert constraints as background axioms for the fixedpoint solver. Alias for assert_expr."""
         self.assert_exprs(*args)
+
+    def __iadd__(self, fml):
+        self.add(fml)
+        return self
 
     def append(self, *args):
         """Assert constraints as background axioms for the fixedpoint solver. Alias for assert_expr."""
@@ -6699,6 +6724,10 @@ class Optimize(Z3PPObject):
         """Assert constraints as background axioms for the optimize solver. Alias for assert_expr."""
         self.assert_exprs(*args)
 
+    def __iadd__(self, fml):
+        self.add(fml)
+        return self
+
     def add_soft(self, arg, weight = "1", id = None):
         """Add soft constraint with optional weight and optional identifier.
            If no weight is supplied, then the penalty for violating the soft constraint
@@ -6708,6 +6737,8 @@ class Optimize(Z3PPObject):
         """
         if _is_int(weight):
             weight = "%d" % weight
+        elif isinstance(weight, float):
+            weight = "%f" % weight
         if not isinstance(weight, str):
             raise Z3Exception("weight should be a string or an integer")
         if id is None:
@@ -6765,6 +6796,14 @@ class Optimize(Z3PPObject):
         """Parse assertions and objectives from a string"""
         Z3_optimize_from_string(self.ctx.ref(), self.optimize, s)
 
+    def assertions(self):
+        """Return an AST vector containing all added constraints."""
+        return AstVector(Z3_optimize_get_assertions(self.ctx.ref(), self.optimize), self.ctx)
+
+    def objectives(self):
+        """returns set of objective functions"""
+        return AstVector(Z3_optimize_get_objectives(self.ctx.ref(), self.optimize), self.ctx)
+
     def __repr__(self):
         """Return a formatted string with all added rules and constraints."""
         return self.sexpr()
@@ -6775,7 +6814,7 @@ class Optimize(Z3PPObject):
         return Z3_optimize_to_string(self.ctx.ref(), self.optimize)
 
     def statistics(self):
-        """Return statistics for the last `query()`.
+        """Return statistics for the last check`.
         """
         return Statistics(Z3_optimize_get_statistics(self.ctx.ref(), self.optimize), self.ctx)
 
@@ -7517,17 +7556,18 @@ def Sum(*args):
     a__0 + a__1 + a__2 + a__3 + a__4
     """
     args  = _get_args(args)
-    if __debug__:
-        _z3_assert(len(args) > 0, "Non empty list of arguments expected")
+    if len(args) == 0:
+        return 0
     ctx   = _ctx_from_ast_arg_list(args)
-    if __debug__:
-        _z3_assert(ctx is not None, "At least one of the arguments must be a Z3 expression")
+    if ctx is None:
+        return _reduce(lambda a, b: a + b, args, 0)
     args  = _coerce_expr_list(args, ctx)
     if is_bv(args[0]):
         return _reduce(lambda a, b: a + b, args, 0)
     else:
         _args, sz = _to_ast_array(args)
         return ArithRef(Z3_mk_add(ctx.ref(), sz, _args), ctx)
+
 
 def Product(*args):
     """Create the product of the Z3 expressions.
@@ -7542,11 +7582,11 @@ def Product(*args):
     a__0*a__1*a__2*a__3*a__4
     """
     args  = _get_args(args)
-    if __debug__:
-        _z3_assert(len(args) > 0, "Non empty list of arguments expected")
+    if len(args) == 0:
+        return 1
     ctx   = _ctx_from_ast_arg_list(args)
-    if __debug__:
-        _z3_assert(ctx is not None, "At least one of the arguments must be a Z3 expression")
+    if ctx is None:
+        return _reduce(lambda a, b: a * b, args, 1)    
     args  = _coerce_expr_list(args, ctx)
     if is_bv(args[0]):
         return _reduce(lambda a, b: a * b, args, 1)
@@ -7571,6 +7611,29 @@ def AtMost(*args):
     _args, sz = _to_ast_array(args1)
     return BoolRef(Z3_mk_atmost(ctx.ref(), sz, _args, k), ctx)
 
+def AtLeast(*args):
+    """Create an at-most Pseudo-Boolean k constraint.
+
+    >>> a, b, c = Bools('a b c')
+    >>> f = AtLeast(a, b, c, 2)
+    """
+    def mk_not(a):
+        if is_not(a):
+            return a.arg(0)
+        else:
+            return Not(a)
+    args  = _get_args(args)
+    if __debug__:
+        _z3_assert(len(args) > 1, "Non empty list of arguments expected")
+    ctx   = _ctx_from_ast_arg_list(args)
+    if __debug__:
+        _z3_assert(ctx is not None, "At least one of the arguments must be a Z3 expression")
+    args1 = _coerce_expr_list(args[:-1], ctx)
+    args1 = [ mk_not(a) for a in args1 ]
+    k = len(args1) - args[-1] 
+    _args, sz = _to_ast_array(args1)
+    return BoolRef(Z3_mk_atmost(ctx.ref(), sz, _args, k), ctx)
+
 def PbLe(args, k):
     """Create a Pseudo-Boolean inequality k constraint.
 
@@ -7590,6 +7653,26 @@ def PbLe(args, k):
     for i in range(len(coeffs)):
         _coeffs[i] = coeffs[i]
     return BoolRef(Z3_mk_pble(ctx.ref(), sz, _args, _coeffs, k), ctx)
+
+def PbEq(args, k):
+    """Create a Pseudo-Boolean inequality k constraint.
+
+    >>> a, b, c = Bools('a b c')
+    >>> f = PbEq(((a,1),(b,3),(c,2)), 3)
+    """
+    args  = _get_args(args)
+    args, coeffs = zip(*args)
+    if __debug__:
+        _z3_assert(len(args) > 0, "Non empty list of arguments expected")
+    ctx   = _ctx_from_ast_arg_list(args)
+    if __debug__:
+        _z3_assert(ctx is not None, "At least one of the arguments must be a Z3 expression")
+    args = _coerce_expr_list(args, ctx)
+    _args, sz = _to_ast_array(args)
+    _coeffs = (ctypes.c_int * len(coeffs))()
+    for i in range(len(coeffs)):
+        _coeffs[i] = coeffs[i]
+    return BoolRef(Z3_mk_pbeq(ctx.ref(), sz, _args, _coeffs, k), ctx)
 
 
 def solve(*args, **keywords):
@@ -8369,27 +8452,13 @@ def is_fprm_value(a):
 
 ### FP Numerals
 
-class FPNumRef(FPRef):
-    def isNaN(self):
-        return self.decl().kind() == Z3_OP_FPA_NAN
+class FPNumRef(FPRef):   
+    """The sign of the numeral.
 
-    def isInf(self):
-        return self.decl().kind() == Z3_OP_FPA_PLUS_INF or self.decl().kind() == Z3_OP_FPA_MINUS_INF
-
-    def isZero(self):
-        return self.decl().kind() == Z3_OP_FPA_PLUS_ZERO or self.decl().kind() == Z3_OP_FPA_MINUS_ZERO
-
-    def isNegative(self):
-        k = self.decl().kind()
-        return (self.num_args() == 0 and (k == Z3_OP_FPA_MINUS_INF or k == Z3_OP_FPA_MINUS_ZERO)) or (self.sign() == True)
-
-    """
-    The sign of the numeral.
-
-    >>> x = FPNumRef(+1.0, FPSort(8, 24))
+    >>> x = FPVal(+1.0, FPSort(8, 24))
     >>> x.sign()
     False
-    >>> x = FPNumRef(-1.0, FPSort(8, 24))
+    >>> x = FPVal(-1.0, FPSort(8, 24))
     >>> x.sign()
     True
     """
@@ -8399,49 +8468,104 @@ class FPNumRef(FPRef):
             raise Z3Exception("error retrieving the sign of a numeral.")
         return l.value != 0
 
+    """The sign of a floating-point numeral as a bit-vector expression.
+    
+    Remark: NaN's are invalid arguments.
     """
-    The significand of the numeral.
+    def sign_as_bv(self):
+        return BitVecNumRef(Z3_fpa_get_numeral_sign_bv(self.ctx.ref(), self.as_ast()), self.ctx)
 
-    >>> x = FPNumRef(2.5, FPSort(8, 24))
+    """The significand of the numeral.
+
+    >>> x = FPVal(2.5, FPSort(8, 24))
     >>> x.significand()
     1.25
     """
     def significand(self):
         return Z3_fpa_get_numeral_significand_string(self.ctx.ref(), self.as_ast())
 
-    """
-    The exponent of the numeral.
+    """The significand of the numeral as a long.
 
-    >>> x = FPNumRef(2.5, FPSort(8, 24))
+    >>> x = FPVal(2.5, FPSort(8, 24))
+    >>> x.significand_as_long()
+    1.25
+    """
+    def significand_as_long(self):
+        return Z3_fpa_get_numeral_significand_uint64(self.ctx.ref(), self.as_ast())
+    
+    """The significand of the numeral as a bit-vector expression.
+
+    Remark: NaN are invalid arguments.
+    """
+    def significand_as_bv(self):
+        return BitVecNumRef(Z3_fpa_get_numeral_significand_bv(self.ctx.ref(), self.as_ast()), self.ctx)
+
+    """The exponent of the numeral.
+
+    >>> x = FPVal(2.5, FPSort(8, 24))
     >>> x.exponent()
     1
     """
-    def exponent(self):
-        return Z3_fpa_get_numeral_exponent_string(self.ctx.ref(), self.as_ast())
+    def exponent(self, biased=True):
+        return Z3_fpa_get_numeral_exponent_string(self.ctx.ref(), self.as_ast(), biased)
 
-    """
-    The exponent of the numeral as a long.
+    """The exponent of the numeral as a long.
 
-    >>> x = FPNumRef(2.5, FPSort(8, 24))
+    >>> x = FPVal(2.5, FPSort(8, 24))
     >>> x.exponent_as_long()
     1
     """
-    def exponent_as_long(self):
+    def exponent_as_long(self, biased=True):
         ptr = (ctypes.c_longlong * 1)()
-        if not Z3_fpa_get_numeral_exponent_int64(self.ctx.ref(), self.as_ast(), ptr):
+        if not Z3_fpa_get_numeral_exponent_int64(self.ctx.ref(), self.as_ast(), ptr, biased):
             raise Z3Exception("error retrieving the exponent of a numeral.")
         return ptr[0]
+
+    """The exponent of the numeral as a bit-vector expression.
+
+    Remark: NaNs are invalid arguments.
+    """
+    def exponent_as_bv(self, biased=True):
+        return BitVecNumRef(Z3_fpa_get_numeral_exponent_bv(self.ctx.ref(), self.as_ast(), biased), self.ctx)
+
+    """Indicates whether the numeral is a NaN."""
+    def isNaN(self):
+        return Z3_fpa_is_numeral_nan(self.ctx.ref(), self.as_ast())
+
+    """Indicates whether the numeral is +oo or -oo."""
+    def isInf(self):
+        return Z3_fpa_is_numeral_inf(self.ctx.ref(), self.as_ast())
+
+    """Indicates whether the numeral is +zero or -zero."""
+    def isZero(self):
+        return Z3_fpa_is_numeral_zero(self.ctx.ref(), self.as_ast())
+
+    """Indicates whether the numeral is normal."""
+    def isNormal(self):
+        return Z3_fpa_is_numeral_normal(self.ctx.ref(), self.as_ast())
+
+    """Indicates whether the numeral is subnormal."""
+    def isSubnormal(self):
+        return Z3_fpa_is_numeral_subnormal(self.ctx.ref(), self.as_ast())
+
+    """Indicates whether the numeral is postitive."""
+    def isPositive(self):
+        return Z3_fpa_is_numeral_positive(self.ctx.ref(), self.as_ast())
+
+    """Indicates whether the numeral is negative."""
+    def isNegative(self):
+        return Z3_fpa_is_numeral_negative(self.ctx.ref(), self.as_ast())
 
     """
     The string representation of the numeral.
 
-    >>> x = FPNumRef(20, FPSort(8, 24))
+    >>> x = FPVal(20, FPSort(8, 24))
     >>> x.as_string()
     1.25*(2**4)
     """
     def as_string(self):
-        s = Z3_fpa_get_numeral_string(self.ctx.ref(), self.as_ast())
-        return ("FPVal(%s, %s)" % (s, FPSortRef(self.sort()).as_string()))
+        s = Z3_get_numeral_string(self.ctx.ref(), self.as_ast())
+        return ("FPVal(%s, %s)" % (s, self.sort()))
 
 def is_fp(a):
     """Return `True` if `a` is a Z3 floating-point expression.
@@ -8481,7 +8605,7 @@ def FPSort(ebits, sbits, ctx=None):
     >>> eq(x, FP('x', FPSort(8, 24)))
     True
     """
-    ctx = z3._get_ctx(ctx)
+    ctx = _get_ctx(ctx)
     return FPSortRef(Z3_mk_fpa_sort(ctx.ref(), ebits, sbits), ctx)
 
 def _to_float_str(val, exp=0):
@@ -8593,7 +8717,7 @@ def FPVal(sig, exp=None, fps=None, ctx=None):
     >>> v = FPVal(20.0, FPSort(8, 24))
     >>> v
     1.25*(2**4)
-    >>> print("0x%.8x" % v.exponent_as_long())
+    >>> print("0x%.8x" % v.exponent_as_long(False))
     0x00000004
     >>> v = FPVal(2.25, FPSort(8, 24))
     >>> v
@@ -8667,7 +8791,7 @@ def FPs(names, fpsort, ctx=None):
     >>> fpMul(RNE(), fpAdd(RNE(), x, y), z)
     fpMul(RNE(), fpAdd(RNE(), x, y), z)
     """
-    ctx = z3._get_ctx(ctx)
+    ctx = _get_ctx(ctx)
     if isinstance(names, str):
         names = names.split(" ")
     return [FP(name, fpsort, ctx) for name in names]

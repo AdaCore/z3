@@ -637,6 +637,14 @@ br_status seq_rewriter::mk_seq_replace(expr* a, expr* b, expr* c, expr_ref& resu
         result = a;
         return BR_DONE;
     }
+    if (m_util.str.is_string(b, s2) && s2.length() == 0) {
+        result = m_util.str.mk_concat(a, c);
+        return BR_REWRITE1;
+    }
+    if (m_util.str.is_string(a, s1) && s1.length() == 0) {
+        result = a;
+        return BR_DONE;
+    }
     return BR_FAILED;
 }
 
@@ -880,6 +888,11 @@ br_status seq_rewriter::mk_str_stoi(expr* a, expr_ref& result) {
         }
         rational r(s.c_str());
         result = m_autil.mk_numeral(r, true);
+        return BR_DONE;
+    }
+    expr* b;
+    if (m_util.str.is_itos(a, b)) {
+        result = b;
         return BR_DONE;
     }
     return BR_FAILED;
@@ -1483,7 +1496,7 @@ bool seq_rewriter::reduce_eq(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_
         lchange = true;
     }
 
-    bool is_sat;
+    bool is_sat = true;
     unsigned szl = ls.size() - head1, szr = rs.size() - head2;
     expr* const* _ls = ls.c_ptr() + head1, * const* _rs = rs.c_ptr() + head2;
 
@@ -1680,11 +1693,11 @@ bool seq_rewriter::solve_itos(unsigned szl, expr* const* ls, unsigned szr, expr*
                               expr_ref_vector& lhs, expr_ref_vector& rhs, bool& is_sat) {
 
     expr* l, *r;
+    is_sat = true;
     if (szl == 1 && m_util.str.is_itos(ls[0], l)) {
         if (szr == 1 && m_util.str.is_itos(rs[0], r)) {
             lhs.push_back(l);
             rhs.push_back(r);
-            is_sat = true;
             return true;
         }
         zstring s;

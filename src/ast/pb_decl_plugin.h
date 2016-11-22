@@ -73,6 +73,8 @@ public:
                                      unsigned arity, sort * const * domain, sort * range);
     virtual void get_op_names(svector<builtin_name> & op_names, symbol const & logic);
 
+    virtual bool is_considered_uninterpreted(func_decl * f) { return false; }
+
 };
 
 
@@ -80,6 +82,7 @@ class pb_util {
     ast_manager & m;
     family_id     m_fid;
     vector<rational> m_coeffs;
+    vector<parameter> m_params;
     rational         m_k;
     void normalize(unsigned num_args, rational const* coeffs, rational const& k);
 public:
