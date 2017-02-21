@@ -35,6 +35,9 @@ Revision History:
 #include"error_codes.h"
 #include"gparams.h"
 #include"env_params.h"
+#ifdef _WINDOWS
+#include<windows.h>
+#endif
 
 typedef enum { IN_UNSPECIFIED, IN_SMTLIB, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_WCNF, IN_OPB, IN_Z3_LOG } input_kind;
 
@@ -304,6 +307,9 @@ char const * get_extension(char const * file_name) {
 
 int STD_CALL main(int argc, char ** argv) {
     try{
+#ifdef _WINDOWS
+        SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+#endif
         unsigned return_value = 0;
         memory::initialize(0);
         memory::exit_when_out_of_memory(true, "ERROR: out of memory");
