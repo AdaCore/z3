@@ -99,6 +99,16 @@ unsigned get_max_len(ptr_buffer<char> & keys) {
     return max;
 }
 
+/** In GNATprove we only need few statistics and do not want to store all of
+ *  them when caching prover's outputs. In the INIT_DISPLAY macro below the
+ *  selected statistics are explicitly pushed into the keys vector.
+ *
+ *  The original code was coping all keys from the maps with unsigned and
+ *  double data:
+ *    get_keys(m_u, keys);
+ *    get_keys(m_d, keys);
+ */
+
 void statistics::display_smt2(std::ostream & out) const {   
 #define INIT_DISPLAY()                                  \
     key2val m_u;                                        \
@@ -106,8 +116,7 @@ void statistics::display_smt2(std::ostream & out) const {
     mk_map(m_stats, m_u);                               \
     mk_map(m_d_stats, m_d);                             \
     ptr_buffer<char> keys;                              \
-    get_keys(m_u, keys);                                \
-    get_keys(m_d, keys);                                \
+    keys.push_back(const_cast<char*>("rlimit count"));  \
     std::sort(keys.begin(), keys.end(), str_lt());      \
     unsigned max = get_max_len(keys);                   
 
