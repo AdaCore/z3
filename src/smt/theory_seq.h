@@ -19,16 +19,16 @@ Revision History:
 #ifndef THEORY_SEQ_H_
 #define THEORY_SEQ_H_
 
-#include "smt_theory.h"
-#include "seq_decl_plugin.h"
-#include "theory_seq_empty.h"
-#include "th_rewriter.h"
-#include "ast_trail.h"
-#include "scoped_vector.h"
-#include "scoped_ptr_vector.h"
-#include "automaton.h"
-#include "seq_rewriter.h"
-#include "union_find.h"
+#include "smt/smt_theory.h"
+#include "ast/seq_decl_plugin.h"
+#include "smt/theory_seq_empty.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "ast/ast_trail.h"
+#include "util/scoped_vector.h"
+#include "util/scoped_ptr_vector.h"
+#include "math/automata/automaton.h"
+#include "ast/rewriter/seq_rewriter.h"
+#include "util/union_find.h"
 
 namespace smt {
 
@@ -328,6 +328,7 @@ namespace smt {
         // maintain automata with regular expressions.
         scoped_ptr_vector<eautomaton>  m_automata;
         obj_map<expr, eautomaton*>     m_re2aut;
+        expr_ref_vector                m_res;
 
         // queue of asserted atoms
         ptr_vector<expr>               m_atoms;
@@ -341,9 +342,9 @@ namespace smt {
 
         virtual void init(context* ctx);
         virtual final_check_status final_check_eh();
-        virtual bool internalize_atom(app* atom, bool) { return internalize_term(atom); }
-        virtual bool internalize_term(app*);
-        virtual void internalize_eq_eh(app * atom, bool_var v) {}
+        virtual bool internalize_atom(app* atom, bool);
+        virtual bool internalize_term(app*);        
+        virtual void internalize_eq_eh(app * atom, bool_var v);
         virtual void new_eq_eh(theory_var, theory_var);
         virtual void new_diseq_eh(theory_var, theory_var);
         virtual void assign_eh(bool_var v, bool is_true);        
@@ -361,6 +362,7 @@ namespace smt {
         virtual void collect_statistics(::statistics & st) const;
         virtual model_value_proc * mk_value(enode * n, model_generator & mg);
         virtual void init_model(model_generator & mg);
+        virtual void init_search_eh();
 
         void init_model(expr_ref_vector const& es);
         // final check 
@@ -387,6 +389,7 @@ namespace smt {
                            vector<rational> const& ll, vector<rational> const& rl);
         bool set_empty(expr* x);
         bool is_complex(eq const& e);
+        bool internalize_re(expr* e);
 
         bool check_extensionality();
         bool check_contains();
@@ -461,7 +464,10 @@ namespace smt {
         expr_ref canonize(expr* e, dependency*& eqs);
         bool canonize(expr* e, expr_ref_vector& es, dependency*& eqs);
         bool canonize(expr_ref_vector const& es, expr_ref_vector& result, dependency*& eqs);
+        ptr_vector<expr> m_expand_todo;
         expr_ref expand(expr* e, dependency*& eqs);
+        expr_ref expand1(expr* e, dependency*& eqs);
+        expr_ref try_expand(expr* e, dependency*& eqs);
         void add_dependency(dependency*& dep, enode* a, enode* b);
 
         void get_concat(expr* e, ptr_vector<expr>& concats);
@@ -499,6 +505,8 @@ namespace smt {
         void add_in_re_axiom(expr* n);
         bool add_stoi_axiom(expr* n);
         bool add_itos_axiom(expr* n);
+        literal is_digit(expr* ch);
+        expr_ref digit2int(expr* ch);
         void add_itos_length_axiom(expr* n);
         literal mk_literal(expr* n);
         literal mk_eq_empty(expr* n, bool phase = true);
@@ -512,7 +520,7 @@ namespace smt {
 
 
         // arithmetic integration
-        bool get_value(expr* s, rational& val) const;
+        bool get_num_value(expr* s, rational& val) const;
         bool lower_bound(expr* s, rational& lo) const;
         bool upper_bound(expr* s, rational& hi) const;
         bool get_length(expr* s, rational& val) const;
@@ -568,6 +576,7 @@ namespace smt {
         void display_disequation(std::ostream& out, ne const& e) const;
         void display_deps(std::ostream& out, dependency* deps) const;
         void display_deps(std::ostream& out, literal_vector const& lits, enode_pair_vector const& eqs) const;
+        void display_nc(std::ostream& out, nc const& nc) const;
     public:
         theory_seq(ast_manager& m);
         virtual ~theory_seq();

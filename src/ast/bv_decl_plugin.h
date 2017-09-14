@@ -19,7 +19,7 @@ Revision History:
 #ifndef BV_DECL_PLUGIN_H_
 #define BV_DECL_PLUGIN_H_
 
-#include"ast.h"
+#include "ast/ast.h"
 
 enum bv_sort_kind {
     BV_SORT
@@ -293,6 +293,7 @@ public:
     family_id get_fid() const { return m_afid; }
     family_id get_family_id() const { return get_fid(); }
 
+    bool is_numeral(expr const * n, rational & val) const;
     bool is_numeral(expr const * n, rational & val, unsigned & bv_size) const;
     bool is_numeral(expr const * n) const { return is_app_of(n, get_fid(), OP_BV_NUM); }
     bool is_allone(expr const * e) const;
@@ -381,9 +382,9 @@ public:
 
     ast_manager & get_manager() const { return m_manager; }
 
-    app * mk_numeral(rational const & val, sort* s);
-    app * mk_numeral(rational const & val, unsigned bv_size);
-    app * mk_numeral(uint64 u, unsigned bv_size) { return mk_numeral(rational(u, rational::ui64()), bv_size); }
+    app * mk_numeral(rational const & val, sort* s) const;
+    app * mk_numeral(rational const & val, unsigned bv_size) const;
+    app * mk_numeral(uint64 u, unsigned bv_size) const { return mk_numeral(rational(u, rational::ui64()), bv_size); }
     sort * mk_sort(unsigned bv_size);
 
     unsigned get_bv_size(sort const * s) const {
@@ -406,11 +407,11 @@ public:
     app * mk_bv_not(expr * arg) { return m_manager.mk_app(get_fid(), OP_BNOT, arg); }
     app * mk_bv_xor(unsigned num, expr * const * args) { return m_manager.mk_app(get_fid(), OP_BXOR, num, args);  }
     app * mk_bv_neg(expr * arg) { return m_manager.mk_app(get_fid(), OP_BNEG, arg); }
-    app * mk_bv_urem(expr * arg1, expr * arg2) { return m_manager.mk_app(get_fid(), OP_BUREM, arg1, arg2); }
-    app * mk_bv_srem(expr * arg1, expr * arg2) { return m_manager.mk_app(get_fid(), OP_BSREM, arg1, arg2); }
-    app * mk_bv_add(expr * arg1, expr * arg2) { return m_manager.mk_app(get_fid(), OP_BADD, arg1, arg2); }
-    app * mk_bv_sub(expr * arg1, expr * arg2) { return m_manager.mk_app(get_fid(), OP_BSUB, arg1, arg2); }
-    app * mk_bv_mul(expr * arg1, expr * arg2) { return m_manager.mk_app(get_fid(), OP_BMUL, arg1, arg2); }
+    app * mk_bv_urem(expr * arg1, expr * arg2) const { return m_manager.mk_app(get_fid(), OP_BUREM, arg1, arg2); }
+    app * mk_bv_srem(expr * arg1, expr * arg2) const { return m_manager.mk_app(get_fid(), OP_BSREM, arg1, arg2); }
+    app * mk_bv_add(expr * arg1, expr * arg2) const { return m_manager.mk_app(get_fid(), OP_BADD, arg1, arg2); }
+    app * mk_bv_sub(expr * arg1, expr * arg2) const { return m_manager.mk_app(get_fid(), OP_BSUB, arg1, arg2); }
+    app * mk_bv_mul(expr * arg1, expr * arg2) const { return m_manager.mk_app(get_fid(), OP_BMUL, arg1, arg2); }
     app * mk_zero_extend(unsigned n, expr* e) {
         parameter p(n);
         return m_manager.mk_app(get_fid(), OP_ZERO_EXT, 1, &p, 1, &e);

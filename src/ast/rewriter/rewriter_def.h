@@ -16,8 +16,9 @@ Author:
 Notes:
 
 --*/
-#include"rewriter.h"
-#include"ast_smt2_pp.h"
+#include "ast/rewriter/rewriter.h"
+#include "ast/ast_smt2_pp.h"
+#include "ast/ast_ll_pp.h"
 
 template<typename Config>
 template<bool ProofGen>
@@ -175,6 +176,37 @@ bool rewriter_tpl<Config>::visit(expr * t, unsigned max_depth) {
 }
 
 template<typename Config>
+bool rewriter_tpl<Config>::constant_fold(app * t, frame & fr) {
+    if (fr.m_i == 1 && m().is_ite(t)) {
+        expr * cond = result_stack()[fr.m_spos].get();
+        expr* arg = 0;
+        if (m().is_true(cond)) {
+            arg = t->get_arg(1);
+        }
+        else if (m().is_false(cond)) {
+            arg = t->get_arg(2);
+        }
+        if (arg) {
+            result_stack().shrink(fr.m_spos);
+            result_stack().push_back(arg);
+            fr.m_state = REWRITE_BUILTIN;
+            if (visit<false>(arg, fr.m_max_depth)) {
+                m_r = result_stack().back();
+                result_stack().pop_back();
+                result_stack().pop_back();
+                result_stack().push_back(m_r);
+                cache_result<false>(t, m_r, m_pr, fr.m_cache_result);
+                frame_stack().pop_back();
+                set_new_child_flag(t);
+            }
+            m_r = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
+template<typename Config>
 template<bool ProofGen>
 void rewriter_tpl<Config>::process_app(app * t, frame & fr) {
     SASSERT(t->get_num_args() > 0);
@@ -183,10 +215,15 @@ void rewriter_tpl<Config>::process_app(app * t, frame & fr) {
     case PROCESS_CHILDREN: {
         unsigned num_args = t->get_num_args();
         while (fr.m_i < num_args) {
+            if (!ProofGen && constant_fold(t, fr)) {
+                return;
+            }
             expr * arg = t->get_arg(fr.m_i);
             fr.m_i++;
             if (!visit<ProofGen>(arg, fr.m_max_depth))
                 return;
+
+
         }
         func_decl * f = t->get_decl();
 
@@ -223,10 +260,10 @@ void rewriter_tpl<Config>::process_app(app * t, frame & fr) {
         }
         br_status st = m_cfg.reduce_app(f, new_num_args, new_args, m_r, m_pr2);
         SASSERT(st != BR_DONE || m().get_sort(m_r) == m().get_sort(t));
-        TRACE("reduce_app",
-              tout << mk_ismt2_pp(t, m()) << "\n";
+        CTRACE("reduce_app", st != BR_FAILED,
+              tout << mk_bounded_pp(t, m()) << "\n";
               tout << "st: " << st;
-              if (m_r) tout << " --->\n" << mk_ismt2_pp(m_r, m());
+              if (m_r) tout << " --->\n" << mk_bounded_pp(m_r, m());
               tout << "\n";);
         if (st != BR_FAILED) {
             result_stack().shrink(fr.m_spos);
@@ -460,6 +497,7 @@ void rewriter_tpl<Config>::process_quantifier(quantifier * q, frame & fr) {
     expr * const * new_pats;
     expr * const * new_no_pats;
     if (rewrite_patterns()) {
+        TRACE("reduce_quantifier_bug", tout << "rewrite patterns\n";);
         new_pats    = it + 1;
         new_no_pats = new_pats + q->get_num_patterns();
     }
@@ -482,7 +520,7 @@ void rewriter_tpl<Config>::process_quantifier(quantifier * q, frame & fr) {
     }
     else {
         expr_ref tmp(m());
-
+        TRACE("reduce_quantifier_bug", tout << mk_ismt2_pp(q, m()) << " " << mk_ismt2_pp(new_body, m()) << "\n";);
         if (!m_cfg.reduce_quantifier(q, new_body, new_pats, new_no_pats, m_r, m_pr)) {
             if (fr.m_new_child) {
                 m_r = m().update_quantifier(q, q->get_num_patterns(), new_pats, q->get_num_no_patterns(), new_no_pats, new_body);

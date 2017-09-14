@@ -25,8 +25,8 @@
 #pragma warning(disable:4267)
 #endif
 
-#include "duality.h"
-#include "duality_profiling.h"
+#include "duality/duality.h"
+#include "duality/duality_profiling.h"
 
 #include <stdio.h>
 #include <set>
@@ -3099,7 +3099,7 @@ namespace Duality {
             // Maps nodes of derivation tree into old subtree
             hash_map<Node *, Node*> cex_map;
       
-            virtual void ChooseExpand(const std::set<RPFP::Node *> &choices, std::set<RPFP::Node *> &best){
+            virtual void ChooseExpand(const std::set<RPFP::Node *> &choices, std::set<RPFP::Node *> &best, bool, bool){
                 if(old_node == 0){
                     Heuristic::ChooseExpand(choices,best);
                     return;

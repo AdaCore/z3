@@ -18,13 +18,13 @@ Author:
 Revision History:
 
 --*/
-#include"ast_smt2_pp.h"
-#include"shared_occs.h"
-#include"pp.h"
-#include"ast_ll_pp.h"
-#include"ast_pp.h"
-#include"algebraic_numbers.h"
-#include"pp_params.hpp"
+#include "ast/ast_smt2_pp.h"
+#include "ast/shared_occs.h"
+#include "ast/pp.h"
+#include "ast/ast_ll_pp.h"
+#include "ast/ast_pp.h"
+#include "math/polynomial/algebraic_numbers.h"
+#include "ast/pp_params.hpp"
 using namespace format_ns;
 
 #define ALIAS_PREFIX "a"
@@ -42,6 +42,9 @@ format * smt2_pp_environment::pp_fdecl_name(symbol const & s, unsigned & len) co
         std::string str = s.str();
         len = static_cast<unsigned>(str.length());
         return mk_string(m, str.c_str());
+    }
+    else if (!s.bare_str()) {
+        return mk_string(m, "null");
     }
     else {
         len = static_cast<unsigned>(strlen(s.bare_str()));
@@ -429,7 +432,17 @@ format_ns::format * smt2_pp_environment::pp_sort(sort * s) {
     if ((get_sutil().is_seq(s) || get_sutil().is_re(s)) && !get_sutil().is_string(s)) {
         ptr_buffer<format> fs;
         fs.push_back(pp_sort(to_sort(s->get_parameter(0).get_ast())));
-        return mk_seq1(m, fs.begin(), fs.end(), f2f(), get_sutil().is_seq(s)?"Seq":"Re");
+        return mk_seq1(m, fs.begin(), fs.end(), f2f(), get_sutil().is_seq(s)?"Seq":"RegEx");
+    }
+    if (get_dtutil().is_datatype(s)) {
+        unsigned sz = get_dtutil().get_datatype_num_parameter_sorts(s);
+        if (sz > 0) {
+            ptr_buffer<format> fs;            
+            for (unsigned i = 0; i < sz; i++) {
+                fs.push_back(pp_sort(get_dtutil().get_datatype_parameter_sort(s, i)));
+            }
+            return mk_seq1(m, fs.begin(), fs.end(), f2f(), s->get_name().str().c_str());        
+        }
     }
     return format_ns::mk_string(get_manager(), s->get_name().str().c_str());
 }
@@ -557,7 +570,14 @@ class smt2_printer {
         format * f;
         if (v->get_idx() < m_var_names.size()) {
             symbol s = m_var_names[m_var_names.size() - v->get_idx() - 1];
-            f = mk_string(m(), s.str().c_str());
+            std::string vname;
+            if (is_smt2_quoted_symbol (s)) {
+                vname = mk_smt2_quoted_symbol (s);
+            }
+            else {
+                vname = s.str();
+            }
+            f = mk_string(m(), vname.c_str ());
         }
         else {
             // fallback... it is not supposed to happen when the printer is correctly used.
@@ -884,7 +904,14 @@ class smt2_printer {
         symbol * it = m_var_names.end() - num_decls;
         for (unsigned i = 0; i < num_decls; i++, it++) {
             format * fs[1] = { m_env.pp_sort(q->get_decl_sort(i)) };
-            buf.push_back(mk_seq1<format**,f2f>(m(), fs, fs+1, f2f(), it->str().c_str()));
+            std::string var_name;
+            if (is_smt2_quoted_symbol (*it)) {
+                var_name = mk_smt2_quoted_symbol (*it);
+            }
+            else {
+              var_name = it->str ();\
+            }
+            buf.push_back(mk_seq1<format**,f2f>(m(), fs, fs+1, f2f(), var_name.c_str ()));
         }
         return mk_seq5(m(), buf.begin(), buf.end(), f2f());
     }
@@ -1002,14 +1029,6 @@ class smt2_printer {
         reset_stacks();
         SASSERT(&(r.get_manager()) == &(fm()));
         m_soccs(n);
-        TRACE("smt2_pp_shared",
-              tout << "shared terms for:\n" << mk_pp(n, m()) << "\n";
-              tout << "------>\n";
-              shared_occs::iterator it  = m_soccs.begin_shared();
-              shared_occs::iterator end = m_soccs.end_shared();
-              for (; it != end; ++it) {
-                  tout << mk_pp(*it, m()) << "\n";
-              });
         m_root = n;
         push_frame(n, true);
         while (!m_frame_stack.empty()) {
@@ -1206,14 +1225,14 @@ mk_ismt2_pp::mk_ismt2_pp(ast * t, ast_manager & m, unsigned indent, unsigned num
 
 std::ostream& operator<<(std::ostream& out, mk_ismt2_pp const & p) {
     smt2_pp_environment_dbg env(p.m_manager);    
-    if (is_expr(p.m_ast)) {
+    if (p.m_ast == 0) {
+        out << "null";
+    }
+    else if (is_expr(p.m_ast)) {
         ast_smt2_pp(out, to_expr(p.m_ast), env, p.m_params, p.m_indent, p.m_num_vars, p.m_var_prefix);
     }
     else if (is_sort(p.m_ast)) {
         ast_smt2_pp(out, to_sort(p.m_ast), env, p.m_params, p.m_indent);
-    }
-    else if (p.m_ast == 0) {
-        out << "null";
     }
     else {
         SASSERT(is_func_decl(p.m_ast));

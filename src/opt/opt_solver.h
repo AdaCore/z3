@@ -21,16 +21,16 @@ Notes:
 #ifndef OPT_SOLVER_H_
 #define OPT_SOLVER_H_
 
-#include"inf_rational.h"
-#include"inf_eps_rational.h"
-#include"ast.h"
-#include"params.h"
-#include"solver_na2as.h"
-#include"smt_kernel.h"
-#include"smt_params.h"
-#include"smt_types.h"
-#include"theory_opt.h"
-#include"filter_model_converter.h"
+#include "util/inf_rational.h"
+#include "util/inf_eps_rational.h"
+#include "ast/ast.h"
+#include "util/params.h"
+#include "solver/solver_na2as.h"
+#include "smt/smt_kernel.h"
+#include "smt/params/smt_params.h"
+#include "smt/smt_types.h"
+#include "smt/theory_opt.h"
+#include "tactic/filter_model_converter.h"
 
 namespace opt {
 
@@ -88,7 +88,7 @@ namespace opt {
         virtual ~opt_solver();
 
         virtual solver* translate(ast_manager& m, params_ref const& p);
-        virtual void updt_params(params_ref & p);
+        virtual void updt_params(params_ref const& p);
         virtual void collect_param_descrs(param_descrs & r);
         virtual void collect_statistics(statistics & st) const;
         virtual void assert_expr(expr * t);
@@ -104,9 +104,9 @@ namespace opt {
         virtual void set_progress_callback(progress_callback * callback);
         virtual unsigned get_num_assertions() const;
         virtual expr * get_assertion(unsigned idx) const;
-        virtual std::ostream& display(std::ostream & out) const;
         virtual ast_manager& get_manager() const { return m; } 
         virtual lbool find_mutexes(expr_ref_vector const& vars, vector<expr_ref_vector>& mutexes);
+        virtual lbool preferred_sat(expr_ref_vector const& asms, vector<expr_ref_vector>& cores);
         void set_logic(symbol const& logic);
 
         smt::theory_var add_objective(app* term);

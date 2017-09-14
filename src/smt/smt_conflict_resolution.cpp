@@ -16,10 +16,10 @@ Author:
 Revision History:
 
 --*/
-#include"smt_context.h"
-#include"smt_conflict_resolution.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h"
+#include "smt/smt_context.h"
+#include "smt/smt_conflict_resolution.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
 
 namespace smt {
 
@@ -59,9 +59,9 @@ namespace smt {
         SASSERT(n->trans_reaches(n->get_root()));
         while (n) {
             if (Set)
-                n->set_mark();
+                n->set_mark2();
             else
-                n->unset_mark();
+                n->unset_mark2();
             n = n->m_trans.m_target;
         }
     }
@@ -84,7 +84,7 @@ namespace smt {
         mark_enodes_in_trans<true>(n1);
         while (true) {
             SASSERT(n2);
-            if (n2->is_marked()) {
+            if (n2->is_marked2()) {
                 mark_enodes_in_trans<false>(n1);
                 return n2;
             }
@@ -348,10 +348,8 @@ namespace smt {
         literal_vector & antecedents = m_tmp_literal_vector;
         antecedents.reset();
         justification2literals_core(js, antecedents);
-        literal_vector::iterator it  = antecedents.begin();
-        literal_vector::iterator end = antecedents.end();
-        for(; it != end; ++it)
-            process_antecedent(*it, num_marks);
+        for (literal l : antecedents)
+            process_antecedent(l, num_marks);
     }
 
     /**
@@ -496,13 +494,15 @@ namespace smt {
 
         unsigned idx = skip_literals_above_conflict_level();
 
+        TRACE("conflict", m_ctx.display_literal_verbose(tout, not_l); m_ctx.display(tout << " ", conflict););
+
         // save space for first uip
         m_lemma.push_back(null_literal);
         m_lemma_atoms.push_back(0);
 
         unsigned num_marks = 0;
         if (not_l != null_literal) {
-            TRACE("conflict", tout << "not_l: "; m_ctx.display_literal(tout, not_l); tout << "\n";);
+            TRACE("conflict", tout << "not_l: "; m_ctx.display_literal_verbose(tout, not_l); tout << "\n";);
             process_antecedent(not_l, num_marks);
         }
 
@@ -514,12 +514,14 @@ namespace smt {
                 get_manager().trace_stream() << "\n";
             }
 
-            TRACE("conflict", tout << "processing consequent: "; m_ctx.display_literal(tout, consequent); tout << "\n";
-                  tout << "num_marks: " << num_marks << ", js kind: " << js.get_kind() << "\n";);
+            TRACE("conflict", tout << "processing consequent: "; m_ctx.display_literal_verbose(tout, consequent); tout << "\n";
+                  tout << "num_marks: " << num_marks << ", js kind: " << js.get_kind() << " level: " << m_ctx.get_assign_level(consequent) << "\n";
+                  );
             SASSERT(js != null_b_justification);
             switch (js.get_kind()) {
             case b_justification::CLAUSE: {
                 clause * cls = js.get_clause();
+                TRACE("conflict", m_ctx.display_clause_detail(tout, cls););
                 if (cls->is_lemma())
                     cls->inc_clause_activity();
                 unsigned num_lits = cls->get_num_literals();
@@ -564,7 +566,7 @@ namespace smt {
                 if (m_ctx.is_marked(l.var()))
                     break;
                 CTRACE("conflict", m_ctx.get_assign_level(l) != m_conflict_lvl && m_ctx.get_assign_level(l) != m_ctx.get_base_level(),
-                       tout << "assign_level(l): " << m_ctx.get_assign_level(l) << ", conflict_lvl: " << m_conflict_lvl << ", l: "; m_ctx.display_literal(tout, l);
+                       tout << "assign_level(l): " << m_ctx.get_assign_level(l) << ", conflict_lvl: " << m_conflict_lvl << ", l: "; m_ctx.display_literal_verbose(tout, l);
                        tout << "\n";);
                 SASSERT(m_ctx.get_assign_level(l) == m_conflict_lvl ||
                         // it may also be an (out-of-order) asserted literal
@@ -1076,6 +1078,7 @@ namespace smt {
             return true;
         SASSERT(js.get_kind() != b_justification::BIN_CLAUSE);
         CTRACE("visit_b_justification_bug", js.get_kind() == b_justification::AXIOM, tout << "l: " << l << "\n"; m_ctx.display(tout););
+
         if (js.get_kind() == b_justification::AXIOM) 
             return true;
         SASSERT(js.get_kind() != b_justification::AXIOM);
@@ -1089,14 +1092,17 @@ namespace smt {
                     i = 1;
                 }
                 else {
+                    SASSERT(cls->get_literal(1) == l);
                     if (get_proof(~cls->get_literal(0)) == 0)
                         visited = false;
                     i = 2;
                 }
             }
-            for (; i < num_lits; i++)
+            for (; i < num_lits; i++) {
+                SASSERT(cls->get_literal(i) != l);
                 if (get_proof(~cls->get_literal(i)) == 0)
                     visited = false;
+            }
             return visited;
         }
         else
@@ -1251,14 +1257,19 @@ namespace smt {
               }
               tout << "\n";);
         init_mk_proof();
-        literal consequent  = false_literal;
-        if (not_l != null_literal)
-            consequent      = ~not_l;
-        visit_b_justification(consequent, conflict);
-        if (not_l != null_literal)
+        literal consequent;
+        if (not_l == null_literal) {
+            consequent = false_literal;
+        }
+        else {
+            consequent = ~not_l;
             m_todo_pr.push_back(tp_elem(not_l));
+        }
+        visit_b_justification(consequent, conflict);
+        
         while (!m_todo_pr.empty()) {
             tp_elem & elem = m_todo_pr.back();
+
             switch (elem.m_kind) {
             case tp_elem::EQUALITY: {
                 enode * lhs        = elem.m_lhs;
@@ -1394,6 +1405,7 @@ namespace smt {
             switch (js.get_kind()) {
             case b_justification::CLAUSE: {
                 clause * cls = js.get_clause();
+                TRACE("unsat_core_bug", m_ctx.display_clause_detail(tout, cls););
                 unsigned num_lits = cls->get_num_literals();
                 unsigned i        = 0;
                 if (consequent != false_literal) {
@@ -1411,8 +1423,9 @@ namespace smt {
                     process_antecedent_for_unsat_core(~l);
                 }
                 justification * js = cls->get_justification();
-                if (js)
+                if (js) {
                     process_justification_for_unsat_core(js);
+                }
                 break;
             }
             case b_justification::BIN_CLAUSE:

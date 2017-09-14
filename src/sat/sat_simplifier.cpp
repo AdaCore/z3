@@ -18,11 +18,11 @@ Author:
 Revision History:
 
 --*/
-#include"sat_simplifier.h"
-#include"sat_simplifier_params.hpp"
-#include"sat_solver.h"
-#include"stopwatch.h"
-#include"trace.h"
+#include "sat/sat_simplifier.h"
+#include "sat/sat_simplifier_params.hpp"
+#include "sat/sat_solver.h"
+#include "util/stopwatch.h"
+#include "util/trace.h"
 
 namespace sat {
 
@@ -154,7 +154,8 @@ namespace sat {
         if (!m_subsumption && !m_elim_blocked_clauses && !m_resolution)
             return;
 
-
+        // solver::scoped_disable_checkpoint _scoped_disable_checkpoint(s);
+        
         initialize();
 
         CASSERT("sat_solver", s.check_invariant());
@@ -168,14 +169,12 @@ namespace sat {
         CASSERT("sat_solver", s.check_invariant());
         m_need_cleanup = false;
         m_use_list.init(s.num_vars());
-        init_visited();
-        bool learned_in_use_lists = false;
+        m_learned_in_use_lists = false;
         if (learned) {
             register_clauses(s.m_learned);
-            learned_in_use_lists = true;
+            m_learned_in_use_lists = true;
         }
         register_clauses(s.m_clauses);
-
 
         if (!learned && (m_elim_blocked_clauses || m_elim_blocked_clauses_at == m_num_calls))
             elim_blocked_clauses();
@@ -185,7 +184,9 @@ namespace sat {
 
         m_sub_counter  = m_subsumption_limit;
         m_elim_counter = m_res_limit;
-        unsigned old_num_elim_vars = m_num_elim_vars;
+        m_old_num_elim_vars = m_num_elim_vars;
+
+        scoped_finalize _scoped_finalize(*this);
 
         do {
             if (m_subsumption)
@@ -200,20 +201,22 @@ namespace sat {
                 break;
         }
         while (!m_sub_todo.empty());
+    }
 
-        bool vars_eliminated = m_num_elim_vars > old_num_elim_vars;
+    void simplifier::scoped_finalize_fn() {
+        bool vars_eliminated = m_num_elim_vars > m_old_num_elim_vars;
 
         if (m_need_cleanup) {
             TRACE("after_simplifier", tout << "cleanning watches...\n";);
             cleanup_watches();
-            cleanup_clauses(s.m_learned, true, vars_eliminated,  learned_in_use_lists);
+            cleanup_clauses(s.m_learned, true, vars_eliminated,  m_learned_in_use_lists);
             cleanup_clauses(s.m_clauses, false, vars_eliminated, true);
         }
         else {
             TRACE("after_simplifier", tout << "skipping cleanup...\n";);
             if (vars_eliminated) {
                 // must remove learned clauses with eliminated variables
-                cleanup_clauses(s.m_learned, true, true, learned_in_use_lists);
+                cleanup_clauses(s.m_learned, true, true, m_learned_in_use_lists);
             }
         }
         CASSERT("sat_solver", s.check_invariant());
@@ -280,7 +283,10 @@ namespace sat {
             unsigned sz = c.size();
             if (sz == 0) {
                 s.set_conflict(justification());
-                return;
+                for (; it != end; ++it, ++it2) {
+                    *it2 = *it;
+                }
+                break;
             }
             if (sz == 1) {
                 s.assign(c[0], justification());
@@ -896,7 +902,7 @@ namespace sat {
                 unsigned idx = l.index();
                 if (m_queue.contains(idx))
                     m_queue.decreased(idx);
-                else
+                else 
                     m_queue.insert(idx);
             }
             literal next() { SASSERT(!empty()); return to_literal(m_queue.erase_min()); }
@@ -918,16 +924,19 @@ namespace sat {
         }
 
         void insert(literal l) {
-            bool_var v = l.var();
-            if (s.is_external(v) || s.was_eliminated(v))
-                return;
             m_queue.insert(l);
+        }
+
+        bool process_var(bool_var v) {
+            return !s.is_external(v) && !s.was_eliminated(v);
         }
 
         void operator()(unsigned num_vars) {
             for (bool_var v = 0; v < num_vars; v++) {
-                insert(literal(v, false));
-                insert(literal(v, true));
+                if (process_var(v)) {
+                    insert(literal(v, false));
+                    insert(literal(v, true));
+                }
             }
             while (!m_queue.empty()) {
                 s.checkpoint();
@@ -941,9 +950,9 @@ namespace sat {
         void process(literal l) {
             TRACE("blocked_clause", tout << "processing: " << l << "\n";);
             model_converter::entry * new_entry = 0;
-            if (s.is_external(l.var()) || s.was_eliminated(l.var()))
+            if (!process_var(l.var())) {
                 return;
-
+            }
             {
                 m_to_remove.reset();
                 {
@@ -963,8 +972,10 @@ namespace sat {
                             mc.insert(*new_entry, c);
                             unsigned sz = c.size();
                             for (unsigned i = 0; i < sz; i++) {
-                                if (c[i] != l)
-                                    m_queue.decreased(~c[i]);
+                                literal lit = c[i];
+                                if (lit != l && process_var(lit.var())) {
+                                    m_queue.decreased(~lit);
+                                }
                             }
                         }
                         s.unmark_all(c);

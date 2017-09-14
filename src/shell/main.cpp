@@ -18,25 +18,26 @@ Revision History:
 
 --*/
 #include<iostream>
-#include"memory_manager.h"
-#include"trace.h"
-#include"debug.h"
-#include"util.h"
-#include"pp.h"
-#include"smtlib_frontend.h"
-#include"z3_log_frontend.h"
-#include"warning.h"
-#include"version.h"
-#include"dimacs_frontend.h"
-#include"datalog_frontend.h"
-#include"opt_frontend.h"
-#include"timeout.h"
-#include"z3_exception.h"
-#include"error_codes.h"
-#include"gparams.h"
-#include"env_params.h"
+#include "util/memory_manager.h"
+#include "util/trace.h"
+#include "util/debug.h"
+#include "util/util.h"
+#include "ast/pp.h"
+#include "shell/smtlib_frontend.h"
+#include "shell/z3_log_frontend.h"
+#include "util/warning.h"
+#include "util/version.h"
+#include "shell/dimacs_frontend.h"
+#include "shell/datalog_frontend.h"
+#include "shell/opt_frontend.h"
+#include "util/timeout.h"
+#include "util/z3_exception.h"
+#include "util/error_codes.h"
+#include "util/gparams.h"
+#include "util/env_params.h"
+#include "shell/lp_frontend.h"
 
-typedef enum { IN_UNSPECIFIED, IN_SMTLIB, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_WCNF, IN_OPB, IN_Z3_LOG } input_kind;
+typedef enum { IN_UNSPECIFIED, IN_SMTLIB, IN_SMTLIB_2, IN_DATALOG, IN_DIMACS, IN_WCNF, IN_OPB, IN_Z3_LOG, IN_MPS } input_kind;
 
 std::string         g_aux_input_file;
 char const *        g_input_file          = 0;
@@ -342,6 +343,10 @@ int STD_CALL main(int argc, char ** argv) {
                 else if (strcmp(ext, "smt") == 0) {
                     g_input_kind = IN_SMTLIB;
                 }
+                else if (strcmp(ext, "mps") == 0 || strcmp(ext, "sif") == 0 ||
+                         strcmp(ext, "MPS") == 0 || strcmp(ext, "SIF") == 0) {
+                    g_input_kind = IN_MPS;
+                }
             }
     }
         switch (g_input_kind) {
@@ -366,6 +371,9 @@ int STD_CALL main(int argc, char ** argv) {
             break;
         case IN_Z3_LOG:
             replay_z3_log(g_input_file);
+            break;
+        case IN_MPS:
+            return_value = read_mps_file(g_input_file);
             break;
         default:
             UNREACHABLE();

@@ -18,10 +18,10 @@ Author:
 Notes:
 
 --*/
-#include"solver.h"
-#include"scoped_timer.h"
-#include"combined_solver_params.hpp"
-#include"common_msgs.h"
+#include "solver/solver.h"
+#include "util/scoped_timer.h"
+#include "solver/combined_solver_params.hpp"
+#include "util/common_msgs.h"
 #define PS_VB_LVL 15
 
 /**
@@ -89,8 +89,8 @@ private:
                 m_solver->get_manager().limit().dec_cancel();
             }
         }
-        virtual void operator()() {
-            m_canceled = true;
+        virtual void operator()(event_handler_caller_t caller_id) {
+            m_canceled = true;            
             m_solver->get_manager().limit().inc_cancel();
         }
     };
@@ -228,7 +228,7 @@ public:
             if (m_inc_timeout == UINT_MAX) {
                 IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"using solver 2 (without a timeout)\")\n";);            
                 lbool r = m_solver2->check_sat(num_assumptions, assumptions);
-                if (r != l_undef || !use_solver1_when_undef()) {
+                if (r != l_undef || !use_solver1_when_undef() || get_manager().canceled()) {
                     return r;
                 }
             }
@@ -285,10 +285,9 @@ public:
     }
 
     virtual void collect_statistics(statistics & st) const {
+        m_solver2->collect_statistics(st);
         if (m_use_solver1_results)
             m_solver1->collect_statistics(st);
-        else
-            m_solver2->collect_statistics(st);
     }
 
     virtual void get_unsat_core(ptr_vector<expr> & r) {

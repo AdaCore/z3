@@ -16,28 +16,28 @@ Revision History:
 
 --*/
 #include<iostream>
-#include"api_log_macros.h"
-#include"api_context.h"
-#include"api_util.h"
-#include"well_sorted.h"
-#include"arith_decl_plugin.h"
-#include"bv_decl_plugin.h"
-#include"datatype_decl_plugin.h"
-#include"array_decl_plugin.h"
-#include"pb_decl_plugin.h"
-#include"ast_translation.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h"
-#include"ast_smt_pp.h"
-#include"ast_smt2_pp.h"
-#include"th_rewriter.h"
-#include"var_subst.h"
-#include"expr_safe_replace.h"
-#include"pp.h"
-#include"scoped_ctrl_c.h"
-#include"cancel_eh.h"
-#include"scoped_timer.h"
-#include"pp_params.hpp"
+#include "api/api_log_macros.h"
+#include "api/api_context.h"
+#include "api/api_util.h"
+#include "ast/well_sorted.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/bv_decl_plugin.h"
+#include "ast/datatype_decl_plugin.h"
+#include "ast/array_decl_plugin.h"
+#include "ast/pb_decl_plugin.h"
+#include "ast/ast_translation.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
+#include "ast/ast_smt_pp.h"
+#include "ast/ast_smt2_pp.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "ast/rewriter/var_subst.h"
+#include "ast/rewriter/expr_safe_replace.h"
+#include "ast/pp.h"
+#include "util/scoped_ctrl_c.h"
+#include "util/cancel_eh.h"
+#include "util/scoped_timer.h"
+#include "ast/pp_params.hpp"
 
 extern bool is_numeral_sort(Z3_context c, Z3_sort ty);
 
@@ -558,6 +558,7 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_get_sort(c, a);
         RESET_ERROR_CODE();
+        CHECK_IS_EXPR(a, 0);
         Z3_sort r = of_sort(mk_c(c)->m().get_sort(to_expr(a)));
         RETURN_Z3(r);
         Z3_CATCH_RETURN(0);
@@ -821,9 +822,13 @@ extern "C" {
         RESET_ERROR_CODE();
         std::ostringstream buffer;
         switch (mk_c(c)->get_print_mode()) {
-        case Z3_PRINT_SMTLIB_FULL:
-            buffer << mk_pp(to_ast(a), mk_c(c)->m());
+        case Z3_PRINT_SMTLIB_FULL: {
+            params_ref p;
+            p.set_uint("max_depth", 4294967295u);
+            p.set_uint("min_alias_size", 4294967295u);
+            buffer << mk_pp(to_ast(a), mk_c(c)->m(), p);
             break;
+        }
         case Z3_PRINT_LOW_LEVEL:
             buffer << mk_ll_pp(to_ast(a), mk_c(c)->m());
             break;
@@ -1063,6 +1068,7 @@ extern "C" {
             case OP_BV2INT:    return Z3_OP_BV2INT;
             case OP_CARRY:     return Z3_OP_CARRY;
             case OP_XOR3:      return Z3_OP_XOR3;
+            case OP_BIT2BOOL: return Z3_OP_BIT2BOOL;
             case OP_BSMUL_NO_OVFL: return Z3_OP_BSMUL_NO_OVFL;
             case OP_BUMUL_NO_OVFL: return Z3_OP_BUMUL_NO_OVFL;
             case OP_BSMUL_NO_UDFL: return Z3_OP_BSMUL_NO_UDFL;
@@ -1109,25 +1115,46 @@ extern "C" {
 
         if (mk_c(c)->get_seq_fid() == _d->get_family_id()) {
             switch (_d->get_decl_kind()) {
-            case Z3_OP_SEQ_UNIT: return Z3_OP_SEQ_UNIT;
-            case Z3_OP_SEQ_EMPTY: return Z3_OP_SEQ_EMPTY;
-            case Z3_OP_SEQ_CONCAT: return Z3_OP_SEQ_CONCAT;
-            case Z3_OP_SEQ_PREFIX: return Z3_OP_SEQ_PREFIX;
-            case Z3_OP_SEQ_SUFFIX: return Z3_OP_SEQ_SUFFIX;
-            case Z3_OP_SEQ_CONTAINS: return Z3_OP_SEQ_CONTAINS;
-            case Z3_OP_SEQ_EXTRACT: return Z3_OP_SEQ_EXTRACT;
-            case Z3_OP_SEQ_REPLACE: return Z3_OP_SEQ_REPLACE;
-            case Z3_OP_SEQ_AT: return Z3_OP_SEQ_AT;
-            case Z3_OP_SEQ_LENGTH: return Z3_OP_SEQ_LENGTH;
-            case Z3_OP_SEQ_INDEX: return Z3_OP_SEQ_INDEX;
-            case Z3_OP_SEQ_TO_RE: return Z3_OP_SEQ_TO_RE;
-            case Z3_OP_SEQ_IN_RE: return Z3_OP_SEQ_IN_RE;
+            case OP_SEQ_UNIT: return Z3_OP_SEQ_UNIT;
+            case OP_SEQ_EMPTY: return Z3_OP_SEQ_EMPTY;
+            case OP_SEQ_CONCAT: return Z3_OP_SEQ_CONCAT;
+            case OP_SEQ_PREFIX: return Z3_OP_SEQ_PREFIX;
+            case OP_SEQ_SUFFIX: return Z3_OP_SEQ_SUFFIX;
+            case OP_SEQ_CONTAINS: return Z3_OP_SEQ_CONTAINS;
+            case OP_SEQ_EXTRACT: return Z3_OP_SEQ_EXTRACT;
+            case OP_SEQ_REPLACE: return Z3_OP_SEQ_REPLACE;
+            case OP_SEQ_AT: return Z3_OP_SEQ_AT;
+            case OP_SEQ_LENGTH: return Z3_OP_SEQ_LENGTH;
+            case OP_SEQ_INDEX: return Z3_OP_SEQ_INDEX;
+            case OP_SEQ_TO_RE: return Z3_OP_SEQ_TO_RE;
+            case OP_SEQ_IN_RE: return Z3_OP_SEQ_IN_RE;
 
-            case Z3_OP_RE_PLUS: return Z3_OP_RE_PLUS;
-            case Z3_OP_RE_STAR: return Z3_OP_RE_STAR;
-            case Z3_OP_RE_OPTION: return Z3_OP_RE_OPTION;
-            case Z3_OP_RE_CONCAT: return Z3_OP_RE_CONCAT;
-            case Z3_OP_RE_UNION: return Z3_OP_RE_UNION;
+            case _OP_STRING_STRREPL: return Z3_OP_SEQ_REPLACE;
+            case _OP_STRING_CONCAT: return Z3_OP_SEQ_CONCAT;
+            case _OP_STRING_LENGTH: return Z3_OP_SEQ_LENGTH;
+            case _OP_STRING_STRCTN: return Z3_OP_SEQ_CONTAINS;
+            case _OP_STRING_PREFIX: return Z3_OP_SEQ_PREFIX;
+            case _OP_STRING_SUFFIX: return Z3_OP_SEQ_SUFFIX;
+            case _OP_STRING_IN_REGEXP: return Z3_OP_SEQ_IN_RE;
+            case _OP_STRING_TO_REGEXP: return Z3_OP_SEQ_TO_RE;
+            case _OP_STRING_CHARAT: return Z3_OP_SEQ_AT;
+            case _OP_STRING_SUBSTR: return Z3_OP_SEQ_EXTRACT;
+            case _OP_STRING_STRIDOF: return Z3_OP_SEQ_INDEX;
+            case _OP_REGEXP_EMPTY: return Z3_OP_RE_EMPTY_SET;
+            case _OP_REGEXP_FULL: return Z3_OP_RE_FULL_SET;
+
+            case OP_STRING_STOI: return Z3_OP_STR_TO_INT;
+            case OP_STRING_ITOS: return Z3_OP_INT_TO_STR;
+
+            case OP_RE_PLUS: return Z3_OP_RE_PLUS;
+            case OP_RE_STAR: return Z3_OP_RE_STAR;
+            case OP_RE_OPTION: return Z3_OP_RE_OPTION;
+            case OP_RE_CONCAT: return Z3_OP_RE_CONCAT;
+            case OP_RE_UNION: return Z3_OP_RE_UNION;
+            case OP_RE_INTERSECT: return Z3_OP_RE_INTERSECT;
+            case OP_RE_LOOP: return Z3_OP_RE_LOOP;
+            case OP_RE_FULL_SET: return Z3_OP_RE_FULL_SET;
+            case OP_RE_EMPTY_SET: return Z3_OP_RE_EMPTY_SET;
             default:
                 return Z3_OP_INTERNAL;
             }
@@ -1179,14 +1206,14 @@ extern "C" {
             case OP_FPA_TO_IEEE_BV: return Z3_OP_FPA_TO_IEEE_BV;
             case OP_FPA_INTERNAL_MIN_I: return Z3_OP_FPA_MIN_I;
             case OP_FPA_INTERNAL_MAX_I: return Z3_OP_FPA_MAX_I;
-            case OP_FPA_INTERNAL_BV2RM:
-            case OP_FPA_INTERNAL_BVWRAP:
-            case OP_FPA_INTERNAL_MIN_UNSPECIFIED:
-            case OP_FPA_INTERNAL_MAX_UNSPECIFIED:
-            case OP_FPA_INTERNAL_TO_UBV_UNSPECIFIED:
-            case OP_FPA_INTERNAL_TO_SBV_UNSPECIFIED:
-            case OP_FPA_INTERNAL_TO_REAL_UNSPECIFIED:
-            case OP_FPA_INTERNAL_TO_IEEE_BV_UNSPECIFIED:
+            case OP_FPA_INTERNAL_BVWRAP: return Z3_OP_FPA_BVWRAP;
+            case OP_FPA_INTERNAL_BV2RM: return Z3_OP_FPA_BV2RM;
+            case OP_FPA_INTERNAL_MIN_UNSPECIFIED: return Z3_OP_FPA_MIN_UNSPECIFIED;
+            case OP_FPA_INTERNAL_MAX_UNSPECIFIED: return Z3_OP_FPA_MAX_UNSPECIFIED;
+            case OP_FPA_INTERNAL_TO_UBV_UNSPECIFIED: return Z3_OP_FPA_TO_UBV_UNSPECIFIED;
+            case OP_FPA_INTERNAL_TO_SBV_UNSPECIFIED: return Z3_OP_FPA_TO_SBV_UNSPECIFIED;
+            case OP_FPA_INTERNAL_TO_REAL_UNSPECIFIED: return Z3_OP_FPA_TO_REAL_UNSPECIFIED;
+            case OP_FPA_INTERNAL_TO_IEEE_BV_UNSPECIFIED: return Z3_OP_FPA_TO_IEEE_BV_UNSPECIFIED;
                 return Z3_OP_UNINTERPRETED;
             default:
                 return Z3_OP_INTERNAL;
@@ -1206,7 +1233,9 @@ extern "C" {
             switch(_d->get_decl_kind()) {
             case OP_PB_LE: return Z3_OP_PB_LE;
             case OP_PB_GE: return Z3_OP_PB_GE;
+            case OP_PB_EQ: return Z3_OP_PB_EQ;
             case OP_AT_MOST_K: return Z3_OP_PB_AT_MOST;
+            case OP_AT_LEAST_K: return Z3_OP_PB_AT_LEAST;
             default: return Z3_OP_INTERNAL;
             }
         }

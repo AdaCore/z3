@@ -16,9 +16,9 @@ Author:
 Revision History:
 
 --*/
-#include"fpa_decl_plugin.h"
-#include"arith_decl_plugin.h"
-#include"bv_decl_plugin.h"
+#include "ast/fpa_decl_plugin.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/bv_decl_plugin.h"
 
 fpa_decl_plugin::fpa_decl_plugin():
     m_values(m_fm),
@@ -836,7 +836,7 @@ func_decl * fpa_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, 
         return mk_to_ieee_bv(k, num_parameters, parameters, arity, domain, range);
 
     case OP_FPA_INTERNAL_BVWRAP:
-        return mk_internal_bv_wrap(k, num_parameters, parameters, arity, domain, range);    
+        return mk_internal_bv_wrap(k, num_parameters, parameters, arity, domain, range);
     case OP_FPA_INTERNAL_BV2RM:
         return mk_internal_bv2rm(k, num_parameters, parameters, arity, domain, range);
 
@@ -915,7 +915,7 @@ void fpa_decl_plugin::get_op_names(svector<builtin_name> & op_names, symbol cons
     op_names.push_back(builtin_name("to_fp_unsigned", OP_FPA_TO_FP_UNSIGNED));
 
     /* Extensions */
-	op_names.push_back(builtin_name("to_ieee_bv", OP_FPA_TO_IEEE_BV));
+    op_names.push_back(builtin_name("to_ieee_bv", OP_FPA_TO_IEEE_BV));
     op_names.push_back(builtin_name("fp.to_ieee_bv", OP_FPA_TO_IEEE_BV));
 }
 

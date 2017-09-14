@@ -21,11 +21,12 @@ Revision History:
 #ifndef BOOLEAN_ALGEBRA_H_
 #define BOOLEAN_ALGEBRA_H_
 
-#include "util.h"
+#include "util/util.h"
 
 template<class T>
 class positive_boolean_algebra {
 public:
+    virtual ~positive_boolean_algebra() {}
     virtual T mk_false() = 0;
     virtual T mk_true() = 0;
     virtual T mk_and(T x, T y) = 0;
@@ -38,6 +39,7 @@ public:
 template<class T>
 class boolean_algebra : public positive_boolean_algebra<T> {
 public:
+    virtual ~boolean_algebra() {}
     virtual T mk_not(T x) = 0;	
     //virtual lbool are_equivalent(T x, T y) = 0;
     //virtual T simplify(T x) = 0;    

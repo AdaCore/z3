@@ -49,10 +49,10 @@ Revision History:
 
 #ifndef THEORY_UTVPI_DEF_H_
 #define THEORY_UTVPI_DEF_H_
-#include "theory_utvpi.h"
-#include "heap.h"
-#include "ast_pp.h"
-#include "smt_context.h"
+#include "smt/theory_utvpi.h"
+#include "util/heap.h"
+#include "ast/ast_pp.h"
+#include "smt/smt_context.h"
 
 namespace smt {
 
@@ -901,7 +901,7 @@ namespace smt {
         bool is_int = a.is_int(n->get_owner());
         rational num = mk_value(v, is_int);
         TRACE("utvpi", tout << mk_pp(n->get_owner(), get_manager()) << " |-> " << num << "\n";);
-        return alloc(expr_wrapper_proc, m_factory->mk_value(num, is_int));
+        return alloc(expr_wrapper_proc, m_factory->mk_num_value(num, is_int));
     }
 
     /**

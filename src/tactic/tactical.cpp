@@ -16,12 +16,12 @@ Author:
 Notes:
 
 --*/
-#include"tactical.h"
-#include"scoped_timer.h"
-#include"cancel_eh.h"
-#include"cooperate.h"
-#include"scoped_ptr_vector.h"
-#include"z3_omp.h"
+#include "tactic/tactical.h"
+#include "util/scoped_timer.h"
+#include "util/cancel_eh.h"
+#include "util/cooperate.h"
+#include "util/scoped_ptr_vector.h"
+#include "util/z3_omp.h"
 
 class binary_tactical : public tactic {
 protected:
@@ -461,13 +461,6 @@ enum par_exception_kind {
 
 class par_tactical : public or_else_tactical {
 
-    struct scoped_limits {
-        reslimit&  m_limit;
-        unsigned   m_sz;
-        scoped_limits(reslimit& lim): m_limit(lim), m_sz(0) {}
-        ~scoped_limits() { for (unsigned i = 0; i < m_sz; ++i) m_limit.pop_child(); }
-        void push_child(reslimit* lim) { m_limit.push_child(lim); ++m_sz; }
-    };
 
 public:
     par_tactical(unsigned num, tactic * const * ts):or_else_tactical(num, ts) {}

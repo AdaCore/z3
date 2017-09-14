@@ -16,11 +16,11 @@ Author:
 Notes:
 
 --*/
-#include"tactical.h"
-#include"fpa2bv_rewriter.h"
-#include"simplify_tactic.h"
-#include"fpa2bv_tactic.h"
-#include"fpa2bv_model_converter.h"
+#include "tactic/tactical.h"
+#include "ast/fpa/fpa2bv_rewriter.h"
+#include "tactic/core/simplify_tactic.h"
+#include "tactic/fpa/fpa2bv_tactic.h"
+#include "tactic/fpa/fpa2bv_model_converter.h"
 
 class fpa2bv_tactic : public tactic {
     struct imp {
@@ -46,11 +46,11 @@ class fpa2bv_tactic : public tactic {
             m_rw.cfg().updt_params(p);
         }
 
-        virtual void operator()(goal_ref const & g,
-                                goal_ref_buffer & result,
-                                model_converter_ref & mc,
-                                proof_converter_ref & pc,
-                                expr_dependency_ref & core) {
+        void operator()(goal_ref const & g,
+                        goal_ref_buffer & result,
+                        model_converter_ref & mc,
+                        proof_converter_ref & pc,
+                        expr_dependency_ref & core) {
             SASSERT(g->is_well_sorted());
             m_proofs_enabled      = g->proofs_enabled();
             m_produce_models      = g->models_enabled();

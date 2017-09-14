@@ -22,24 +22,24 @@ Revision History:
 #ifndef THEORY_DIFF_LOGIC_H_
 #define THEORY_DIFF_LOGIC_H_
 
-#include"rational.h"
-#include"inf_rational.h"
-#include"inf_int_rational.h"
-#include"s_integer.h"
-#include"inf_s_integer.h"
-#include"smt_theory.h"
-#include"diff_logic.h"
-#include"arith_decl_plugin.h"
-#include"smt_justification.h"
-#include"map.h"
-#include"smt_params.h"
-#include"arith_eq_adapter.h"
-#include"smt_model_generator.h"
-#include"numeral_factory.h"
-#include"smt_clause.h"
-#include"theory_opt.h"
-#include"simplex.h"
-#include"simplex_def.h"
+#include "util/rational.h"
+#include "util/inf_rational.h"
+#include "util/inf_int_rational.h"
+#include "util/s_integer.h"
+#include "util/inf_s_integer.h"
+#include "smt/smt_theory.h"
+#include "smt/diff_logic.h"
+#include "ast/arith_decl_plugin.h"
+#include "smt/smt_justification.h"
+#include "util/map.h"
+#include "smt/params/smt_params.h"
+#include "smt/arith_eq_adapter.h"
+#include "smt/smt_model_generator.h"
+#include "smt/proto_model/numeral_factory.h"
+#include "smt/smt_clause.h"
+#include "smt/theory_opt.h"
+#include "math/simplex/simplex.h"
+#include "math/simplex/simplex_def.h"
 
 // The DL theory can represent term such as n + k, where n is an enode and k is a numeral.
 namespace smt {
@@ -324,14 +324,15 @@ namespace smt {
         virtual inf_eps maximize(theory_var v, expr_ref& blocker, bool& has_shared);
         virtual inf_eps value(theory_var v);
         virtual theory_var add_objective(app* term);
-        virtual expr_ref mk_gt(theory_var v, inf_rational const& val);
-        virtual expr_ref mk_ge(filter_model_converter& fm, theory_var v, inf_rational const& val);
+        expr_ref mk_ge(filter_model_converter& fm, theory_var v, inf_eps const& val);
 
         bool internalize_objective(expr * n, rational const& m, rational& r, objective_term & objective);
 
     private:     
 
-        expr_ref mk_ineq(theory_var v, inf_rational const& val, bool is_strict);
+        expr_ref mk_gt(theory_var v, inf_eps const& val);
+
+        expr_ref mk_ineq(theory_var v, inf_eps const& val, bool is_strict);
 
         virtual void new_eq_eh(theory_var v1, theory_var v2, justification& j);
 

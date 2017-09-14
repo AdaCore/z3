@@ -20,12 +20,12 @@ Revision History:
 #ifndef DL_MK_RULE_INLINER_H_
 #define DL_MK_RULE_INLINER_H_
 
-#include "dl_context.h"
-#include "dl_rule_transformer.h"
-#include "dl_mk_interp_tail_simplifier.h"
-#include "unifier.h"
-#include "substitution.h"
-#include "substitution_tree.h"
+#include "muz/base/dl_context.h"
+#include "muz/base/dl_rule_transformer.h"
+#include "muz/transforms/dl_mk_interp_tail_simplifier.h"
+#include "ast/substitution/unifier.h"
+#include "ast/substitution/substitution.h"
+#include "ast/substitution/substitution_tree.h"
 
 namespace datalog {
 
@@ -88,7 +88,7 @@ namespace datalog {
             svector<bool> m_can_remove, m_can_expand;
             obj_map<expr, unsigned_vector> m_positions;
         public:
-            visitor(context& c, substitution & s): st_visitor(s), m_context(c) {}
+            visitor(context& c, substitution & s): st_visitor(s), m_context(c) { (void) m_context; }
             virtual bool operator()(expr* e);
             void         reset() { m_unifiers.reset(); }
             void         reset(unsigned sz);

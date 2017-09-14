@@ -19,15 +19,15 @@ Notes:
 #ifndef OPT_MAXSMT_H_
 #define OPT_MAXSMT_H_
 
-#include"ast.h"
-#include"params.h"
-#include"solver.h"
-#include"filter_model_converter.h"
-#include"statistics.h"
-#include"smt_context.h"
-#include"smt_theory.h"
-#include"theory_wmaxsat.h"
-#include"opt_solver.h"
+#include "ast/ast.h"
+#include "util/params.h"
+#include "solver/solver.h"
+#include "tactic/filter_model_converter.h"
+#include "util/statistics.h"
+#include "smt/smt_context.h"
+#include "smt/smt_theory.h"
+#include "smt/theory_wmaxsat.h"
+#include "opt/opt_solver.h"
 
 namespace opt {
 
@@ -120,6 +120,7 @@ namespace opt {
         unsigned                  m_index;
         scoped_ptr<maxsmt_solver_base> m_msolver;
         expr_ref_vector  m_soft_constraints;
+        obj_map<expr, unsigned> m_soft_constraint_index;
         expr_ref_vector  m_answer;
         vector<rational> m_weights;
         rational         m_lower;
@@ -138,7 +139,6 @@ namespace opt {
         expr* operator[](unsigned idx) const { return m_soft_constraints[idx]; }
         rational weight(unsigned idx) const { return m_weights[idx]; }
         void commit_assignment();
-        rational get_value() const;
         rational get_lower() const;
         rational get_upper() const;        
         void update_lower(rational const& r);

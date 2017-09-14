@@ -1,11 +1,10 @@
-
 /*++
 Copyright (c) 2015 Microsoft Corporation
 
 --*/
 
-#include "ddnf.h"
-#include "tbv.h"
+#include "muz/ddnf/ddnf.h"
+#include "muz/rel/tbv.h"
 #include <iostream>
 #include <fstream>
 #include <list>

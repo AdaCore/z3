@@ -818,6 +818,7 @@ namespace test_mapi
             BigIntCheck(ctx, ctx.MkReal("234234333/2"));
 
 
+#if !FRAMEWORK_LT_4
             string bn = "1234567890987654321";
 
             if (ctx.MkInt(bn).BigInteger.ToString() != bn)
@@ -828,6 +829,7 @@ namespace test_mapi
 
             if (ctx.MkBV(bn, 32).BigInteger.ToString() == bn)
                 throw new TestFailedException();
+#endif
 
             // Error handling test.
             try
@@ -1094,8 +1096,10 @@ namespace test_mapi
 
         static void BigIntCheck(Context ctx, RatNum r)
         {
+#if !FRAMEWORK_LT_4
             Console.WriteLine("Num: " + r.BigIntNumerator);
             Console.WriteLine("Den: " + r.BigIntDenominator);
+#endif
         }
 
         /// <summary>
@@ -2148,6 +2152,31 @@ namespace test_mapi
             Console.WriteLine("OK, model: {0}", s.Model.ToString());
         }
 
+        public static void TranslationExample()
+        {
+            Context ctx1 = new Context();
+            Context ctx2 = new Context();
+
+            Sort s1 = ctx1.IntSort;
+            Sort s2 = ctx2.IntSort;
+            Sort s3 = s1.Translate(ctx2);
+
+            Console.WriteLine(s1 == s2);
+            Console.WriteLine(s1.Equals(s2));
+            Console.WriteLine(s2.Equals(s3));
+            Console.WriteLine(s1.Equals(s3));
+
+            Expr e1 = ctx1.MkIntConst("e1");
+            Expr e2 = ctx2.MkIntConst("e1");
+            Expr e3 = e1.Translate(ctx2);
+
+            Console.WriteLine(e1 == e2);
+            Console.WriteLine(e1.Equals(e2));
+            Console.WriteLine(e2.Equals(e3));
+            Console.WriteLine(e1.Equals(e3));
+        }
+
+
         static void Main(string[] args)
         {
             try
@@ -2220,6 +2249,8 @@ namespace test_mapi
                     QuantifierExample3(ctx);
                     QuantifierExample4(ctx);
                 }
+
+                TranslationExample();
 
                 Log.Close();
                 if (Log.isOpen())

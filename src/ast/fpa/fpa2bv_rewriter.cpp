@@ -18,10 +18,10 @@ Notes:
 --*/
 
 
-#include"rewriter_def.h"
-#include"fpa2bv_rewriter.h"
-#include"cooperate.h"
-#include"fpa2bv_rewriter_params.hpp"
+#include "ast/rewriter/rewriter_def.h"
+#include "ast/fpa/fpa2bv_rewriter.h"
+#include "util/cooperate.h"
+#include "ast/fpa/fpa2bv_rewriter_params.hpp"
 
 
 fpa2bv_rewriter_cfg::fpa2bv_rewriter_cfg(ast_manager & m, fpa2bv_converter & c, params_ref const & p) :
@@ -143,11 +143,11 @@ br_status fpa2bv_rewriter_cfg::reduce_app(func_decl * f, unsigned num, expr * co
         case OP_FPA_TO_FP_UNSIGNED: m_conv.mk_to_fp_unsigned(f, num, args, result); return BR_DONE;
         case OP_FPA_FP: m_conv.mk_fp(f, num, args, result); return BR_DONE;
         case OP_FPA_TO_UBV: m_conv.mk_to_ubv(f, num, args, result); return BR_DONE;
-		case OP_FPA_INTERNAL_TO_UBV_UNSPECIFIED: m_conv.mk_to_ubv_unspecified(f, num, args, result); return BR_DONE;
+        case OP_FPA_INTERNAL_TO_UBV_UNSPECIFIED: m_conv.mk_to_ubv_unspecified(f, num, args, result); return BR_DONE;
         case OP_FPA_TO_SBV: m_conv.mk_to_sbv(f, num, args, result); return BR_DONE;
-		case OP_FPA_INTERNAL_TO_SBV_UNSPECIFIED: m_conv.mk_to_sbv_unspecified(f, num, args, result); return BR_DONE;
+        case OP_FPA_INTERNAL_TO_SBV_UNSPECIFIED: m_conv.mk_to_sbv_unspecified(f, num, args, result); return BR_DONE;
         case OP_FPA_TO_REAL: m_conv.mk_to_real(f, num, args, result); return BR_DONE;
-		case OP_FPA_INTERNAL_TO_REAL_UNSPECIFIED: m_conv.mk_to_real_unspecified(f, num, args, result); return BR_DONE;
+        case OP_FPA_INTERNAL_TO_REAL_UNSPECIFIED: m_conv.mk_to_real_unspecified(f, num, args, result); return BR_DONE;
         case OP_FPA_TO_IEEE_BV: m_conv.mk_to_ieee_bv(f, num, args, result); return BR_DONE;
         case OP_FPA_INTERNAL_TO_IEEE_BV_UNSPECIFIED: m_conv.mk_to_ieee_bv_unspecified(f, num, args, result); return BR_DONE;
 

@@ -18,11 +18,11 @@ Revision History:
     Rewrote/Simplified the allocator
 
 --*/
-#include"memory_manager.h"
-#include"small_object_allocator.h"
-#include"debug.h"
-#include"util.h"
-#include"vector.h"
+#include "util/memory_manager.h"
+#include "util/small_object_allocator.h"
+#include "util/debug.h"
+#include "util/util.h"
+#include "util/vector.h"
 #include<iomanip>
 
 small_object_allocator::small_object_allocator(char const * id) {
@@ -68,8 +68,10 @@ void small_object_allocator::reset() {
 
 #define MASK ((1 << PTR_ALIGNMENT) - 1)
 
+
 void small_object_allocator::deallocate(size_t size, void * p) {
     if (size == 0) return;
+
 #if defined(Z3DEBUG) && !defined(_WINDOWS)
     // Valgrind friendly
     memory::deallocate(p);
@@ -91,15 +93,18 @@ void small_object_allocator::deallocate(size_t size, void * p) {
     m_free_list[slot_id] = p;
 }
 
+
 void * small_object_allocator::allocate(size_t size) {
     if (size == 0) return 0;
+
 #if defined(Z3DEBUG) && !defined(_WINDOWS)
     // Valgrind friendly
     return memory::allocate(size);
 #endif
     m_alloc_size += size;
-    if (size >= SMALL_OBJ_SIZE - (1 << PTR_ALIGNMENT))
+    if (size >= SMALL_OBJ_SIZE - (1 << PTR_ALIGNMENT)) {
         return memory::allocate(size);
+    }
 #ifdef Z3DEBUG
     size_t osize = size;
 #endif

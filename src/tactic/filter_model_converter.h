@@ -19,7 +19,7 @@ Notes:
 #ifndef FILTER_MODEL_CONVERTER_H_
 #define FILTER_MODEL_CONVERTER_H_
 
-#include"model_converter.h"
+#include "tactic/model_converter.h"
 
 class filter_model_converter : public model_converter {
     func_decl_ref_vector  m_decls;
@@ -32,6 +32,8 @@ public:
     
     virtual void operator()(model_ref & md, unsigned goal_idx);
 
+    virtual void operator()(svector<symbol> & labels, unsigned goal_idx);
+    
     virtual void operator()(model_ref & md) { operator()(md, 0); } // TODO: delete
 
     virtual void cancel() {}

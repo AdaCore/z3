@@ -16,12 +16,12 @@ Author:
 Notes:
 
 --*/
-#include"vector.h"
-#include"map.h"
-#include"z3_replayer.h"
-#include"stream_buffer.h"
-#include"symbol.h"
-#include"trace.h"
+#include "util/vector.h"
+#include "util/map.h"
+#include "api/z3_replayer.h"
+#include "util/stream_buffer.h"
+#include "util/symbol.h"
+#include "util/trace.h"
 #include<sstream>
 #include<vector>
 
@@ -357,7 +357,7 @@ struct z3_replayer::imp {
                 v.push_back(static_cast<unsigned>(m_args[i].m_uint));
             }
         }
-        if (k == INT64) {
+        else if (k == INT64) {
             aidx = m_int_arrays.size();
             nk   = INT_ARRAY;
             m_int_arrays.push_back(svector<int>());

@@ -17,9 +17,9 @@ Revision History:
 
 --*/
 
-#include "ast_pp_util.h"
-#include "ast_smt2_pp.h"
-#include "ast_smt_pp.h"
+#include "ast/ast_pp_util.h"
+#include "ast/ast_smt2_pp.h"
+#include "ast/ast_smt_pp.h"
 
 void ast_pp_util::collect(expr* e) {
     coll.visit(e);
@@ -44,8 +44,11 @@ void ast_pp_util::display_decls(std::ostream& out) {
     }
     n = coll.get_num_decls();
     for (unsigned i = 0; i < n; ++i) {
-        ast_smt2_pp(out, coll.get_func_decls()[i], env);
-        out << "\n";
+        func_decl* f = coll.get_func_decls()[i];
+        if (f->get_family_id() == null_family_id) {
+            ast_smt2_pp(out, f, env);
+            out << "\n";
+        }
     }
 }
 

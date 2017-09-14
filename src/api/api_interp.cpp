@@ -15,30 +15,29 @@
   Revision History:
 
   --*/
-#include<iostream>
 #include<sstream>
 #include<vector>
-#include"z3.h"
-#include"api_log_macros.h"
-#include"api_context.h"
-#include"api_tactic.h"
-#include"api_solver.h"
-#include"api_model.h"
-#include"api_stats.h"
-#include"api_ast_vector.h"
-#include"tactic2solver.h"
-#include"scoped_ctrl_c.h"
-#include"cancel_eh.h"
-#include"scoped_timer.h"
-#include"smt_strategic_solver.h"
-#include"smt_solver.h"
-#include"smt_implied_equalities.h"
-#include"iz3interp.h"
-#include"iz3profiling.h"
-#include"iz3hash.h"
-#include"iz3pp.h"
-#include"iz3checker.h"
-#include"scoped_proof.h"
+#include "api/z3.h"
+#include "api/api_log_macros.h"
+#include "api/api_context.h"
+#include "api/api_tactic.h"
+#include "api/api_solver.h"
+#include "api/api_model.h"
+#include "api/api_stats.h"
+#include "api/api_ast_vector.h"
+#include "solver/tactic2solver.h"
+#include "util/scoped_ctrl_c.h"
+#include "util/cancel_eh.h"
+#include "util/scoped_timer.h"
+#include "tactic/portfolio/smt_strategic_solver.h"
+#include "smt/smt_solver.h"
+#include "smt/smt_implied_equalities.h"
+#include "interp/iz3interp.h"
+#include "interp/iz3profiling.h"
+#include "interp/iz3hash.h"
+#include "interp/iz3pp.h"
+#include "interp/iz3checker.h"
+#include "ast/scoped_proof.h"
 
 using namespace stl_ext;
 
@@ -375,7 +374,7 @@ extern "C" {
         for(int i = 0; i < num_theory; i++)
             fmlas[i] = Z3_mk_implies(ctx,Z3_mk_true(ctx),fmlas[i]);
         std::copy(cnsts,cnsts+num,fmlas.begin()+num_theory);
-        Z3_string smt = Z3_benchmark_to_smtlib_string(ctx,"none","AUFLIA","unknown","",num_fmlas-1,&fmlas[0],fmlas[num_fmlas-1]);  
+        Z3_string smt = Z3_benchmark_to_smtlib_string(ctx,"none","AUFLIA","unknown","",num_fmlas-1,&fmlas[0],fmlas[num_fmlas-1]);
         std::ofstream f(filename);
         if(num_theory)
             f << ";! THEORY=" << num_theory << "\n";
@@ -469,7 +468,7 @@ extern "C" {
         }
         f.close();
 
-#if 0    
+#if 0
 
 
         if(!parents){

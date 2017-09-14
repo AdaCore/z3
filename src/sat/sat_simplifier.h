@@ -21,15 +21,15 @@ Revision History:
 #ifndef SAT_SIMPLIFIER_H_
 #define SAT_SIMPLIFIER_H_
 
-#include"sat_types.h"
-#include"sat_clause.h"
-#include"sat_clause_set.h"
-#include"sat_clause_use_list.h"
-#include"sat_watched.h"
-#include"sat_model_converter.h"
-#include"heap.h"
-#include"statistics.h"
-#include"params.h"
+#include "sat/sat_types.h"
+#include "sat/sat_clause.h"
+#include "sat/sat_clause_set.h"
+#include "sat/sat_clause_use_list.h"
+#include "sat/sat_watched.h"
+#include "sat/sat_model_converter.h"
+#include "util/heap.h"
+#include "util/statistics.h"
+#include "util/params.h"
 
 namespace sat {
     class solver;
@@ -90,6 +90,9 @@ namespace sat {
         unsigned               m_num_elim_vars;
         unsigned               m_num_sub_res;
         unsigned               m_num_elim_lits;
+
+        bool                   m_learned_in_use_lists;
+        unsigned               m_old_num_elim_vars;
 
         struct size_lt {
             bool operator()(clause const * c1, clause const * c2) const { return c1->size() > c2->size(); }
@@ -169,6 +172,14 @@ namespace sat {
         struct blocked_cls_report;
         struct subsumption_report;
         struct elim_var_report;
+
+        class scoped_finalize {
+            simplifier& s;
+        public:
+            scoped_finalize(simplifier& s) : s(s) {}
+            ~scoped_finalize() { s.scoped_finalize_fn(); }
+        };
+        void scoped_finalize_fn();
 
     public:
         simplifier(solver & s, params_ref const & p);

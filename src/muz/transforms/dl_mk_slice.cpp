@@ -22,7 +22,7 @@ Revision History:
     input:  x, z
     output: x, y
 
-    Let x_i, y_i, z_i be incides into the vectors x, y, z.
+    Let x_i, y_i, z_i be indices into the vectors x, y, z.
 
     Suppose that positions in P and R are annotated with what is
     slicable.
@@ -50,12 +50,12 @@ Revision History:
 
 --*/
 
-#include "dl_mk_slice.h"
-#include "ast_pp.h"
-#include "ast_util.h"
-#include "expr_functors.h"
-#include "dl_mk_rule_inliner.h"
-#include "model_smt2_pp.h"
+#include "muz/transforms/dl_mk_slice.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_util.h"
+#include "ast/expr_functors.h"
+#include "muz/transforms/dl_mk_rule_inliner.h"
+#include "model/model_smt2_pp.h"
 
 namespace datalog {
 
@@ -789,7 +789,7 @@ namespace datalog {
                 tail.push_back(to_app(e));                
             }
                         
-            new_rule = rm.mk(head.get(), tail.size(), tail.c_ptr(), (const bool*) 0);        
+            new_rule = rm.mk(head.get(), tail.size(), tail.c_ptr(), (const bool*) 0, r.name());        
 
             rm.fix_unbound_vars(new_rule, false);
 

@@ -16,12 +16,12 @@ Author:
 Notes:
 
 --*/
-#include"tactical.h"
-#include"defined_names.h"
-#include"rewriter_def.h"
-#include"filter_model_converter.h"
-#include"cooperate.h"
-#include"scoped_proof.h"
+#include "tactic/tactical.h"
+#include "ast/normal_forms/defined_names.h"
+#include "ast/rewriter/rewriter_def.h"
+#include "tactic/filter_model_converter.h"
+#include "util/cooperate.h"
+#include "ast/scoped_proof.h"
 
 
 
@@ -62,14 +62,14 @@ class blast_term_ite_tactic : public tactic {
             for (unsigned i = 0; i < num_args; ++i) {
                 expr* c, *t, *e;
                 if (!m.is_bool(args[i]) && m.is_ite(args[i], c, t, e)) {
-                    enable_trace("blast_term_ite");
+                    // enable_trace("blast_term_ite");
                     TRACE("blast_term_ite", result = m.mk_app(f, num_args, args); tout << result << "\n";);
                     expr_ref e1(m), e2(m);
                     ptr_vector<expr> args1(num_args, args);
                     args1[i] = t;
                     ++m_num_fresh;
                     e1 = m.mk_app(f, num_args, args1.c_ptr());
-                    if (t == e) {
+                    if (m.are_equal(t,e)) {
                         result = e1;
                         return BR_REWRITE1;
                     }

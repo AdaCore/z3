@@ -16,15 +16,15 @@ Author:
 Revision History:
 
 --*/
-#include"tactical.h"
-#include"bound_manager.h"
-#include"th_rewriter.h"
-#include"for_each_expr.h"
-#include"extension_model_converter.h"
-#include"filter_model_converter.h"
-#include"arith_decl_plugin.h"
-#include"expr_substitution.h"
-#include"ast_smt2_pp.h"
+#include "tactic/tactical.h"
+#include "tactic/arith/bound_manager.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "ast/for_each_expr.h"
+#include "tactic/extension_model_converter.h"
+#include "tactic/filter_model_converter.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/expr_substitution.h"
+#include "ast/ast_smt2_pp.h"
 
 class lia2pb_tactic : public tactic {
     struct imp {
@@ -188,11 +188,11 @@ class lia2pb_tactic : public tactic {
             return true;
         }
 
-        virtual void operator()(goal_ref const & g, 
-                                goal_ref_buffer & result, 
-                                model_converter_ref & mc, 
-                                proof_converter_ref & pc,
-                                expr_dependency_ref & core) {
+        void operator()(goal_ref const & g, 
+                        goal_ref_buffer & result, 
+                        model_converter_ref & mc, 
+                        proof_converter_ref & pc,
+                        expr_dependency_ref & core) {
             SASSERT(g->is_well_sorted());
             fail_if_proof_generation("lia2pb", g);
             m_produce_models      = g->models_enabled();

@@ -19,9 +19,9 @@ Revision History:
 #ifndef NUMERAL_FACTORY_H_
 #define NUMERAL_FACTORY_H_
 
-#include"value_factory.h"
-#include"arith_decl_plugin.h"
-#include"bv_decl_plugin.h"
+#include "smt/proto_model/value_factory.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/bv_decl_plugin.h"
 
 class numeral_factory : public simple_factory<rational> {
 public:
@@ -38,7 +38,7 @@ public:
     arith_factory(ast_manager & m);
     virtual ~arith_factory();
 
-    app * mk_value(rational const & val, bool is_int);
+    app * mk_num_value(rational const & val, bool is_int);
 };
 
 class bv_factory : public numeral_factory {
@@ -50,7 +50,7 @@ public:
     bv_factory(ast_manager & m);
     virtual ~bv_factory();
 
-    app * mk_value(rational const & val, unsigned bv_size);
+    app * mk_num_value(rational const & val, unsigned bv_size);
 };
 
 #endif /* NUMERAL_FACTORY_H_ */

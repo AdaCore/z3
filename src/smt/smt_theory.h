@@ -19,9 +19,9 @@ Revision History:
 #ifndef SMT_THEORY_H_
 #define SMT_THEORY_H_
 
-#include"smt_enode.h"
-#include"obj_hashtable.h"
-#include"statistics.h"
+#include "smt/smt_enode.h"
+#include "util/obj_hashtable.h"
+#include "util/statistics.h"
 #include<typeinfo>
 
 namespace smt {
@@ -178,6 +178,22 @@ namespace smt {
         }
 
         /**
+           \brief This method is called by smt_context before the search starts
+           to get any extra assumptions the theory wants to use.
+           (See theory_str for an example)
+        */
+        virtual void add_theory_assumptions(expr_ref_vector & assumptions) {
+        }
+
+        /**
+           \brief This method is called from the smt_context when an unsat core is generated.
+           The theory may change the answer to UNKNOWN by returning l_undef from this method.
+        */
+        virtual lbool validate_unsat_core(expr_ref_vector & unsat_core) {
+            return l_false;
+        }
+	
+        /**
            \brief This method is invoked before the search starts.
         */
         virtual void init_search_eh() {
@@ -321,14 +337,14 @@ namespace smt {
         
         virtual void collect_statistics(::statistics & st) const {
         }
-
-        void display_app(std::ostream & out, app * n) const;
-
-        void display_flat_app(std::ostream & out, app * n) const;
         
-        void display_var_def(std::ostream & out, theory_var v) const { return display_app(out, get_enode(v)->get_owner()); }
+        std::ostream& display_app(std::ostream & out, app * n) const;
         
-        void display_var_flat_def(std::ostream & out, theory_var v) const { return display_flat_app(out, get_enode(v)->get_owner()); }
+        std::ostream& display_flat_app(std::ostream & out, app * n) const;
+        
+        std::ostream& display_var_def(std::ostream & out, theory_var v) const { return display_app(out, get_enode(v)->get_owner()); }
+        
+        std::ostream& display_var_flat_def(std::ostream & out, theory_var v) const { return display_flat_app(out, get_enode(v)->get_owner());  }
 
         /**
            \brief Assume eqs between variable that are equal with respect to the given table.

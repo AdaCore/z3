@@ -16,12 +16,12 @@ Author:
 Notes:
 
 --*/
-#include"solver.h"
-#include"model_evaluator.h"
-#include"ast_util.h"
-#include"ast_pp.h"
-#include"ast_pp_util.h"
-#include "common_msgs.h"
+#include "solver/solver.h"
+#include "model/model_evaluator.h"
+#include "ast/ast_util.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_pp_util.h"
+#include "util/common_msgs.h"
 
 
 unsigned solver::get_num_assertions() const {
@@ -152,6 +152,10 @@ lbool solver::get_consequences_core(expr_ref_vector const& asms, expr_ref_vector
 
 lbool solver::find_mutexes(expr_ref_vector const& vars, vector<expr_ref_vector>& mutexes) {
     return l_true;
+}
+
+lbool solver::preferred_sat(expr_ref_vector const& asms, vector<expr_ref_vector>& cores) {
+    return check_sat(0, 0);
 }
 
 bool solver::is_literal(ast_manager& m, expr* e) {

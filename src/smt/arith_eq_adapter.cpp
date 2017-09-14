@@ -17,13 +17,12 @@ Revision History:
 
 --*/
 
-#include"smt_context.h"
-#include"arith_eq_adapter.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h"
-#include"stats.h"
-#include"simplifier.h"
-#include"ast_smt2_pp.h"
+#include "smt/smt_context.h"
+#include "smt/arith_eq_adapter.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
+#include "util/stats.h"
+#include "ast/ast_smt2_pp.h"
 
 namespace smt {
 
@@ -264,7 +263,7 @@ namespace smt {
     }
 
     void arith_eq_adapter::collect_statistics(::statistics & st) const {
-        st.update("eq adapter", m_stats.m_num_eq_axioms);
+        st.update("arith eq adapter", m_stats.m_num_eq_axioms);
     }
 
     void arith_eq_adapter::display_already_processed(std::ostream & out) const {

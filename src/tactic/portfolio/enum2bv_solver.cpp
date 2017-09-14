@@ -20,16 +20,16 @@ Notes:
    
 --*/
 
-#include "solver_na2as.h"
-#include "tactic.h"
-#include "bv_decl_plugin.h"
-#include "datatype_decl_plugin.h"
-#include "enum2bv_rewriter.h"
-#include "extension_model_converter.h"
-#include "filter_model_converter.h"
-#include "ast_pp.h"
-#include "model_smt2_pp.h"
-#include "enum2bv_solver.h"
+#include "solver/solver_na2as.h"
+#include "tactic/tactic.h"
+#include "ast/bv_decl_plugin.h"
+#include "ast/datatype_decl_plugin.h"
+#include "ast/rewriter/enum2bv_rewriter.h"
+#include "tactic/extension_model_converter.h"
+#include "tactic/filter_model_converter.h"
+#include "ast/ast_pp.h"
+#include "model/model_smt2_pp.h"
+#include "tactic/portfolio/enum2bv_solver.h"
 
 class enum2bv_solver : public solver_na2as {
     ast_manager&   m;
@@ -116,7 +116,7 @@ public:
 
         // translate enumeration constants to bit-vectors.
         for (unsigned i = 0; i < vars.size(); ++i) {
-            func_decl* f;
+            func_decl* f = 0;
             if (is_app(vars[i]) && is_uninterp_const(vars[i]) && m_rewriter.enum2bv().find(to_app(vars[i])->get_decl(), f)) {
                 bvars.push_back(m.mk_const(f));
             }
@@ -128,7 +128,7 @@ public:
 
         // translate bit-vector consequences back to enumeration types
         for (unsigned i = 0; i < consequences.size(); ++i) {
-            expr* a, *b, *u, *v;
+            expr* a = 0, *b = 0, *u = 0, *v = 0;
             func_decl* f;
             rational num;
             unsigned bvsize;
@@ -137,8 +137,10 @@ public:
                 SASSERT(num.is_unsigned());
                 expr_ref head(m);
                 ptr_vector<func_decl> const& enums = *dt.get_datatype_constructors(f->get_range());
-                head = m.mk_eq(m.mk_const(f), m.mk_const(enums[num.get_unsigned()]));
-                consequences[i] = m.mk_implies(a, head);
+                if (enums.size() > num.get_unsigned()) {
+                    head = m.mk_eq(m.mk_const(f), m.mk_const(enums[num.get_unsigned()]));
+                    consequences[i] = m.mk_implies(a, head);
+                }
             }
         }
         return r;
@@ -161,6 +163,14 @@ public:
             
         }
         ext(mdl, 0);
+    }
+
+    virtual unsigned get_num_assertions() const {
+        return m_solver->get_num_assertions();
+    }
+
+    virtual expr * get_assertion(unsigned idx) const {
+        return m_solver->get_assertion(idx);
     }
 
 };

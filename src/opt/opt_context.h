@@ -18,17 +18,17 @@ Notes:
 #ifndef OPT_CONTEXT_H_
 #define OPT_CONTEXT_H_
 
-#include "ast.h"
-#include "opt_solver.h"
-#include "opt_pareto.h"
-#include "optsmt.h"
-#include "maxsmt.h"
-#include "model_converter.h"
-#include "tactic.h"
-#include "arith_decl_plugin.h"
-#include "bv_decl_plugin.h"
-#include "cmd_context.h"
-#include "qsat.h"
+#include "ast/ast.h"
+#include "opt/opt_solver.h"
+#include "opt/opt_pareto.h"
+#include "opt/optsmt.h"
+#include "opt/maxsmt.h"
+#include "tactic/model_converter.h"
+#include "tactic/tactic.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/bv_decl_plugin.h"
+#include "cmd_context/cmd_context.h"
+#include "qe/qsat.h"
 
 namespace opt {
 
@@ -183,14 +183,14 @@ namespace opt {
         virtual bool empty() { return m_scoped_state.m_objectives.empty(); }
         virtual void set_hard_constraints(ptr_vector<expr> & hard);
         virtual lbool optimize();
-        virtual bool print_model() const;
         virtual void set_model(model_ref& _m) { m_model = _m; }
         virtual void get_model(model_ref& _m);
+        virtual void get_box_model(model_ref& _m, unsigned index);
         virtual void fix_model(model_ref& _m);
         virtual void collect_statistics(statistics& stats) const;
         virtual proof* get_proof() { return 0; }
         virtual void get_labels(svector<symbol> & r);
-        virtual void get_unsat_core(ptr_vector<expr> & r) {}
+        virtual void get_unsat_core(ptr_vector<expr> & r);
         virtual std::string reason_unknown() const;
         virtual void set_reason_unknown(char const* msg) { m_unknown = msg; }
 
@@ -206,6 +206,9 @@ namespace opt {
 
         expr_ref get_lower(unsigned idx);
         expr_ref get_upper(unsigned idx);
+
+        void get_lower(unsigned idx, expr_ref_vector& es) { to_exprs(get_lower_as_num(idx), es); }
+        void get_upper(unsigned idx, expr_ref_vector& es) { to_exprs(get_upper_as_num(idx), es); }
 
         std::string to_string() const;
 
@@ -238,6 +241,7 @@ namespace opt {
         lbool adjust_unknown(lbool r);
         bool scoped_lex();
         expr_ref to_expr(inf_eps const& n);
+        void to_exprs(inf_eps const& n, expr_ref_vector& es);
 
         void reset_maxsmts();
         void import_scoped_state();
@@ -291,6 +295,7 @@ namespace opt {
 
 
         void validate_lex();
+        void validate_maxsat(symbol const& id);
 
         void display_benchmark();
 

@@ -19,13 +19,13 @@ Revision History:
 #ifndef THEORY_FPA_H_
 #define THEORY_FPA_H_
 
-#include"smt_theory.h"
-#include"trail.h"
-#include"fpa2bv_converter.h"
-#include"fpa2bv_rewriter.h"
-#include"th_rewriter.h"
-#include"value_factory.h"
-#include"smt_model_generator.h"
+#include "smt/smt_theory.h"
+#include "util/trail.h"
+#include "ast/fpa/fpa2bv_converter.h"
+#include "ast/fpa/fpa2bv_rewriter.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "smt/proto_model/value_factory.h"
+#include "smt/smt_model_generator.h"
 
 namespace smt {
 
@@ -120,7 +120,7 @@ namespace smt {
 
         public:
             fpa_rm_value_proc(theory_fpa * th) :
-                m_th(*th), m(th->get_manager()), m_fu(th->m_fpa_util), m_bu(th->m_bv_util) {}
+                m_th(*th), m(th->get_manager()), m_fu(th->m_fpa_util), m_bu(th->m_bv_util) { (void) m_th; }
 
             void add_dependency(enode * e) { m_deps.push_back(model_value_dependency(e)); }
 

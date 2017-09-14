@@ -16,20 +16,20 @@ Author:
 Notes:
 
 --*/
-#include"tactical.h"
-#include"simplify_tactic.h"
-#include"propagate_values_tactic.h"
-#include"solve_eqs_tactic.h"
-#include"elim_uncnstr_tactic.h"
-#include"smt_tactic.h"
-#include"bit_blaster_tactic.h"
-#include"max_bv_sharing_tactic.h"
-#include"sat_tactic.h"
-#include"nla2bv_tactic.h"
-#include"ctx_simplify_tactic.h"
-#include"cofactor_term_ite_tactic.h"
+#include "tactic/tactical.h"
+#include "tactic/core/simplify_tactic.h"
+#include "tactic/core/propagate_values_tactic.h"
+#include "tactic/core/solve_eqs_tactic.h"
+#include "tactic/core/elim_uncnstr_tactic.h"
+#include "smt/tactic/smt_tactic.h"
+#include "tactic/bv/bit_blaster_tactic.h"
+#include "tactic/bv/max_bv_sharing_tactic.h"
+#include "sat/tactic/sat_tactic.h"
+#include "tactic/arith/nla2bv_tactic.h"
+#include "tactic/core/ctx_simplify_tactic.h"
+#include "tactic/core/cofactor_term_ite_tactic.h"
 
-tactic * mk_qfnia_bv_solver(ast_manager & m, params_ref const & p_ref) {
+static tactic * mk_qfnia_bv_solver(ast_manager & m, params_ref const & p_ref) {
     params_ref p = p_ref;
     p.set_bool("flat", false);
     p.set_bool("hi_div0", true); 
@@ -51,7 +51,7 @@ tactic * mk_qfnia_bv_solver(ast_manager & m, params_ref const & p_ref) {
     return r;
 }
 
-tactic * mk_qfnia_premable(ast_manager & m, params_ref const & p_ref) {
+static tactic * mk_qfnia_premable(ast_manager & m, params_ref const & p_ref) {
     params_ref pull_ite_p = p_ref;
     pull_ite_p.set_bool("pull_cheap_ite", true);
     pull_ite_p.set_bool("local_ctx", true);
@@ -77,7 +77,7 @@ tactic * mk_qfnia_premable(ast_manager & m, params_ref const & p_ref) {
                  using_params(mk_simplify_tactic(m), simp_p));    
 }
 
-tactic * mk_qfnia_sat_solver(ast_manager & m, params_ref const & p) {
+static tactic * mk_qfnia_sat_solver(ast_manager & m, params_ref const & p) {
     params_ref nia2sat_p = p;
     nia2sat_p.set_uint("nla2bv_max_bv_size", 64);   
 

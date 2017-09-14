@@ -2421,6 +2421,29 @@ namespace Microsoft.Z3
         }
 
         /// <summary>
+        /// Convert an integer expression to a string.
+        /// </summary>
+        public SeqExpr IntToString(Expr e) 
+        {
+            Contract.Requires(e != null);
+	    Contract.Requires(e is ArithExpr);
+            Contract.Ensures(Contract.Result<SeqExpr>() != null);
+            return new SeqExpr(this, Native.Z3_mk_int_to_str(nCtx, e.NativeObject));
+        }
+
+        /// <summary>
+        /// Convert an integer expression to a string.
+        /// </summary>
+        public IntExpr StringToInt(Expr e) 
+        {
+            Contract.Requires(e != null);
+            Contract.Requires(e is SeqExpr);
+            Contract.Ensures(Contract.Result<IntExpr>() != null);
+            return new IntExpr(this, Native.Z3_mk_str_to_int(nCtx, e.NativeObject));
+        }
+
+
+        /// <summary>
         /// Concatentate sequences.
         /// </summary>
         public SeqExpr MkConcat(params SeqExpr[] t)
@@ -2565,9 +2588,19 @@ namespace Microsoft.Z3
         }
 
         /// <summary>
+        /// Take the bounded Kleene star of a regular expression.
+        /// </summary>
+        public ReExpr MkLoop(ReExpr re, uint lo, uint hi = 0)
+        {
+            Contract.Requires(re != null);
+            Contract.Ensures(Contract.Result<ReExpr>() != null);
+            return new ReExpr(this, Native.Z3_mk_re_loop(nCtx, re.NativeObject, lo, hi));            
+        }
+
+        /// <summary>
         /// Take the Kleene plus of a regular expression.
         /// </summary>
-        public ReExpr MPlus(ReExpr re)
+        public ReExpr MkPlus(ReExpr re)
         {
             Contract.Requires(re != null);
             Contract.Ensures(Contract.Result<ReExpr>() != null);
@@ -2577,11 +2610,21 @@ namespace Microsoft.Z3
         /// <summary>
         /// Create the optional regular expression.
         /// </summary>
-        public ReExpr MOption(ReExpr re)
+        public ReExpr MkOption(ReExpr re)
         {
             Contract.Requires(re != null);
             Contract.Ensures(Contract.Result<ReExpr>() != null);
             return new ReExpr(this, Native.Z3_mk_re_option(nCtx, re.NativeObject));            
+        }
+
+        /// <summary>
+        /// Create the complement regular expression.
+        /// </summary>
+        public ReExpr MkComplement(ReExpr re)
+        {
+            Contract.Requires(re != null);
+            Contract.Ensures(Contract.Result<ReExpr>() != null);
+            return new ReExpr(this, Native.Z3_mk_re_complement(nCtx, re.NativeObject));            
         }
 
         /// <summary>
@@ -2609,6 +2652,52 @@ namespace Microsoft.Z3
             CheckContextMatch<ReExpr>(t);
             return new ReExpr(this, Native.Z3_mk_re_union(nCtx, (uint)t.Length, AST.ArrayToNative(t)));
         }
+
+        /// <summary>
+        /// Create the intersection of regular languages.
+        /// </summary>
+        public ReExpr MkIntersect(params ReExpr[] t)
+        {
+            Contract.Requires(t != null);
+            Contract.Requires(Contract.ForAll(t, a => a != null));
+            Contract.Ensures(Contract.Result<ReExpr>() != null);
+
+            CheckContextMatch<ReExpr>(t);
+            return new ReExpr(this, Native.Z3_mk_re_intersect(nCtx, (uint)t.Length, AST.ArrayToNative(t)));
+        }
+
+        /// <summary>
+        /// Create the empty regular expression.
+        /// </summary>
+        public ReExpr MkEmptyRe(Sort s) 
+        {
+            Contract.Requires(s != null);
+            Contract.Ensures(Contract.Result<SeqExpr>() != null);
+            return new ReExpr(this, Native.Z3_mk_re_empty(nCtx, s.NativeObject));
+        }
+
+        /// <summary>
+        /// Create the full regular expression.
+        /// </summary>
+        public ReExpr MkFullRe(Sort s) 
+        {
+            Contract.Requires(s != null);
+            Contract.Ensures(Contract.Result<SeqExpr>() != null);
+            return new ReExpr(this, Native.Z3_mk_re_full(nCtx, s.NativeObject));
+        }
+
+
+        /// <summary>
+        /// Create a range expression.
+        /// </summary>
+	public ReExpr MkRange(SeqExpr lo, SeqExpr hi) 
+        {
+            Contract.Requires(lo != null);
+            Contract.Requires(hi != null);
+            Contract.Ensures(Contract.Result<ReExpr>() != null);
+            CheckContextMatch(lo, hi);
+            return new ReExpr(this, Native.Z3_mk_re_range(nCtx, lo.NativeObject, hi.NativeObject));
+        }
     
         #endregion
 
@@ -2627,6 +2716,18 @@ namespace Microsoft.Z3
         }
 
         /// <summary>
+        /// Create an at-least-k constraint.
+        /// </summary>
+        public BoolExpr MkAtLeast(BoolExpr[] args, uint k)
+        {
+           Contract.Requires(args != null);
+           Contract.Requires(Contract.Result<BoolExpr[]>() != null);
+           CheckContextMatch<BoolExpr>(args);
+           return new BoolExpr(this, Native.Z3_mk_atleast(nCtx, (uint) args.Length,
+                                                          AST.ArrayToNative(args), k));
+        }
+
+        /// <summary>
         /// Create a pseudo-Boolean less-or-equal constraint.
         /// </summary>
         public BoolExpr MkPBLe(int[] coeffs, BoolExpr[] args, int k)
@@ -2641,6 +2742,20 @@ namespace Microsoft.Z3
                                                           coeffs, k));
         }
 
+        /// <summary>
+        /// Create a pseudo-Boolean greater-or-equal constraint.
+        /// </summary>
+        public BoolExpr MkPBGe(int[] coeffs, BoolExpr[] args, int k)
+        {
+           Contract.Requires(args != null);
+           Contract.Requires(coeffs != null);
+           Contract.Requires(args.Length == coeffs.Length);
+           Contract.Requires(Contract.Result<BoolExpr[]>() != null);
+           CheckContextMatch<BoolExpr>(args);
+           return new BoolExpr(this, Native.Z3_mk_pbge(nCtx, (uint) args.Length,
+                                                          AST.ArrayToNative(args),
+                                                          coeffs, k));
+        }
         /// <summary>
         /// Create a pseudo-Boolean equal constraint.
         /// </summary>

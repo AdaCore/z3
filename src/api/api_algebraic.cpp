@@ -7,7 +7,7 @@ Module Name:
 
 Abstract:
 
-    Additional APIs for handling Z3 algebraic numbers encoded as 
+    Additional APIs for handling Z3 algebraic numbers encoded as
     Z3_ASTs
 
 Author:
@@ -15,17 +15,16 @@ Author:
     Leonardo de Moura (leonardo) 2012-12-07
 
 Notes:
-    
+
 --*/
-#include<iostream>
-#include"z3.h"
-#include"api_log_macros.h"
-#include"api_context.h"
-#include"api_ast_vector.h"
-#include"algebraic_numbers.h"
-#include"expr2polynomial.h"
-#include"cancel_eh.h"
-#include"scoped_timer.h"
+#include "api/z3.h"
+#include "api/api_log_macros.h"
+#include "api/api_context.h"
+#include "api/api_ast_vector.h"
+#include "math/polynomial/algebraic_numbers.h"
+#include "ast/expr2polynomial.h"
+#include "util/cancel_eh.h"
+#include "util/scoped_timer.h"
 
 
 #define CHECK_IS_ALGEBRAIC(ARG, RET) {          \
@@ -74,9 +73,9 @@ extern "C" {
 
     bool Z3_algebraic_is_value_core(Z3_context c, Z3_ast a) {
         api::context * _c = mk_c(c);
-        return 
-            is_expr(a) && 
-            (_c->autil().is_numeral(to_expr(a)) || 
+        return
+            is_expr(a) &&
+            (_c->autil().is_numeral(to_expr(a)) ||
              _c->autil().is_irrational_algebraic_numeral(to_expr(a)));
     }
 
@@ -162,9 +161,9 @@ extern "C" {
     Z3_ast Z3_API Z3_algebraic_add(Z3_context c, Z3_ast a, Z3_ast b) {
         Z3_TRY;
         LOG_Z3_algebraic_add(c, a, b);
-        RESET_ERROR_CODE();                                             
-        CHECK_IS_ALGEBRAIC_X(a, 0);                                       
-        CHECK_IS_ALGEBRAIC_X(b, 0);                                       
+        RESET_ERROR_CODE();
+        CHECK_IS_ALGEBRAIC_X(a, 0);
+        CHECK_IS_ALGEBRAIC_X(b, 0);
         BIN_OP(+,add);
         Z3_CATCH_RETURN(0);
     }
@@ -172,9 +171,9 @@ extern "C" {
     Z3_ast Z3_API Z3_algebraic_sub(Z3_context c, Z3_ast a, Z3_ast b) {
         Z3_TRY;
         LOG_Z3_algebraic_sub(c, a, b);
-        RESET_ERROR_CODE();                                             
-        CHECK_IS_ALGEBRAIC_X(a, 0);                                       
-        CHECK_IS_ALGEBRAIC_X(b, 0);                                       
+        RESET_ERROR_CODE();
+        CHECK_IS_ALGEBRAIC_X(a, 0);
+        CHECK_IS_ALGEBRAIC_X(b, 0);
         BIN_OP(-,sub);
         Z3_CATCH_RETURN(0);
     }
@@ -182,9 +181,9 @@ extern "C" {
     Z3_ast Z3_API Z3_algebraic_mul(Z3_context c, Z3_ast a, Z3_ast b) {
         Z3_TRY;
         LOG_Z3_algebraic_mul(c, a, b);
-        RESET_ERROR_CODE();                                             
-        CHECK_IS_ALGEBRAIC_X(a, 0);                                       
-        CHECK_IS_ALGEBRAIC_X(b, 0);                                       
+        RESET_ERROR_CODE();
+        CHECK_IS_ALGEBRAIC_X(a, 0);
+        CHECK_IS_ALGEBRAIC_X(b, 0);
         BIN_OP(*,mul);
         Z3_CATCH_RETURN(0);
     }
@@ -219,8 +218,8 @@ extern "C" {
         algebraic_numbers::manager & _am = am(c);
         scoped_anum _r(_am);
         if (is_rational(c, a)) {
-            scoped_anum av(_am);                                     
-            _am.set(av, get_rational(c, a).to_mpq());   
+            scoped_anum av(_am);
+            _am.set(av, get_rational(c, a).to_mpq());
             _am.root(av, k, _r);
         }
         else {
@@ -241,8 +240,8 @@ extern "C" {
         algebraic_numbers::manager & _am = am(c);
         scoped_anum _r(_am);
         if (is_rational(c, a)) {
-            scoped_anum av(_am);                                     
-            _am.set(av, get_rational(c, a).to_mpq());   
+            scoped_anum av(_am);
+            _am.set(av, get_rational(c, a).to_mpq());
             _am.power(av, k, _r);
         }
         else {
@@ -328,7 +327,7 @@ extern "C" {
         scoped_anum tmp(_am);
         for (unsigned i = 0; i < n; i++) {
             if (is_rational(c, a[i])) {
-                _am.set(tmp, get_rational(c, a[i]).to_mpq());       
+                _am.set(tmp, get_rational(c, a[i]).to_mpq());
                 as.push_back(tmp);
             }
             else if (is_irrational(c, a[i])) {

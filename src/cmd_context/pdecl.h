@@ -19,10 +19,11 @@ Revision History:
 #ifndef PDECL_H_
 #define PDECL_H_
 
-#include"ast.h"
-#include"obj_hashtable.h" 
-#include"dictionary.h"
-#include"format.h"
+#include "ast/ast.h"
+#include "util/obj_hashtable.h"
+#include "util/dictionary.h"
+#include "ast/format.h"
+#include "ast/datatype_decl_plugin.h"
 
 class pdecl_manager;
 
@@ -46,6 +47,7 @@ public:
     unsigned get_ref_count() const { return m_ref_count; }
     unsigned hash() const { return m_id; }
     virtual void display(std::ostream & out) const {}
+    virtual void reset_cache(pdecl_manager& m) {}
 };
 
 class psort_inst_cache;
@@ -75,6 +77,7 @@ public:
     virtual char const * hcons_kind() const = 0;
     virtual unsigned hcons_hash() const = 0;
     virtual bool hcons_eq(psort const * other) const = 0;
+    virtual void reset_cache(pdecl_manager& m);
 };
 
 // for hash consing
@@ -84,10 +87,13 @@ typedef ptr_hashtable<psort, psort_hash_proc, psort_eq_proc> psort_table;
 
 #define PSORT_DECL_VAR_PARAMS UINT_MAX
 
+typedef enum { PSORT_BASE = 0, PSORT_USER, PSORT_BUILTIN, PSORT_DT } psort_decl_kind;
+
 class psort_decl : public pdecl {
 protected:
     friend class pdecl_manager;
     symbol                        m_name;
+    psort_decl_kind               m_psort_kind;
     psort_inst_cache *            m_inst_cache;
     void cache(pdecl_manager & m, sort * const * s, sort * r);
     sort * find(sort * const * s);
@@ -102,6 +108,10 @@ public:
     // Only builtin declarations can have a variable number of parameters.
     bool has_var_params() const { return m_num_params == PSORT_DECL_VAR_PARAMS; }
     symbol const & get_name() const { return m_name; }
+    virtual void reset_cache(pdecl_manager& m);
+    bool is_user_decl() const { return m_psort_kind == PSORT_USER; }
+    bool is_builtin_decl() const { return m_psort_kind == PSORT_BUILTIN; }
+    bool is_dt_decl() const { return m_psort_kind == PSORT_DT; }
 };
 
 class psort_user_decl : public psort_decl {
@@ -116,7 +126,7 @@ public:
     virtual sort * instantiate(pdecl_manager & m, unsigned n, sort * const * s);
     virtual void display(std::ostream & out) const;
 };
-
+ 
 class psort_builtin_decl : public psort_decl {
 protected:
     friend class pdecl_manager;
@@ -131,10 +141,17 @@ public:
     virtual void display(std::ostream & out) const;
 };
 
-class datatype_decl_plugin;
-class datatype_decl;
-class constructor_decl;
-class accessor_decl;
+class psort_dt_decl : public psort_decl {
+protected:
+    friend class pdecl_manager;
+    psort_dt_decl(unsigned id, unsigned num_params, pdecl_manager & m, symbol const & n);
+    virtual size_t obj_size() const { return sizeof(psort_dt_decl); }
+    virtual ~psort_dt_decl() {}
+public:
+    virtual sort * instantiate(pdecl_manager & m, unsigned n, sort * const * s);
+    virtual void display(std::ostream & out) const;
+};
+
 
 class pdatatypes_decl;
 class pdatatype_decl;
@@ -192,7 +209,7 @@ class pconstructor_decl : public pdecl {
     symbol                     m_name;
     symbol                     m_recogniser_name;
     ptr_vector<paccessor_decl> m_accessors;
-    pconstructor_decl(unsigned id, unsigned num_params, pdecl_manager & m, 
+    pconstructor_decl(unsigned id, unsigned num_params, pdecl_manager & m,
                       symbol const & n, symbol const & r, unsigned num_accessors, paccessor_decl * const * accessors);
     virtual void finalize(pdecl_manager & m);
     virtual size_t obj_size() const { return sizeof(pconstructor_decl); }
@@ -212,7 +229,7 @@ class pdatatype_decl : public psort_decl {
     friend class pdatatypes_decl;
     ptr_vector<pconstructor_decl> m_constructors;
     pdatatypes_decl *             m_parent;
-    pdatatype_decl(unsigned id, unsigned num_params, pdecl_manager & m, symbol const & n, 
+    pdatatype_decl(unsigned id, unsigned num_params, pdecl_manager & m, symbol const & n,
                    unsigned num_constructors, pconstructor_decl * const * constructors);
     virtual void finalize(pdecl_manager & m);
     virtual size_t obj_size() const { return sizeof(pdatatype_decl); }
@@ -224,6 +241,7 @@ public:
     virtual void display(std::ostream & out) const;
     bool has_missing_refs(symbol & missing) const;
     bool has_duplicate_accessors(symbol & repeated) const;
+    bool commit(pdecl_manager& m);
 };
 
 /**
@@ -241,12 +259,16 @@ class pdatatypes_decl : public pdecl {
     virtual ~pdatatypes_decl() {}
 public:
     pdatatype_decl const * const * children() const { return m_datatypes.c_ptr(); }
+    pdatatype_decl * const * begin() const { return m_datatypes.begin(); }
+    pdatatype_decl * const * end() const { return m_datatypes.end(); }
+    // commit declaration 
+    bool commit(pdecl_manager& m);
 };
 
 class new_datatype_eh {
 public:
     virtual ~new_datatype_eh() {}
-    virtual void operator()(sort * dt) = 0;
+    virtual void operator()(sort * dt, pdecl* pd) = 0;
 };
 
 class pdecl_manager {
@@ -265,7 +287,7 @@ class pdecl_manager {
     struct indexed_sort_info;
 
     obj_map<sort, sort_info *>   m_sort2info; // for pretty printing sorts
-    
+
     void init_list();
     void del_decl_core(pdecl * p);
     void del_decl(pdecl * p);
@@ -283,6 +305,7 @@ public:
     psort * mk_psort_var(unsigned num_params, unsigned vidx);
     psort * mk_psort_app(unsigned num_params, psort_decl * d, unsigned num_args, psort * const * args);
     psort * mk_psort_app(psort_decl * d);
+    psort_decl * mk_psort_dt_decl(unsigned num_params, symbol const & n);
     psort_decl * mk_psort_user_decl(unsigned num_params, symbol const & n, psort * def);
     psort_decl * mk_psort_builtin_decl(symbol const & n, family_id fid, decl_kind k);
     paccessor_decl * mk_paccessor_decl(unsigned num_params, symbol const & s, ptype const & p);
@@ -291,6 +314,7 @@ public:
     pdatatypes_decl * mk_pdatatypes_decl(unsigned num_params, unsigned num, pdatatype_decl * const * dts);
     pdatatype_decl * mk_plist_decl() { if (!m_list) init_list(); return m_list; }
     bool fix_missing_refs(pdatatypes_decl * s, symbol & missing) { return s->fix_missing_refs(missing); }
+    sort * instantiate_datatype(psort_decl* p, symbol const& name, unsigned n, sort * const* s);
     sort * instantiate(psort * s, unsigned num, sort * const * args);
 
     void lazy_dec_ref(pdecl * p) { p->dec_ref(); if (p->get_ref_count() == 0) m_to_delete.push_back(p); }
@@ -304,7 +328,7 @@ public:
     void dec_ref(unsigned num, T * const * ps) { lazy_dec_ref(num, ps); del_decls(); }
     psort_inst_cache * mk_inst_cache(unsigned num_params);
     void del_inst_cache(psort_inst_cache * c);
-    void notify_new_dt(sort * dt) { if (m_new_dt_eh) (*m_new_dt_eh)(dt); }
+    void notify_new_dt(sort * dt, pdecl* pd) { if (m_new_dt_eh) (*m_new_dt_eh)(dt, pd); }
     datatype_decl_plugin * get_dt_plugin() const;
 
     void save_info(sort * s, psort_decl * d, unsigned num_args, sort * const * args);

@@ -4,18 +4,15 @@ Copyright (c) 2015 Microsoft Corporation
 
 --*/
 
-#include "expr_rand.h"
-#include "bv_decl_plugin.h"
-#include "array_decl_plugin.h"
-#include "arith_decl_plugin.h"
-#include "ast_pp.h"
+#include "test/fuzzing/expr_rand.h"
+#include "ast/bv_decl_plugin.h"
+#include "ast/array_decl_plugin.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/ast_pp.h"
 
 
 expr_rand::expr_rand(ast_manager& m):
     m_manager(m),
-    m_num_vars(0),
-    m_num_apps(0),
-    m_num_nodes(0),
     m_max_steps(10),
     m_funcs(m)
 {}

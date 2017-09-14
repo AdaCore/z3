@@ -19,11 +19,11 @@ Notes:
 #ifndef FLOAT_REWRITER_H_
 #define FLOAT_REWRITER_H_
 
-#include"ast.h"
-#include"rewriter.h"
-#include"params.h"
-#include"fpa_decl_plugin.h"
-#include"mpf.h"
+#include "ast/ast.h"
+#include "ast/rewriter/rewriter.h"
+#include "util/params.h"
+#include "ast/fpa_decl_plugin.h"
+#include "util/mpf.h"
 
 class fpa_rewriter {
     fpa_util      m_util;
@@ -85,6 +85,8 @@ public:
     br_status mk_to_sbv(func_decl * f, expr * arg1, expr * arg2, expr_ref & result);
     br_status mk_to_ieee_bv(func_decl * f, expr * arg, expr_ref & result);
     br_status mk_to_real(expr * arg, expr_ref & result);
+    br_status mk_min_i(func_decl * f, expr * arg1, expr * arg2, expr_ref & result);
+    br_status mk_max_i(func_decl * f, expr * arg1, expr * arg2, expr_ref & result);
 
     br_status mk_to_ubv_unspecified(unsigned ebits, unsigned sbits, unsigned with, expr_ref & result);
     br_status mk_to_sbv_unspecified(unsigned ebits, unsigned sbits, unsigned with, expr_ref & result);

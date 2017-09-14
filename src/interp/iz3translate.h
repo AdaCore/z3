@@ -22,8 +22,8 @@
 #ifndef IZ3TRANSLATION_H
 #define IZ3TRANSLATION_H
 
-#include "iz3proof.h"
-#include "iz3secondary.h"
+#include "interp/iz3proof.h"
+#include "interp/iz3secondary.h"
 
 // This is a interface class for translation from Z3 proof terms to
 // an interpolatable proof
@@ -53,12 +53,8 @@ class iz3translation : public iz3base {
      : iz3base(mgr,_cnsts,_parents,_theory)  {}
 };
 
-//#define IZ3_TRANSLATE_DIRECT2
-#ifdef _FOCI2
-#define IZ3_TRANSLATE_DIRECT
-#else
+// To use a secondary prover, define IZ3_TRANSLATE_DIRECT instead of this
 #define IZ3_TRANSLATE_FULL
-#endif
 
 #endif
 

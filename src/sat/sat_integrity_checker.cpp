@@ -17,9 +17,9 @@ Author:
 Revision History:
 
 --*/
-#include"sat_integrity_checker.h"
-#include"sat_solver.h"
-#include"trace.h"
+#include "sat/sat_integrity_checker.h"
+#include "sat/sat_solver.h"
+#include "util/trace.h"
 
 namespace sat {
     
@@ -96,8 +96,8 @@ namespace sat {
             }
             
             // the first two literals must be watched.
-            SASSERT(contains_watched(s.get_wlist(~c[0]), c, s.get_offset(c)));
-            SASSERT(contains_watched(s.get_wlist(~c[1]), c, s.get_offset(c)));
+            VERIFY(contains_watched(s.get_wlist(~c[0]), c, s.get_offset(c)));
+            VERIFY(contains_watched(s.get_wlist(~c[1]), c, s.get_offset(c)));
         }
         return true;
     }

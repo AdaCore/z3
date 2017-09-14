@@ -19,8 +19,8 @@ Revision History:
 #ifndef OBJ_HASHTABLE_H_
 #define OBJ_HASHTABLE_H_
 
-#include"hash.h"
-#include"hashtable.h"
+#include "util/hash.h"
+#include "util/hashtable.h"
 
 
 /**
@@ -70,6 +70,7 @@ public:
             m_value(v) {
         }
         Value const & get_value() const { return m_value; }
+        Key & get_key () const { return *m_key; }
         unsigned hash() const { return m_key->hash(); }
         bool operator==(key_data const & other) const { return m_key == other.m_key; }
     };
@@ -100,6 +101,8 @@ public:
         m_table(DEFAULT_HASHTABLE_INITIAL_CAPACITY) {}
     
     typedef typename table::iterator iterator;
+    typedef typename table::data data;
+    typedef typename table::entry entry;
     typedef Key    key;
     typedef Value  value;
 
@@ -131,7 +134,7 @@ public:
         return m_table.end();
     }
     
-    void insert(Key * k, Value const & v) {
+    void insert(Key * const k, Value const & v) {
         m_table.insert(key_data(k, v));
     }
     
@@ -147,7 +150,7 @@ public:
         return m_table.find_core(key_data(k));
     }
 
-    bool find(Key * k, Value & v) const {
+    bool find(Key * const k, Value & v) const {
         obj_map_entry * e = find_core(k);
         if (e) {
             v = e->get_data().m_value;

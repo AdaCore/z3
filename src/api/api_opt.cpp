@@ -16,18 +16,18 @@ Revision History:
 
 --*/
 #include<iostream>
-#include"z3.h"
-#include"api_log_macros.h"
-#include"api_stats.h"
-#include"api_context.h"
-#include"api_util.h"
-#include"api_model.h"
-#include"opt_context.h"
-#include"opt_cmds.h"
-#include"cancel_eh.h"
-#include"scoped_timer.h"
-#include"smt2parser.h"
-#include"api_ast_vector.h"
+#include "api/z3.h"
+#include "api/api_log_macros.h"
+#include "api/api_stats.h"
+#include "api/api_context.h"
+#include "api/api_util.h"
+#include "api/api_model.h"
+#include "opt/opt_context.h"
+#include "opt/opt_cmds.h"
+#include "util/cancel_eh.h"
+#include "util/scoped_timer.h"
+#include "parsers/smt2/smt2parser.h"
+#include "api/api_ast_vector.h"
 
 extern "C" {
 
@@ -128,7 +128,7 @@ extern "C" {
         lbool r = l_undef;
         cancel_eh<reslimit> eh(mk_c(c)->m().limit());
         unsigned timeout = to_optimize_ptr(o)->get_params().get_uint("timeout", mk_c(c)->get_timeout());
-        unsigned rlimit = mk_c(c)->get_rlimit();
+        unsigned rlimit = to_optimize_ptr(o)->get_params().get_uint("rlimit", mk_c(c)->get_rlimit());
         api::context::set_interruptable si(*(mk_c(c)), eh);        
         {
             scoped_timer timer(timeout, &eh);
@@ -218,6 +218,34 @@ extern "C" {
         Z3_CATCH_RETURN(0);
     }
 
+    // get lower value or current approximation
+    Z3_ast_vector Z3_API Z3_optimize_get_lower_as_vector(Z3_context c, Z3_optimize o, unsigned idx) {
+        Z3_TRY;
+        LOG_Z3_optimize_get_lower_as_vector(c, o, idx);
+        RESET_ERROR_CODE();
+        expr_ref_vector es(mk_c(c)->m());
+        to_optimize_ptr(o)->get_lower(idx, es);
+        Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), mk_c(c)->m());
+        mk_c(c)->save_object(v);
+        v->m_ast_vector.append(es.size(), (ast*const*)es.c_ptr());
+        RETURN_Z3(of_ast_vector(v));
+        Z3_CATCH_RETURN(0);
+    }
+
+    // get upper or current approximation
+    Z3_ast_vector Z3_API Z3_optimize_get_upper_as_vector(Z3_context c, Z3_optimize o, unsigned idx) {
+        Z3_TRY;
+        LOG_Z3_optimize_get_upper_as_vector(c, o, idx);
+        RESET_ERROR_CODE();
+        expr_ref_vector es(mk_c(c)->m());
+        to_optimize_ptr(o)->get_upper(idx, es);
+        Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), mk_c(c)->m());
+        mk_c(c)->save_object(v);
+        v->m_ast_vector.append(es.size(), (ast*const*)es.c_ptr());
+        RETURN_Z3(of_ast_vector(v));
+        Z3_CATCH_RETURN(0);
+    }
+
     Z3_string Z3_API Z3_optimize_to_string(Z3_context c, Z3_optimize o) {
         Z3_TRY;
         LOG_Z3_optimize_to_string(c, o);
@@ -289,6 +317,10 @@ extern "C" {
         //LOG_Z3_optimize_from_file(c, d, s);
         std::ifstream is(s);
         if (!is) {
+            std::ostringstream strm;
+            strm << "Could not open file " << s;
+            throw default_exception(strm.str());
+
             SET_ERROR_CODE(Z3_PARSER_ERROR);
             return;
         }

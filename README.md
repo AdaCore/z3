@@ -10,6 +10,12 @@ Z3 can be built using [Visual Studio][1], a [Makefile][2] or using [CMake][3]. I
 
 See the [release notes](RELEASE_NOTES) for notes on various stable releases of Z3.
 
+## Build status
+
+| Windows x86 | Windows x64 | Ubuntu x64 | Ubuntu x86 | Debian x64 | OSX | TravisCI |
+| ----------- | ----------- | ---------- | ---------- | ---------- | --- | -------- |
+[![win32-badge](https://cz3.visualstudio.com/_apis/public/build/definitions/bf14bcc7-ebd4-4240-812c-5972fa59e0ad/4/badge)](https://cz3.visualstudio.com/Z3/_build/index?definitionId=4) | [![win64-badge](https://cz3.visualstudio.com/_apis/public/build/definitions/bf14bcc7-ebd4-4240-812c-5972fa59e0ad/7/badge)](https://cz3.visualstudio.com/Z3/_build/index?definitionId=7) | [![ubuntu-x64-badge](https://cz3.visualstudio.com/_apis/public/build/definitions/bf14bcc7-ebd4-4240-812c-5972fa59e0ad/3/badge)](https://cz3.visualstudio.com/Z3/_build/index?definitionId=3) | [![ubuntu-x86-badge](https://cz3.visualstudio.com/_apis/public/build/definitions/bf14bcc7-ebd4-4240-812c-5972fa59e0ad/6/badge)](https://cz3.visualstudio.com/Z3/_build/index?definitionId=6) | [![debian-badge](https://cz3.visualstudio.com/_apis/public/build/definitions/bf14bcc7-ebd4-4240-812c-5972fa59e0ad/5/badge)](https://cz3.visualstudio.com/Z3/_build/index?definitionId=5) | [![osx-badge](https://cz3.visualstudio.com/_apis/public/build/definitions/bf14bcc7-ebd4-4240-812c-5972fa59e0ad/2/badge)](https://cz3.visualstudio.com/Z3/_build/index?definitionId=2) | [![Build Status](https://travis-ci.org/Z3Prover/z3.svg?branch=master)](https://travis-ci.org/Z3Prover/z3)
+
 [1]: #building-z3-on-windows-using-visual-studio-command-prompt
 [2]: #building-z3-using-make-and-gccclang
 [3]: #building-z3-using-cmake
@@ -47,8 +53,8 @@ make
 sudo make install
 ```
 
-Note by default ``gcc`` is used as the C++ compiler if it is available. If you
-would prefer to use Clang change the ``mk_make.py`` line to
+Note by default ``g++`` is used as the C++ compiler if it is available. If you
+would prefer to use Clang change the ``mk_make.py`` invocation to:
 
 ```bash
 CXX=clang++ CC=clang python scripts/mk_make.py
@@ -162,7 +168,10 @@ python scripts/mk_make.py --prefix=/home/leo --python --pypkgdir=/home/leo/lib/p
 
 If you do need to install to a non standard prefix a better approach is to use
 a [Python virtual environment](https://virtualenv.readthedocs.org/en/latest/)
-and install Z3 there.
+and install Z3 there. Python packages also work for Python3.
+Under Windows, recall to build inside the Visual C++ native command build environment.
+Note that the buit/python/z3 directory should be accessible from where python is used with Z3 
+and it depends on libz3.dll to be in the path.
 
 ```bash
 virtualenv venv
@@ -179,3 +188,4 @@ python -c 'import z3; print(z3.get_version_string())'
 ```
 
 See [``examples/python``](examples/python) for examples.
+

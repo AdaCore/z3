@@ -25,10 +25,10 @@ Revision History:
 #undef max
 #endif
 #include <deque>
-#include "pdr_manager.h"
-#include "pdr_prop_solver.h"
-#include "pdr_reachable_cache.h"
-#include "fixedpoint_params.hpp"
+#include "muz/pdr/pdr_manager.h"
+#include "muz/pdr/pdr_prop_solver.h"
+#include "muz/pdr/pdr_reachable_cache.h"
+#include "muz/base/fixedpoint_params.hpp"
 
 
 namespace datalog {
@@ -328,6 +328,7 @@ namespace pdr {
         datalog::context*    m_context;
         manager              m_pm;  
         decl2rel             m_rels;         // Map from relation predicate to fp-operator.       
+        decl2rel             m_rels_tmp; 
         func_decl_ref        m_query_pred;
         pred_transformer*    m_query;
         mutable model_search m_search;
@@ -370,6 +371,8 @@ namespace pdr {
 
         void reset_core_generalizers();
 
+        void reset(decl2rel& rels);
+
         void validate();
         void validate_proof();
         void validate_search();
@@ -410,8 +413,7 @@ namespace pdr {
 
         lbool solve();
 
-
-        void reset();
+        void reset(bool full = true);
 
         void set_query(func_decl* q) { m_query_pred = q; }
 

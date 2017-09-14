@@ -17,10 +17,10 @@ Revision History:
 
 --*/
 
-#include"dl_mk_filter_rules.h"
-#include"dl_context.h"
-#include"for_each_expr.h"
-#include"ast_pp.h"
+#include "muz/transforms/dl_mk_filter_rules.h"
+#include "muz/base/dl_context.h"
+#include "ast/for_each_expr.h"
+#include "ast/ast_pp.h"
 
 namespace datalog {
 
@@ -140,7 +140,7 @@ namespace datalog {
         if (rule_modified) {
             remove_duplicate_tails(new_tail, new_is_negated);
             SASSERT(new_tail.size() == new_is_negated.size());
-            rule * new_rule = m_context.get_rule_manager().mk(new_head, new_tail.size(), new_tail.c_ptr(), new_is_negated.c_ptr());
+            rule * new_rule = m_context.get_rule_manager().mk(new_head, new_tail.size(), new_tail.c_ptr(), new_is_negated.c_ptr(), r->name());
             new_rule->set_accounting_parent_object(m_context, m_current);
             m_result->add_rule(new_rule);
             m_context.get_rule_manager().mk_rule_rewrite_proof(*r, *new_rule);

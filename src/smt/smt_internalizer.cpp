@@ -16,13 +16,13 @@ Author:
 Revision History:
 
 --*/
-#include"smt_context.h"
-#include"expr_stat.h"
-#include"ast_pp.h"
-#include"ast_ll_pp.h"
-#include"ast_smt2_pp.h"
-#include"smt_model_finder.h"
-#include"for_each_expr.h"
+#include "smt/smt_context.h"
+#include "ast/expr_stat.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
+#include "ast/ast_smt2_pp.h"
+#include "smt/smt_model_finder.h"
+#include "ast/for_each_expr.h"
 
 namespace smt {
 
@@ -335,23 +335,6 @@ namespace smt {
         }
     }
 
-    bool find_arg(app * n, expr * t, expr * & other) {
-        SASSERT(n->get_num_args() == 2);
-        if (n->get_arg(0) == t) {
-            other = n->get_arg(1);
-            return true;
-        }
-        else if (n->get_arg(1) == t) {
-            other = n->get_arg(0);
-            return true;
-        }
-        return false;
-    }
-
-    bool check_args(app * n, expr * t1, expr * t2) {
-        SASSERT(n->get_num_args() == 2);
-        return (n->get_arg(0) == t1 && n->get_arg(1) == t2) || (n->get_arg(1) == t1 && n->get_arg(0) == t2);
-    }
 
     /**
        \brief Internalize the given formula into the logical context.
@@ -1051,8 +1034,10 @@ namespace smt {
             lbool   val  = get_assignment(curr);
             switch(val) {
             case l_false:
+                TRACE("simplify_aux_clause_literals", display_literal(tout << get_assign_level(curr) << " " << get_scope_level() << " ", curr); tout << "\n"; );
                 simp_lits.push_back(~curr);
-                break; // ignore literal
+                break; // ignore literal                
+                // fall through
             case l_undef:
                 if (curr == ~prev)
                     return false; // clause is equivalent to true

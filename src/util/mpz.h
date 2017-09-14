@@ -21,13 +21,13 @@ Revision History:
 
 #include<limits.h>
 #include<string>
-#include"util.h"
-#include"small_object_allocator.h"
-#include"trace.h"
-#include"scoped_numeral.h"
-#include"scoped_numeral_vector.h"
-#include"z3_omp.h"
-#include"mpn.h"
+#include "util/util.h"
+#include "util/small_object_allocator.h"
+#include "util/trace.h"
+#include "util/scoped_numeral.h"
+#include "util/scoped_numeral_vector.h"
+#include "util/z3_omp.h"
+#include "util/mpn.h"
 
 unsigned u_gcd(unsigned u, unsigned v);
 uint64 u64_gcd(uint64 u, uint64 v);
@@ -316,11 +316,11 @@ class mpz_manager {
     void big_rem(mpz const & a, mpz const & b, mpz & c);
 
     int big_compare(mpz const & a, mpz const & b);
-    
+
+public:
     unsigned size_info(mpz const & a);
     struct sz_lt;
 
-public:
     static bool precise() { return true; }
     static bool field() { return false; }
 
@@ -497,7 +497,9 @@ public:
         STRACE("mpz", tout << "[mpz] 0 - " << to_string(a) << " == ";); 
         if (is_small(a) && a.m_val == INT_MIN) {
             // neg(INT_MIN) is not a small int
+            MPZ_BEGIN_CRITICAL();
             set_big_i64(a, - static_cast<long long>(INT_MIN)); 
+            MPZ_END_CRITICAL();
             return;
         }
 #ifndef _MP_GMP
@@ -518,7 +520,9 @@ public:
             if (a.m_val < 0) {
                 if (a.m_val == INT_MIN) {
                     // abs(INT_MIN) is not a small int
+                    MPZ_BEGIN_CRITICAL();
                     set_big_i64(a, - static_cast<long long>(INT_MIN)); 
+                    MPZ_END_CRITICAL();
                 }
                 else
                     a.m_val = -a.m_val;
@@ -590,6 +594,15 @@ public:
             bool res = big_compare(a, b) == 0;
             MPZ_END_CRITICAL();
             return res;
+        }
+    }
+
+    bool lt(mpz const& a, int b) {
+        if (is_small(a)) {
+            return a.m_val < b;
+        }
+        else {
+            return lt(a, mpz(b));
         }
     }
 

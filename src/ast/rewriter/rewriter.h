@@ -19,9 +19,9 @@ Notes:
 #ifndef REWRITER_H_
 #define REWRITER_H_
 
-#include"ast.h"
-#include"rewriter_types.h"
-#include"act_cache.h"
+#include "ast/ast.h"
+#include "ast/rewriter/rewriter_types.h"
+#include "ast/act_cache.h"
 
 /**
    \brief Common infrastructure for AST rewriters.
@@ -111,7 +111,7 @@ protected:
     void elim_reflex_prs(unsigned spos);
 public:
     rewriter_core(ast_manager & m, bool proof_gen);
-    ~rewriter_core();
+    virtual ~rewriter_core();
     ast_manager & m() const { return m_manager; }
     void reset();
     void cleanup();
@@ -314,6 +314,8 @@ protected:
 
     template<bool ProofGen>
     void process_app(app * t, frame & fr);
+
+    bool constant_fold(app* t, frame& fr);
 
     template<bool ProofGen>
     void process_quantifier(quantifier * q, frame & fr);

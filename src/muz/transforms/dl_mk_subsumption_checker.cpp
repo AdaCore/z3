@@ -20,11 +20,12 @@ Revision History:
 
 
 #include <sstream>
-#include"ast_pp.h"
-#include "rewriter.h"
-#include "rewriter_def.h"
-#include"dl_mk_subsumption_checker.h"
+#include "ast/ast_pp.h"
+#include "ast/rewriter/rewriter.h"
+#include "ast/rewriter/rewriter_def.h"
+#include "muz/transforms/dl_mk_subsumption_checker.h"
 
+#include "muz/base/fixedpoint_params.hpp"
 namespace datalog {
 
 
@@ -159,7 +160,7 @@ namespace datalog {
         }
 
         SASSERT(tail.size()==tail_neg.size());
-        res = m_context.get_rule_manager().mk(head, tail.size(), tail.c_ptr(), tail_neg.c_ptr());
+        res = m_context.get_rule_manager().mk(head, tail.size(), tail.c_ptr(), tail_neg.c_ptr(), r->name());
         res->set_accounting_parent_object(m_context, r);
         m_context.get_rule_manager().fix_unbound_vars(res, true);
         m_context.get_rule_manager().mk_rule_rewrite_proof(*r, *res.get());
@@ -328,6 +329,8 @@ namespace datalog {
 
     rule_set * mk_subsumption_checker::operator()(rule_set const & source) {
         // TODO mc
+        if (!m_context.get_params ().xform_subsumption_checker()) 
+          return 0;
 
         m_have_new_total_rule = false;
         collect_ground_unconditional_rule_heads(source);

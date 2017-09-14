@@ -19,17 +19,18 @@ Revision History:
 
 --*/
 
-#include "dt2bv_tactic.h"
-#include "tactical.h"
-#include "filter_model_converter.h"
-#include "datatype_decl_plugin.h"
-#include "bv_decl_plugin.h"
-#include "rewriter_def.h"
-#include "filter_model_converter.h"
-#include "extension_model_converter.h"
-#include "var_subst.h"
-#include "ast_util.h"
-#include "enum2bv_rewriter.h"
+#include "tactic/bv/dt2bv_tactic.h"
+#include "tactic/tactical.h"
+#include "tactic/filter_model_converter.h"
+#include "ast/datatype_decl_plugin.h"
+#include "ast/bv_decl_plugin.h"
+#include "ast/rewriter/rewriter_def.h"
+#include "tactic/filter_model_converter.h"
+#include "tactic/extension_model_converter.h"
+#include "ast/rewriter/var_subst.h"
+#include "ast/ast_util.h"
+#include "ast/rewriter/enum2bv_rewriter.h"
+#include "ast/ast_pp.h"
 
 
 class dt2bv_tactic : public tactic {
@@ -53,27 +54,32 @@ class dt2bv_tactic : public tactic {
 
         void operator()(app* a) {
             if (m.is_eq(a)) {
-                return;
+                // no-op
             }
-            if (m.is_distinct(a)) {
-                return;
+            else if (m.is_distinct(a)) {
+                // no-op
             }
-            if (m_t.m_dt.is_recognizer(a->get_decl()) &&
+            else if (m_t.m_dt.is_recognizer(a->get_decl()) &&
                 m_t.is_fd(a->get_arg(0))) {
                 m_t.m_fd_sorts.insert(get_sort(a->get_arg(0)));
-                return;
             }
-
-            if (m_t.is_fd(a)) {
+            else if (m_t.is_fd(a) && a->get_num_args() > 0) {
+                m_t.m_non_fd_sorts.insert(get_sort(a));
+                args_cannot_be_fd(a);
+            }
+            else if (m_t.is_fd(a)) {
                 m_t.m_fd_sorts.insert(get_sort(a));
             }
             else {
-                unsigned sz = a->get_num_args();
-                for (unsigned i = 0; i < sz; ++i) {
-                    if (m_t.is_fd(a->get_arg(i))) {
-                        m_t.m_non_fd_sorts.insert(get_sort(a->get_arg(i)));
-                    }
-                }
+                args_cannot_be_fd(a);
+            }
+        }
+
+        void args_cannot_be_fd(app* a) {
+            for (expr* arg : *a) {
+                if (m_t.is_fd(arg)) {
+                    m_t.m_non_fd_sorts.insert(get_sort(arg));
+                }                    
             }
         }
 

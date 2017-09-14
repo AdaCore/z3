@@ -19,9 +19,9 @@ Revision History:
 
 
 #include<string>
-#include"dl_context.h"
-#include"dl_relation_manager.h"
-#include"dl_table_relation.h"
+#include "muz/base/dl_context.h"
+#include "muz/rel/dl_relation_manager.h"
+#include "muz/rel/dl_table_relation.h"
 
 
 namespace datalog {
@@ -54,7 +54,7 @@ namespace datalog {
         return alloc(table_relation, *this, s, t);
     }
 
-    relation_base * table_relation_plugin::mk_full(const relation_signature & s, func_decl* p, family_id kind) {
+    relation_base * table_relation_plugin::mk_full_relation(const relation_signature & s, func_decl* p, family_id kind) {
         table_signature tsig;
         if(!get_manager().relation_signature_to_table(s, tsig)) {
             return 0;

@@ -17,9 +17,9 @@ Revision History:
 
 --*/
 
-#include "dl_mk_array_blast.h"
-#include "ast_util.h"
-#include "scoped_proof.h"
+#include "muz/transforms/dl_mk_array_blast.h"
+#include "ast/ast_util.h"
+#include "ast/scoped_proof.h"
 
 
 namespace datalog {
@@ -125,6 +125,12 @@ namespace datalog {
         app_ref e1(m);
         app* s;
         var* v;
+
+        // disable Ackerman reduction if head contains a non-variable or non-constant argument.
+        for (unsigned i = 0; i < to_app(head)->get_num_args(); ++i) {
+            expr* arg = to_app(head)->get_arg(i);            
+            if (!is_var(arg) && !m.is_value(arg)) return false;
+        }
 
         for (unsigned i = 0; i < conjs.size(); ++i) {
             expr* e = conjs[i].get();
@@ -281,6 +287,7 @@ namespace datalog {
         m_rewriter(body);
         sub(head);
         m_rewriter(head);
+        TRACE("dl", tout << body << " => " << head << "\n";);
         change = ackermanize(r, body, head);
         if (!change) {
             rules.add_rule(&r);
@@ -312,6 +319,9 @@ namespace datalog {
     
     rule_set * mk_array_blast::operator()(rule_set const & source) {
 
+        if (!m_ctx.array_blast ()) {
+            return 0;
+        }
         rule_set* rules = alloc(rule_set, m_ctx);
         rules->inherit_predicates(source);
         rule_set::iterator it = source.begin(), end = source.end();
