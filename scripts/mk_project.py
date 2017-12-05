@@ -9,7 +9,7 @@ from mk_util import *
 
 # Z3 Project definition
 def init_project_def():
-    set_version(4, 5, 1, 0)
+    set_version(4, 6, 0, 0)
     add_lib('util', [])
     add_lib('lp', ['util'], 'util/lp')
     add_lib('polynomial', ['util'], 'math/polynomial')
@@ -37,20 +37,20 @@ def init_project_def():
     add_lib('nlsat_tactic', ['nlsat', 'sat_tactic', 'arith_tactics'], 'nlsat/tactic')
     add_lib('subpaving_tactic', ['core_tactics', 'subpaving'], 'math/subpaving/tactic')
     add_lib('aig_tactic', ['tactic'], 'tactic/aig')
-    add_lib('solver', ['model', 'tactic'])
+    add_lib('proofs', ['rewriter', 'util'], 'ast/proofs')
+    add_lib('solver', ['model', 'tactic', 'proofs'])
     add_lib('ackermannization', ['model', 'rewriter', 'ast', 'solver', 'tactic'], 'ackermannization')
     add_lib('interp', ['solver'])
     add_lib('cmd_context', ['solver', 'rewriter', 'interp'])
     add_lib('extra_cmds', ['cmd_context', 'subpaving_tactic', 'arith_tactics'], 'cmd_context/extra_cmds')
     add_lib('smt2parser', ['cmd_context', 'parser_util'], 'parsers/smt2')
-    add_lib('proof_checker', ['rewriter'], 'ast/proof_checker')
     add_lib('fpa', ['ast', 'util', 'rewriter', 'model'], 'ast/fpa')
     add_lib('pattern', ['normal_forms', 'smt2parser', 'rewriter'], 'ast/pattern')
     add_lib('bit_blaster', ['rewriter', 'rewriter'], 'ast/rewriter/bit_blaster')
     add_lib('smt_params', ['ast', 'rewriter', 'pattern', 'bit_blaster'], 'smt/params')
     add_lib('proto_model', ['model', 'rewriter', 'smt_params'], 'smt/proto_model')
     add_lib('smt', ['bit_blaster', 'macros', 'normal_forms', 'cmd_context', 'proto_model',
-                    'substitution', 'grobner', 'euclid', 'simplex', 'proof_checker', 'pattern', 'parser_util', 'fpa', 'lp'])
+                    'substitution', 'grobner', 'euclid', 'simplex', 'proofs', 'pattern', 'parser_util', 'fpa', 'lp'])
     add_lib('bv_tactics', ['tactic', 'bit_blaster', 'core_tactics'], 'tactic/bv')
     add_lib('fuzzing', ['ast'], 'test/fuzzing')
     add_lib('smt_tactic', ['smt'], 'smt/tactic')
@@ -75,10 +75,9 @@ def init_project_def():
     add_lib('smtlogic_tactics', ['ackermannization', 'sat_solver', 'arith_tactics', 'bv_tactics', 'nlsat_tactic', 'smt_tactic', 'aig_tactic', 'fp', 'muz','qe','nlsat_smt_tactic'], 'tactic/smtlogics')
     add_lib('fpa_tactics', ['fpa', 'core_tactics', 'bv_tactics', 'sat_tactic', 'smt_tactic', 'arith_tactics', 'smtlogic_tactics'], 'tactic/fpa')
     add_lib('portfolio', ['smtlogic_tactics', 'sat_solver', 'ufbv_tactic', 'fpa_tactics', 'aig_tactic', 'fp',  'qe','sls_tactic', 'subpaving_tactic'], 'tactic/portfolio')
-    add_lib('smtparser', ['portfolio'], 'parsers/smt')
     add_lib('opt', ['smt', 'smtlogic_tactics', 'sls_tactic', 'sat_solver'], 'opt')
     API_files = ['z3_api.h', 'z3_ast_containers.h', 'z3_algebraic.h', 'z3_polynomial.h', 'z3_rcf.h', 'z3_fixedpoint.h', 'z3_optimization.h', 'z3_interp.h', 'z3_fpa.h', 'z3_spacer.h']
-    add_lib('api', ['portfolio', 'smtparser', 'realclosure', 'interp', 'opt'],
+    add_lib('api', ['portfolio',  'realclosure', 'interp', 'opt'],
             includes2install=['z3.h', 'z3_v1.h', 'z3_macros.h'] + API_files)
     add_exe('shell', ['api', 'sat', 'extra_cmds','opt'], exe_name='z3')
     add_exe('test', ['api', 'fuzzing', 'simplex'], exe_name='test-z3', install=False)

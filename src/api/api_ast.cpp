@@ -832,30 +832,9 @@ extern "C" {
         case Z3_PRINT_LOW_LEVEL:
             buffer << mk_ll_pp(to_ast(a), mk_c(c)->m());
             break;
-        case Z3_PRINT_SMTLIB_COMPLIANT: {
-            ast_smt_pp pp(mk_c(c)->m());
-            pp_params params;
-            pp.set_simplify_implies(params.simplify_implies());
-            ast* a1 = to_ast(a);
-            pp.set_logic(mk_c(c)->fparams().m_logic);
-            if (!is_expr(a1)) {
-                buffer << mk_pp(a1, mk_c(c)->m());
-                break;
-            }
-            if (mk_c(c)->get_print_mode() == Z3_PRINT_SMTLIB_COMPLIANT) {
-                pp.display_expr(buffer, to_expr(a1));
-                break;
-            }
-            if (mk_c(c)->get_print_mode() == Z3_PRINT_SMTLIB2_COMPLIANT) {
-                pp.display_expr_smt2(buffer, to_expr(a1));
-                break;
-            }
-            break;
-        }
-        case Z3_PRINT_SMTLIB2_COMPLIANT: {
+        case Z3_PRINT_SMTLIB2_COMPLIANT: 
             buffer << mk_ismt2_pp(to_ast(a), mk_c(c)->m());
             break;
-        }
         default:
             UNREACHABLE();
         }
@@ -893,12 +872,7 @@ extern "C" {
         for (unsigned i = 0; i < num_assumptions; ++i) {
             pp.add_assumption(to_expr(assumptions[i]));
         }
-        if (mk_c(c)->get_print_mode() == Z3_PRINT_SMTLIB2_COMPLIANT) {
-            pp.display_smt2(buffer, to_expr(formula));
-        }
-        else {
-            pp.display(buffer, to_expr(formula));
-        }
+        pp.display_smt2(buffer, to_expr(formula));
         return mk_c(c)->mk_external_string(buffer.str());
         Z3_CATCH_RETURN("");
     }
@@ -1204,16 +1178,8 @@ extern "C" {
             case OP_FPA_TO_SBV: return Z3_OP_FPA_TO_SBV;
             case OP_FPA_TO_REAL: return Z3_OP_FPA_TO_REAL;
             case OP_FPA_TO_IEEE_BV: return Z3_OP_FPA_TO_IEEE_BV;
-            case OP_FPA_INTERNAL_MIN_I: return Z3_OP_FPA_MIN_I;
-            case OP_FPA_INTERNAL_MAX_I: return Z3_OP_FPA_MAX_I;
-            case OP_FPA_INTERNAL_BVWRAP: return Z3_OP_FPA_BVWRAP;
-            case OP_FPA_INTERNAL_BV2RM: return Z3_OP_FPA_BV2RM;
-            case OP_FPA_INTERNAL_MIN_UNSPECIFIED: return Z3_OP_FPA_MIN_UNSPECIFIED;
-            case OP_FPA_INTERNAL_MAX_UNSPECIFIED: return Z3_OP_FPA_MAX_UNSPECIFIED;
-            case OP_FPA_INTERNAL_TO_UBV_UNSPECIFIED: return Z3_OP_FPA_TO_UBV_UNSPECIFIED;
-            case OP_FPA_INTERNAL_TO_SBV_UNSPECIFIED: return Z3_OP_FPA_TO_SBV_UNSPECIFIED;
-            case OP_FPA_INTERNAL_TO_REAL_UNSPECIFIED: return Z3_OP_FPA_TO_REAL_UNSPECIFIED;
-            case OP_FPA_INTERNAL_TO_IEEE_BV_UNSPECIFIED: return Z3_OP_FPA_TO_IEEE_BV_UNSPECIFIED;
+            case OP_FPA_BVWRAP: return Z3_OP_FPA_BVWRAP;
+            case OP_FPA_BV2RM: return Z3_OP_FPA_BV2RM;
                 return Z3_OP_UNINTERPRETED;
             default:
                 return Z3_OP_INTERNAL;

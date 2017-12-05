@@ -993,30 +993,6 @@ typedef enum
             3 = 011 = Z3_OP_FPA_RM_TOWARD_NEGATIVE,
             4 = 100 = Z3_OP_FPA_RM_TOWARD_ZERO.
 
-      - Z3_OP_FPA_MIN_I: The same as Z3_OP_FPA_MIN, but the arguments are
-        expected not to be zeroes with different signs.
-
-      - Z3_OP_FPA_MAX_I: The same as Z3_OP_FPA_MAX, but the arguments are
-        expected not to be zeroes with different signs.
-
-      - Z3_OP_FPA_MIN_UNSPECIFIED: The same as Z3_OP_FPA_MIN, but the
-        arguments are expected to be zeroes with different signs.
-
-      - Z3_OP_FPA_MAX_UNSPECIFIED: The same as Z3_OP_FPA_MAX, but the
-        arguments are expected to be zeroes with different signs.
-
-      - Z3_OP_FPA_TO_UBV_UNSPECIFIED: A term representing the unspecified
-        results of Z3_OP_FPA_TO_UBV.
-
-      - Z3_OP_FPA_TO_SBV_UNSPECIFIED: A term representing the unspecified
-        results of Z3_OP_FPA_TO_SBV.
-
-      - Z3_OP_FPA_TO_IEEE_BV_UNSPECIFIED: A term representing the unspecified
-        results of Z3_OP_FPA_TO_IEEE_BV.
-
-      - Z3_OP_FPA_TO_REAL_UNSPECIFIED: A term representing the unspecified
-        results of Z3_OP_FPA_TO_IEEE_BV.
-
       - Z3_OP_INTERNAL: internal (often interpreted) symbol, but no additional
         information is exposed. Tools may use the string representation of the
         function declaration to obtain more information.
@@ -1303,17 +1279,8 @@ typedef enum {
 
     Z3_OP_FPA_TO_IEEE_BV,
 
-    Z3_OP_FPA_MIN_I,
-    Z3_OP_FPA_MAX_I,
-
     Z3_OP_FPA_BVWRAP,
     Z3_OP_FPA_BV2RM,
-    Z3_OP_FPA_MIN_UNSPECIFIED,
-    Z3_OP_FPA_MAX_UNSPECIFIED,
-    Z3_OP_FPA_TO_UBV_UNSPECIFIED,
-    Z3_OP_FPA_TO_SBV_UNSPECIFIED,
-    Z3_OP_FPA_TO_REAL_UNSPECIFIED,
-    Z3_OP_FPA_TO_IEEE_BV_UNSPECIFIED,
 
     Z3_OP_INTERNAL,
 
@@ -1347,13 +1314,11 @@ typedef enum {
 
    - Z3_PRINT_SMTLIB_FULL:   Print AST nodes in SMTLIB verbose format.
    - Z3_PRINT_LOW_LEVEL:     Print AST nodes using a low-level format.
-   - Z3_PRINT_SMTLIB_COMPLIANT: Print AST nodes in SMTLIB 1.x compliant format.
    - Z3_PRINT_SMTLIB2_COMPLIANT: Print AST nodes in SMTLIB 2.x compliant format.
 */
 typedef enum {
     Z3_PRINT_SMTLIB_FULL,
     Z3_PRINT_LOW_LEVEL,
-    Z3_PRINT_SMTLIB_COMPLIANT,
     Z3_PRINT_SMTLIB2_COMPLIANT
 } Z3_ast_print_mode;
 
@@ -1913,6 +1878,17 @@ extern "C" {
        def_API('Z3_mk_array_sort', SORT, (_in(CONTEXT), _in(SORT), _in(SORT)))
     */
     Z3_sort Z3_API Z3_mk_array_sort(Z3_context c, Z3_sort domain, Z3_sort range);
+
+    /**
+       \brief Create an array type with N arguments
+
+       \sa Z3_mk_select_n
+       \sa Z3_mk_store_n
+
+       def_API('Z3_mk_array_sort_n', SORT, (_in(CONTEXT), _in(UINT), _in_array(1, SORT), _in(SORT)))
+    */
+    Z3_sort Z3_API Z3_mk_array_sort_n(Z3_context c, unsigned n, Z3_sort const * domain, Z3_sort range);
+
 
     /**
        \brief Create a tuple type.
@@ -3007,6 +2983,15 @@ extern "C" {
     Z3_ast Z3_API Z3_mk_select(Z3_context c, Z3_ast a, Z3_ast i);
 
     /**
+       \brief n-ary Array read.
+       The argument \c a is the array and \c idxs are the indices of the array that gets read.
+
+       def_API('Z3_mk_select_n', AST, (_in(CONTEXT), _in(AST), _in(UINT), _in_array(2, AST)))
+
+    */
+    Z3_ast Z3_API Z3_mk_select_n(Z3_context c, Z3_ast a, unsigned n, Z3_ast const* idxs);
+
+    /**
        \brief Array update.
 
        The node \c a must have an array sort \ccode{[domain -> range]}, \c i must have sort \c domain,
@@ -3023,6 +3008,14 @@ extern "C" {
        def_API('Z3_mk_store', AST, (_in(CONTEXT), _in(AST), _in(AST), _in(AST)))
     */
     Z3_ast Z3_API Z3_mk_store(Z3_context c, Z3_ast a, Z3_ast i, Z3_ast v);
+
+    /**
+       \brief n-ary Array update.
+
+       def_API('Z3_mk_store_n', AST, (_in(CONTEXT), _in(AST), _in(UINT), _in_array(2, AST), _in(AST)))
+
+    */
+    Z3_ast Z3_API Z3_mk_store_n(Z3_context c, Z3_ast a, unsigned n, Z3_ast const* idxs, Z3_ast v);
 
     /**
         \brief Create the constant array.
@@ -3064,6 +3057,15 @@ extern "C" {
         def_API('Z3_mk_array_default', AST, (_in(CONTEXT), _in(AST)))
     */
     Z3_ast Z3_API Z3_mk_array_default(Z3_context c, Z3_ast array);
+
+    /**
+       \brief Create array with the same interpretation as a function.
+       The array satisfies the property (f x) = (select (_ as-array f) x) 
+       for every argument x.
+
+       def_API('Z3_mk_as_array', AST, (_in(CONTEXT), _in(FUNC_DECL)))
+     */
+    Z3_ast Z3_API Z3_mk_as_array(Z3_context c, Z3_func_decl f);
     /*@}*/
 
     /** @name Sets */
@@ -3243,6 +3245,14 @@ extern "C" {
        def_API('Z3_mk_unsigned_int64', AST, (_in(CONTEXT), _in(UINT64), _in(SORT)))
     */
     Z3_ast Z3_API Z3_mk_unsigned_int64(Z3_context c, __uint64 v, Z3_sort ty);
+
+    /**
+       \brief create a bit-vector numeral from a vector of Booleans.
+       
+       \sa Z3_mk_numeral
+       def_API('Z3_mk_bv_numeral', AST, (_in(CONTEXT), _in(UINT), _in_array(1, BOOL)))
+    */
+    Z3_ast Z3_API Z3_mk_bv_numeral(Z3_context c, unsigned sz, Z3_bool const* bits);
 
     /*@}*/
 
@@ -3887,6 +3897,7 @@ extern "C" {
 
     /**
        \brief Return the domain of the given array sort.
+       In the case of a multi-dimensional array, this function returns the sort of the first dimension.
 
        \pre Z3_get_sort_kind(c, t) == Z3_ARRAY_SORT
 
@@ -4288,7 +4299,7 @@ extern "C" {
     /**
        \brief Return the i-th argument of the given application.
 
-       \pre i < Z3_get_num_args(c, a)
+       \pre i < Z3_get_app_num_args(c, a)
 
        def_API('Z3_get_app_arg', AST, (_in(CONTEXT), _in(APP), _in(UINT)))
     */
@@ -5103,7 +5114,7 @@ extern "C" {
        To print shared common subexpressions only once,
        use the Z3_PRINT_LOW_LEVEL mode.
        To print in way that conforms to SMT-LIB standards and uses let
-       expressions to share common sub-expressions use Z3_PRINT_SMTLIB_COMPLIANT.
+       expressions to share common sub-expressions use Z3_PRINT_SMTLIB2_COMPLIANT.
 
        \sa Z3_ast_to_string
        \sa Z3_pattern_to_string
@@ -5215,115 +5226,13 @@ extern "C" {
                                         Z3_symbol const decl_names[],
                                         Z3_func_decl const decls[]);
 
-    /**
-       \brief Parse the given string using the SMT-LIB parser.
-
-       The symbol table of the parser can be initialized using the given sorts and declarations.
-       The symbols in the arrays \c sort_names and \c decl_names don't need to match the names
-       of the sorts and declarations in the arrays \c sorts and \c decls. This is an useful feature
-       since we can use arbitrary names to reference sorts and declarations defined using the C API.
-
-       The formulas, assumptions and declarations defined in \c str can be extracted using the functions:
-       #Z3_get_smtlib_num_formulas, #Z3_get_smtlib_formula, #Z3_get_smtlib_num_assumptions, #Z3_get_smtlib_assumption,
-       #Z3_get_smtlib_num_decls, and #Z3_get_smtlib_decl.
-
-       def_API('Z3_parse_smtlib_string', VOID, (_in(CONTEXT), _in(STRING), _in(UINT), _in_array(2, SYMBOL), _in_array(2, SORT), _in(UINT), _in_array(5, SYMBOL), _in_array(5, FUNC_DECL)))
-    */
-    void Z3_API Z3_parse_smtlib_string(Z3_context c,
-                                       Z3_string str,
-                                       unsigned num_sorts,
-                                       Z3_symbol const sort_names[],
-                                       Z3_sort const sorts[],
-                                       unsigned num_decls,
-                                       Z3_symbol const decl_names[],
-                                       Z3_func_decl const decls[]
-                                       );
-
-    /**
-       \brief Similar to #Z3_parse_smtlib_string, but reads the benchmark from a file.
-
-       def_API('Z3_parse_smtlib_file', VOID, (_in(CONTEXT), _in(STRING), _in(UINT), _in_array(2, SYMBOL), _in_array(2, SORT), _in(UINT), _in_array(5, SYMBOL), _in_array(5, FUNC_DECL)))
-    */
-    void Z3_API Z3_parse_smtlib_file(Z3_context c,
-                                     Z3_string file_name,
-                                     unsigned num_sorts,
-                                     Z3_symbol const sort_names[],
-                                     Z3_sort const sorts[],
-                                     unsigned num_decls,
-                                     Z3_symbol const decl_names[],
-                                     Z3_func_decl const decls[]
-                                     );
-
-    /**
-       \brief Return the number of SMTLIB formulas parsed by the last call to #Z3_parse_smtlib_string or #Z3_parse_smtlib_file.
-
-       def_API('Z3_get_smtlib_num_formulas', UINT, (_in(CONTEXT), ))
-    */
-    unsigned Z3_API Z3_get_smtlib_num_formulas(Z3_context c);
-
-    /**
-       \brief Return the i-th formula parsed by the last call to #Z3_parse_smtlib_string or #Z3_parse_smtlib_file.
-
-       \pre i < Z3_get_smtlib_num_formulas(c)
-
-       def_API('Z3_get_smtlib_formula', AST, (_in(CONTEXT), _in(UINT)))
-    */
-    Z3_ast Z3_API Z3_get_smtlib_formula(Z3_context c, unsigned i);
-
-    /**
-       \brief Return the number of SMTLIB assumptions parsed by #Z3_parse_smtlib_string or #Z3_parse_smtlib_file.
-
-       def_API('Z3_get_smtlib_num_assumptions', UINT, (_in(CONTEXT), ))
-    */
-    unsigned Z3_API Z3_get_smtlib_num_assumptions(Z3_context c);
-
-    /**
-       \brief Return the i-th assumption parsed by the last call to #Z3_parse_smtlib_string or #Z3_parse_smtlib_file.
-
-       \pre i < Z3_get_smtlib_num_assumptions(c)
-
-       def_API('Z3_get_smtlib_assumption', AST, (_in(CONTEXT), _in(UINT)))
-    */
-    Z3_ast Z3_API Z3_get_smtlib_assumption(Z3_context c, unsigned i);
-
-    /**
-       \brief Return the number of declarations parsed by #Z3_parse_smtlib_string or #Z3_parse_smtlib_file.
-
-       def_API('Z3_get_smtlib_num_decls', UINT, (_in(CONTEXT), ))
-    */
-    unsigned Z3_API Z3_get_smtlib_num_decls(Z3_context c);
-
-    /**
-       \brief Return the i-th declaration parsed by the last call to #Z3_parse_smtlib_string or #Z3_parse_smtlib_file.
-
-       \pre i < Z3_get_smtlib_num_decls(c)
-
-       def_API('Z3_get_smtlib_decl', FUNC_DECL, (_in(CONTEXT), _in(UINT)))
-    */
-    Z3_func_decl Z3_API Z3_get_smtlib_decl(Z3_context c, unsigned i);
-
-    /**
-       \brief Return the number of sorts parsed by #Z3_parse_smtlib_string or #Z3_parse_smtlib_file.
-
-       def_API('Z3_get_smtlib_num_sorts', UINT, (_in(CONTEXT), ))
-    */
-    unsigned Z3_API Z3_get_smtlib_num_sorts(Z3_context c);
-
-    /**
-       \brief Return the i-th sort parsed by the last call to #Z3_parse_smtlib_string or #Z3_parse_smtlib_file.
-
-       \pre i < Z3_get_smtlib_num_sorts(c)
-
-       def_API('Z3_get_smtlib_sort', SORT, (_in(CONTEXT), _in(UINT)))
-    */
-    Z3_sort Z3_API Z3_get_smtlib_sort(Z3_context c, unsigned i);
 
     /**
        \brief Retrieve that last error message information generated from parsing.
 
-       def_API('Z3_get_smtlib_error', STRING, (_in(CONTEXT), ))
+       def_API('Z3_get_parser_error', STRING, (_in(CONTEXT), ))
     */
-    Z3_string Z3_API Z3_get_smtlib_error(Z3_context c);
+    Z3_string Z3_API Z3_get_parser_error(Z3_context c);
     /*@}*/
 
     /** @name Error Handling */

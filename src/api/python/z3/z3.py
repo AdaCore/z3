@@ -112,27 +112,18 @@ def _symbol2py(ctx, s):
     else:
         return Z3_get_symbol_string(ctx.ref(), s)
 
-_error_handler_fptr = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint)
-
 # Hack for having nary functions that can receive one argument that is the
 # list of arguments.
 def _get_args(args):
     try:
         if len(args) == 1 and (isinstance(args[0], tuple) or isinstance(args[0], list)):
             return args[0]
-        elif len(args) == 1 and isinstance(args[0], set):
+        elif len(args) == 1 and (isinstance(args[0], set) or isinstance(args[0], AstVector)):
             return [arg for arg in args[0]]
         else:
             return args
     except:  # len is not necessarily defined when args is not a sequence (use reflection?)
         return args
-
-def _Z3python_error_handler_core(c, e):
-    # Do nothing error handler, just avoid exit(0)
-    # The wrappers in z3core.py will raise a Z3Exception if an error is detected
-    return
-
-_Z3Python_error_handler = _error_handler_fptr(_Z3python_error_handler_core)
 
 def _to_param_value(val):
     if isinstance(val, bool):
@@ -142,6 +133,11 @@ def _to_param_value(val):
             return "false"
     else:
         return str(val)
+
+def z3_error_handler(c, e):
+    # Do nothing error handler, just avoid exit(0)
+    # The wrappers in z3core.py will raise a Z3Exception if an error is detected
+    return
 
 class Context:
     """A Context manages all other Z3 objects, global configuration options, etc.
@@ -168,17 +164,15 @@ class Context:
             else:
                 Z3_set_param_value(conf, str(prev), _to_param_value(a))
                 prev = None
-        self.lib = lib()
         self.ctx = Z3_mk_context_rc(conf)
+        self.eh = Z3_set_error_handler(self.ctx, z3_error_handler)
         Z3_set_ast_print_mode(self.ctx, Z3_PRINT_SMTLIB2_COMPLIANT)
-        lib().Z3_set_error_handler.restype  = None
-        lib().Z3_set_error_handler.argtypes = [ContextObj, _error_handler_fptr]
-        lib().Z3_set_error_handler(self.ctx, _Z3Python_error_handler)
         Z3_del_config(conf)
 
     def __del__(self):
-        self.lib.Z3_del_context(self.ctx)
+        Z3_del_context(self.ctx)        
         self.ctx = None
+        self.eh = None
 
     def ref(self):
         """Return a reference to the actual C pointer to the Z3 context."""
@@ -3999,6 +3993,58 @@ def BVRedOr(a):
         _z3_assert(is_bv(a), "First argument must be a Z3 Bitvector expression")
     return BitVecRef(Z3_mk_bvredor(a.ctx_ref(), a.as_ast()), a.ctx)
 
+def BVAddNoOverflow(a, b, signed):
+    """A predicate the determines that bit-vector addition does not overflow"""
+    _check_bv_args(a, b)
+    a, b = _coerce_exprs(a, b)
+    return BoolRef(Z3_mk_bvadd_no_overflow(a.ctx_ref(), a.as_ast(), b.as_ast(), signed), a.ctx)
+
+def BVAddNoUnderflow(a, b):
+    """A predicate the determines that signed bit-vector addition does not underflow"""
+    _check_bv_args(a, b)
+    a, b = _coerce_exprs(a, b)
+    return BoolRef(Z3_mk_bvadd_no_underflow(a.ctx_ref(), a.as_ast(), b.as_ast()), a.ctx)
+
+def BVSubNoOverflow(a, b):
+    """A predicate the determines that bit-vector subtraction does not overflow"""
+    _check_bv_args(a, b)
+    a, b = _coerce_exprs(a, b)
+    return BoolRef(Z3_mk_bvsub_no_overflow(a.ctx_ref(), a.as_ast(), b.as_ast()), a.ctx)
+    
+
+def BVSubNoUnderflow(a, b, signed):
+    """A predicate the determines that bit-vector subtraction does not underflow"""
+    _check_bv_args(a, b)
+    a, b = _coerce_exprs(a, b)
+    return BoolRef(Z3_mk_bvsub_no_underflow(a.ctx_ref(), a.as_ast(), b.as_ast(), signed), a.ctx)
+
+def BVSDivNoOverflow(a, b):
+    """A predicate the determines that bit-vector signed division does not overflow"""
+    _check_bv_args(a, b)
+    a, b = _coerce_exprs(a, b)
+    return BoolRef(Z3_mk_bvsdiv_no_overflow(a.ctx_ref(), a.as_ast(), b.as_ast()), a.ctx)
+
+def BVSNegNoOverflow(a):
+    """A predicate the determines that bit-vector unary negation does not overflow"""
+    if __debug__:
+        _z3_assert(is_bv(a), "Argument should be a bit-vector")
+    return BoolRef(Z3_mk_bvneg_no_overflow(a.ctx_ref(), a.as_ast()), a.ctx)
+
+def BVMulNoOverflow(a, b, signed):
+    """A predicate the determines that bit-vector multiplication does not overflow"""
+    _check_bv_args(a, b)
+    a, b = _coerce_exprs(a, b)
+    return BoolRef(Z3_mk_bvmul_no_overflow(a.ctx_ref(), a.as_ast(), b.as_ast(), signed), a.ctx)
+
+
+def BVMulNoUnderflow(a, b):
+    """A predicate the determines that bit-vector signed multiplication does not underflow"""
+    _check_bv_args(a, b)
+    a, b = _coerce_exprs(a, b)
+    return BoolRef(Z3_mk_bvmul_no_underflow(a.ctx_ref(), a.as_ast(), b.as_ast()), a.ctx)
+
+
+
 #########################################
 #
 # Arrays
@@ -6622,11 +6668,17 @@ class Fixedpoint(Z3PPObject):
 
     def parse_string(self, s):
         """Parse rules and queries from a string"""
-        return AstVector(Z3_fixedpoint_from_string(self.ctx.ref(), self.fixedpoint, s), self.ctx)
+        try:
+            return AstVector(Z3_fixedpoint_from_string(self.ctx.ref(), self.fixedpoint, s), self.ctx)
+        except Z3Exception as e:
+            _handle_parse_error(e, self.ctx)
 
     def parse_file(self, f):
         """Parse rules and queries from a file"""
-        return AstVector(Z3_fixedpoint_from_file(self.ctx.ref(), self.fixedpoint, f), self.ctx)
+        try:
+            return AstVector(Z3_fixedpoint_from_file(self.ctx.ref(), self.fixedpoint, f), self.ctx)
+        except Z3Exception as e:
+            _handle_parse_error(e, self.ctx)
 
     def get_rules(self):
         """retrieve rules that have been added to fixedpoint context"""
@@ -6949,15 +7001,21 @@ class Optimize(Z3PPObject):
     def upper_values(self, obj):
         if not isinstance(obj, OptimizeObjective):
             raise Z3Exception("Expecting objective handle returned by maximize/minimize")
-        return obj.upper_values()
+        return obj.upper_values()    
 
     def from_file(self, filename):
         """Parse assertions and objectives from a file"""
-        Z3_optimize_from_file(self.ctx.ref(), self.optimize, filename)
+        try:
+            Z3_optimize_from_file(self.ctx.ref(), self.optimize, filename)
+        except Z3Exception as e:
+            _handle_parse_error(e, self.ctx)
 
     def from_string(self, s):
         """Parse assertions and objectives from a string"""
-        Z3_optimize_from_string(self.ctx.ref(), self.optimize, s)
+        try:
+            Z3_optimize_from_string(self.ctx.ref(), self.optimize, s)
+        except Z3Exception as e:
+            _handle_parse_error(e, self.ctx)
 
     def assertions(self):
         """Return an AST vector containing all added constraints."""
@@ -8025,6 +8083,12 @@ def _dict2darray(decls, ctx):
         i = i + 1
     return sz, _names, _decls
 
+def _handle_parse_error(ex, ctx):
+    msg = Z3_get_parser_error(ctx.ref())
+    if msg != "":
+        raise Z3Exception(msg)
+    raise ex
+
 def parse_smt2_string(s, sorts={}, decls={}, ctx=None):
     """Parse a string in SMT 2.0 format using the given sorts and decls.
 
@@ -8043,7 +8107,10 @@ def parse_smt2_string(s, sorts={}, decls={}, ctx=None):
     ctx = _get_ctx(ctx)
     ssz, snames, ssorts = _dict2sarray(sorts, ctx)
     dsz, dnames, ddecls = _dict2darray(decls, ctx)
-    return _to_expr_ref(Z3_parse_smtlib2_string(ctx.ref(), s, ssz, snames, ssorts, dsz, dnames, ddecls), ctx)
+    try: 
+        return _to_expr_ref(Z3_parse_smtlib2_string(ctx.ref(), s, ssz, snames, ssorts, dsz, dnames, ddecls), ctx)
+    except Z3Exception as e:
+        _handle_parse_error(e, ctx)
 
 def parse_smt2_file(f, sorts={}, decls={}, ctx=None):
     """Parse a file in SMT 2.0 format using the given sorts and decls.
@@ -8053,7 +8120,10 @@ def parse_smt2_file(f, sorts={}, decls={}, ctx=None):
     ctx = _get_ctx(ctx)
     ssz, snames, ssorts = _dict2sarray(sorts, ctx)
     dsz, dnames, ddecls = _dict2darray(decls, ctx)
-    return _to_expr_ref(Z3_parse_smtlib2_file(ctx.ref(), f, ssz, snames, ssorts, dsz, dnames, ddecls), ctx)
+    try: 
+        return _to_expr_ref(Z3_parse_smtlib2_file(ctx.ref(), f, ssz, snames, ssorts, dsz, dnames, ddecls), ctx)
+    except Z3Exception as e:
+        _handle_parse_error(e, ctx)
 
 def Interpolant(a,ctx=None):
     """Create an interpolation operator.

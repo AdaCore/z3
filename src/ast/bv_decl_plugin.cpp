@@ -670,7 +670,7 @@ bool bv_decl_plugin::are_distinct(app * a, app * b) const {
 }
 
 void bv_decl_plugin::get_sort_names(svector<builtin_name> & sort_names, symbol const & logic) {
-    if (logic == symbol::null)
+    if (logic == symbol::null || logic == symbol("ALL"))
         sort_names.push_back(builtin_name("bv", BV_SORT));
     sort_names.push_back(builtin_name("BitVec", BV_SORT));
 }
@@ -717,7 +717,7 @@ void bv_decl_plugin::get_op_names(svector<builtin_name> & op_names, symbol const
     op_names.push_back(builtin_name("rotate_left",OP_ROTATE_LEFT));
     op_names.push_back(builtin_name("rotate_right",OP_ROTATE_RIGHT));
 
-    if (logic == symbol::null) {
+    if (logic == symbol::null || logic == symbol("ALL")) {
         op_names.push_back(builtin_name("bvumul_noovfl",OP_BUMUL_NO_OVFL));
         op_names.push_back(builtin_name("bvsmul_noovfl",OP_BSMUL_NO_OVFL));
         op_names.push_back(builtin_name("bvsmul_noudfl",OP_BSMUL_NO_UDFL));
@@ -863,8 +863,7 @@ app * bv_util::mk_numeral(rational const & val, sort* s) const {
 }
 
 app * bv_util::mk_numeral(rational const & val, unsigned bv_size) const {
-    parameter p1(val);
-    parameter p[2] = { p1, parameter(static_cast<int>(bv_size)) };
+    parameter p[2] = { parameter(val), parameter(static_cast<int>(bv_size)) };
     return m_manager.mk_app(get_fid(), OP_BV_NUM, 2, p, 0, 0);
 }
 

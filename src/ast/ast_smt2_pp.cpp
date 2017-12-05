@@ -44,6 +44,7 @@ format * smt2_pp_environment::pp_fdecl_name(symbol const & s, unsigned & len) co
         return mk_string(m, str.c_str());
     }
     else if (!s.bare_str()) {
+        len = 4;
         return mk_string(m, "null");
     }
     else {
@@ -584,6 +585,8 @@ class smt2_printer {
             string_buffer<> buf;
             buf.append("(:var ");
             buf.append(v->get_idx());
+            //buf.append(" ");
+            //buf.append(v->get_sort()->get_name().str().c_str());
             buf.append(")");
             f = mk_string(m(), buf.c_str());
         }
