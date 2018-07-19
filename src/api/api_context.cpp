@@ -70,7 +70,7 @@ namespace api {
     // ------------------------
 
     context::context(context_params * p, bool user_ref_count):
-        m_params(p != 0 ? *p : context_params()),
+        m_params(p != nullptr ? *p : context_params()),
         m_user_ref_count(user_ref_count),
         m_manager(m_params.mk_ast_manager()),
         m_plugins(m()),
@@ -78,7 +78,6 @@ namespace api {
         m_bv_util(m()),
         m_datalog_util(m()),
         m_fpa_util(m()),
-        m_dtutil(m()),
         m_sutil(m()),
         m_last_result(m()),
         m_ast_trail(m()),
@@ -89,7 +88,7 @@ namespace api {
         m_searching  = false;
         
 
-        m_interruptable = 0;                
+        m_interruptable = nullptr;
         m_error_handler = &default_error_handler;
 
         m_basic_fid = m().get_basic_family_id();
@@ -108,12 +107,13 @@ namespace api {
 
 
     context::~context() {
-        m_last_obj = 0;
+        m_last_obj = nullptr;
         u_map<api::object*>::iterator it = m_allocated_objects.begin();
         while (it != m_allocated_objects.end()) {
-            DEBUG_CODE(warning_msg("Uncollected memory: %d: %s", it->m_key, typeid(*it->m_value).name()););
+            api::object* val = it->m_value;
+            DEBUG_CODE(warning_msg("Uncollected memory: %d: %s", it->m_key, typeid(*val).name()););
             m_allocated_objects.remove(it->m_key);
-            dealloc(it->m_value);
+            dealloc(val);
             it = m_allocated_objects.begin();
         }
     }
@@ -130,7 +130,7 @@ namespace api {
     context::set_interruptable::~set_interruptable() {
         #pragma omp critical (set_interruptable) 
         {
-            m_ctx.m_interruptable = 0;
+            m_ctx.m_interruptable = nullptr;
         }
     }
 
@@ -144,16 +144,24 @@ namespace api {
         }
     }
     
-    void context::set_error_code(Z3_error_code err) {
+    void context::set_error_code(Z3_error_code err, char const* opt_msg) {
         m_error_code = err; 
         if (err != Z3_OK) {
+            m_exception_msg.clear();
+            if (opt_msg) m_exception_msg = opt_msg;
             invoke_error_handler(err); 
         }
     }
 
+    void context::reset_error_code() { 
+        m_error_code = Z3_OK; 
+    }
+
+
+
     void context::check_searching() {
         if (m_searching) { 
-            set_error_code(Z3_INVALID_USAGE); // TBD: error code could be fixed.
+            set_error_code(Z3_INVALID_USAGE, "cannot use function while searching"); // TBD: error code could be fixed.
         } 
     }
 
@@ -168,7 +176,7 @@ namespace api {
     }
 
     expr * context::mk_numeral_core(rational const & n, sort * s) {
-        expr* e = 0;
+        expr* e = nullptr;
         family_id fid  = s->get_family_id();
         if (fid == m_arith_fid) {
             e = m_arith_util.mk_numeral(n, s);
@@ -177,7 +185,7 @@ namespace api {
             e = m_bv_util.mk_numeral(n, s);
         }
         else if (fid == get_datalog_fid() && n.is_uint64()) {
-            uint64 sz;
+            uint64_t sz;
             if (m_datalog_util.try_get_size(s, sz) && 
                 sz <= n.get_uint64()) {
                 invoke_error_handler(Z3_INVALID_ARG);
@@ -212,10 +220,9 @@ namespace api {
             // Corner case bug: n may be in m_last_result, and this is the only reference to n.
             // When, we execute reset() it is deleted
             // To avoid this bug, I bump the reference counter before reseting m_last_result
-            m().inc_ref(n);
+            ast_ref node(n, m());
             m_last_result.reset();
-            m_last_result.push_back(n);
-            m().dec_ref(n);
+            m_last_result.push_back(std::move(node));
         }
         else {
             m_ast_trail.push_back(n);
@@ -232,7 +239,7 @@ namespace api {
     void context::reset_last_result() {
         if (m_user_ref_count)
             m_last_result.reset();
-        m_last_obj = 0;
+        m_last_obj = nullptr;
     }
 
     void context::save_object(object * r) {
@@ -243,25 +250,24 @@ namespace api {
         if (ex.has_error_code()) {
             switch(ex.error_code()) {
             case ERR_MEMOUT: 
-                set_error_code(Z3_MEMOUT_FAIL);
+                set_error_code(Z3_MEMOUT_FAIL, nullptr);
             break;
             case ERR_PARSER: 
-                set_error_code(Z3_PARSER_ERROR);
+                set_error_code(Z3_PARSER_ERROR, ex.msg());
                 break;
             case ERR_INI_FILE: 
-                set_error_code(Z3_INVALID_ARG);
+                set_error_code(Z3_INVALID_ARG, nullptr);
                 break;
             case ERR_OPEN_FILE:
-                set_error_code(Z3_FILE_ACCESS_ERROR);
+                set_error_code(Z3_FILE_ACCESS_ERROR, nullptr);
                 break;
             default:
-                set_error_code(Z3_INTERNAL_FATAL);
+                set_error_code(Z3_INTERNAL_FATAL, nullptr);
                 break;
             }
         }
         else {
-            m_exception_msg = ex.msg();
-            set_error_code(Z3_EXCEPTION); 
+            set_error_code(Z3_EXCEPTION, ex.msg()); 
         }
     }
     
@@ -296,7 +302,7 @@ namespace api {
             case AST_FUNC_DECL:
                 break;
             }
-            set_error_code(Z3_SORT_ERROR);
+            set_error_code(Z3_SORT_ERROR, nullptr);
         }
     }
 
@@ -306,7 +312,7 @@ namespace api {
     //
     // -----------------------
     realclosure::manager & context::rcfm() {
-        if (m_rcf_manager.get() == 0) {
+        if (m_rcf_manager.get() == nullptr) {
             m_rcf_manager = alloc(realclosure::manager, m_limit, m_rcf_qm);
         }
         return *(m_rcf_manager.get());
@@ -329,7 +335,7 @@ extern "C" {
         memory::initialize(UINT_MAX);
         Z3_context r = reinterpret_cast<Z3_context>(alloc(api::context, reinterpret_cast<context_params*>(c), false));
         RETURN_Z3(r);
-        Z3_CATCH_RETURN_NO_HANDLE(0);
+        Z3_CATCH_RETURN_NO_HANDLE(nullptr);
     }
 
     Z3_context Z3_API Z3_mk_context_rc(Z3_config c) {
@@ -338,7 +344,7 @@ extern "C" {
         memory::initialize(UINT_MAX);
         Z3_context r = reinterpret_cast<Z3_context>(alloc(api::context, reinterpret_cast<context_params*>(c), true));
         RETURN_Z3(r);
-        Z3_CATCH_RETURN_NO_HANDLE(0);
+        Z3_CATCH_RETURN_NO_HANDLE(nullptr);
     }
 
     void Z3_API Z3_del_context(Z3_context c) {
@@ -374,7 +380,7 @@ extern "C" {
         LOG_Z3_dec_ref(c, a);
         RESET_ERROR_CODE();
         if (to_ast(a)->get_ref_count() == 0) {
-            SET_ERROR_CODE(Z3_DEC_REF_ERROR);
+            SET_ERROR_CODE(Z3_DEC_REF_ERROR, nullptr);
             return;
         }
         mk_c(c)->m().dec_ref(to_ast(a));
@@ -435,10 +441,14 @@ extern "C" {
     }
 
     void Z3_API Z3_set_error(Z3_context c, Z3_error_code e) {
-        SET_ERROR_CODE(e);
+        SET_ERROR_CODE(e, nullptr);
     }
 
     static char const * _get_error_msg(Z3_context c, Z3_error_code err) {
+        if (c) {
+            char const* msg = mk_c(c)->get_exception_msg();
+            if (msg && *msg) return msg;
+        }
         switch(err) {
         case Z3_OK:                return "ok";
         case Z3_SORT_ERROR:        return "type error";
@@ -452,7 +462,7 @@ extern "C" {
         case Z3_INTERNAL_FATAL:    return "internal error";
         case Z3_INVALID_USAGE:     return "invalid usage";
         case Z3_DEC_REF_ERROR:     return "invalid dec_ref command";
-        case Z3_EXCEPTION:         return c == 0 ? "Z3 exception" : mk_c(c)->get_exception_msg();
+        case Z3_EXCEPTION:         return "Z3 exception";
         default:                   return "unknown";
         }
     }

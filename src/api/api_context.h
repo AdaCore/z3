@@ -34,6 +34,7 @@ Revision History:
 #include "util/event_handler.h"
 #include "cmd_context/tactic_manager.h"
 #include "cmd_context/context_params.h"
+#include "cmd_context/cmd_context.h"
 #include "api/api_polynomial.h"
 #include "util/hashtable.h"
 
@@ -51,15 +52,15 @@ namespace api {
     class context : public tactic_manager {
         struct add_plugins {  add_plugins(ast_manager & m); };
         context_params             m_params;
-        bool                       m_user_ref_count; //!< if true, the user is responsible for managing referenc counters.
+        bool                       m_user_ref_count; //!< if true, the user is responsible for managing reference counters.
         scoped_ptr<ast_manager>    m_manager;
+        scoped_ptr<cmd_context>    m_cmd;
         add_plugins                m_plugins;
 
         arith_util                 m_arith_util;
         bv_util                    m_bv_util;
         datalog::dl_decl_util      m_datalog_util;
         fpa_util                   m_fpa_util;
-        datatype_util              m_dtutil;
         seq_util                   m_sutil;
 
         // Support for old solver API
@@ -113,18 +114,19 @@ namespace api {
         ~context();
         ast_manager & m() const { return *(m_manager.get()); }
 
-        context_params & params() { return m_params; }
+        context_params & params() { m_params.updt_params(); return m_params; }
+        scoped_ptr<cmd_context>& cmd() { return m_cmd; }
         bool produce_proofs() const { return m().proofs_enabled(); }
         bool produce_models() const { return m_params.m_model; }
         bool produce_unsat_cores() const { return m_params.m_unsat_core; }
         bool use_auto_config() const { return m_params.m_auto_config; }
         unsigned get_timeout() const { return m_params.m_timeout; }
-        unsigned get_rlimit() const { return m_params.m_rlimit; }
+        unsigned get_rlimit() const { return m_params.rlimit(); }
         arith_util & autil() { return m_arith_util; }
         bv_util & bvutil() { return m_bv_util; }
         datalog::dl_decl_util & datalog_util() { return m_datalog_util; }
         fpa_util & fpautil() { return m_fpa_util; }
-        datatype_util& dtutil() { return m_dtutil; }
+        datatype_util& dtutil() { return m_dt_plugin->u(); }
         seq_util& sutil() { return m_sutil; }
         family_id get_basic_fid() const { return m_basic_fid; }
         family_id get_array_fid() const { return m_array_fid; }
@@ -138,8 +140,8 @@ namespace api {
         datatype_decl_plugin * get_dt_plugin() const { return m_dt_plugin; }
 
         Z3_error_code get_error_code() const { return m_error_code; }
-        void reset_error_code() { m_error_code = Z3_OK; }
-        void set_error_code(Z3_error_code err);
+        void reset_error_code();
+        void set_error_code(Z3_error_code err, char const* opt_msg);
         void set_error_handler(Z3_error_handler h) { m_error_handler = h; }
         // Sign an error if solver is searching
         void check_searching();
@@ -158,7 +160,7 @@ namespace api {
         // Create a numeral of the given sort
         expr * mk_numeral_core(rational const & n, sort * s);
         
-        // Return a conjuction that will be exposed to the "external" world.
+        // Return a conjunction that will be exposed to the "external" world.
         expr * mk_and(unsigned num_exprs, expr * const * exprs);
 
         // Hack for preventing an AST for being GC when ref-count is not used
@@ -217,14 +219,6 @@ namespace api {
         //
         // ------------------------
         smt_params & fparams() { return m_fparams; }
-
-        // ------------------------
-        //
-        // Parser interface 
-        //
-        // ------------------------
-
-        std::string m_parser_error_buffer;        
         
     };
     
@@ -232,14 +226,14 @@ namespace api {
 
 inline api::context * mk_c(Z3_context c) { return reinterpret_cast<api::context*>(c); }
 #define RESET_ERROR_CODE() { mk_c(c)->reset_error_code(); }
-#define SET_ERROR_CODE(ERR) { mk_c(c)->set_error_code(ERR); }
-#define CHECK_NON_NULL(_p_,_ret_) { if (_p_ == 0) { SET_ERROR_CODE(Z3_INVALID_ARG); return _ret_; } }
-#define CHECK_VALID_AST(_a_, _ret_) { if (_a_ == 0 || !CHECK_REF_COUNT(_a_)) { SET_ERROR_CODE(Z3_INVALID_ARG); return _ret_; } }
+#define SET_ERROR_CODE(ERR, MSG) { mk_c(c)->set_error_code(ERR, MSG); }
+#define CHECK_NON_NULL(_p_,_ret_) { if (_p_ == 0) { SET_ERROR_CODE(Z3_INVALID_ARG, "ast is null"); return _ret_; } }
+#define CHECK_VALID_AST(_a_, _ret_) { if (_a_ == 0 || !CHECK_REF_COUNT(_a_)) { SET_ERROR_CODE(Z3_INVALID_ARG, "not a valid ast"); return _ret_; } }
 #define CHECK_SEARCHING(c) mk_c(c)->check_searching();
 inline bool is_expr(Z3_ast a) { return is_expr(to_ast(a)); }
-#define CHECK_IS_EXPR(_p_, _ret_) { if (_p_ == 0 || !is_expr(_p_)) { SET_ERROR_CODE(Z3_INVALID_ARG); return _ret_; } }
+#define CHECK_IS_EXPR(_p_, _ret_) { if (_p_ == 0 || !is_expr(_p_)) { SET_ERROR_CODE(Z3_INVALID_ARG, "ast is not an expression"); return _ret_; } }
 inline bool is_bool_expr(Z3_context c, Z3_ast a) { return is_expr(a) && mk_c(c)->m().is_bool(to_expr(a)); }
-#define CHECK_FORMULA(_a_, _ret_) { if (_a_ == 0 || !CHECK_REF_COUNT(_a_) || !is_bool_expr(c, _a_)) { SET_ERROR_CODE(Z3_INVALID_ARG); return _ret_; } }
+#define CHECK_FORMULA(_a_, _ret_) { if (_a_ == 0 || !CHECK_REF_COUNT(_a_) || !is_bool_expr(c, _a_)) { SET_ERROR_CODE(Z3_INVALID_ARG, nullptr); return _ret_; } }
 inline void check_sorts(Z3_context c, ast * n) { mk_c(c)->check_sorts(n); }
 
 #endif

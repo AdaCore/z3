@@ -21,8 +21,9 @@ Revision History:
 #include "util/region.h"
 #include "util/string_buffer.h"
 #include "util/z3_omp.h"
+#include <cstring>
 
-symbol symbol::m_dummy(TAG(void*, static_cast<void*>(0), 2));
+symbol symbol::m_dummy(TAG(void*, nullptr, 2));
 const symbol symbol::null;
 
 /**
@@ -60,7 +61,7 @@ public:
     }
 };
 
-internal_symbol_table* g_symbol_table = 0;
+static internal_symbol_table* g_symbol_table = nullptr;
 
 void initialize_symbols() {
     if (!g_symbol_table) {
@@ -70,12 +71,12 @@ void initialize_symbols() {
 
 void finalize_symbols() {
     dealloc(g_symbol_table);
-    g_symbol_table = 0;
+    g_symbol_table = nullptr;
 }
 
 symbol::symbol(char const * d) {
-    if (d == 0)
-        m_data = 0;
+    if (d == nullptr)
+        m_data = nullptr;
     else
         m_data = g_symbol_table->get_str(d);
 }
@@ -103,7 +104,7 @@ std::string symbol::str() const {
 bool symbol::contains(char ch) const {
     SASSERT(!is_marked());
     if (GET_TAG(m_data) == 0) {
-        return strchr(m_data, ch) != 0;
+        return strchr(m_data, ch) != nullptr;
     }
     else {
         return false;
@@ -140,27 +141,7 @@ bool lt(symbol const & s1, symbol const & s2) {
         return false;
     }
     SASSERT(!s1.is_numerical() && !s2.is_numerical());
-    char const * str1 = s1.bare_str();
-    char const * str2 = s2.bare_str();
-    while (true) {
-        if (*str1 < *str2) {
-            return true;
-        }
-        else if (*str1 == *str2) {
-            str1++;
-            str2++;
-            if (!*str1) {
-                SASSERT(*str2); // the strings can't be equal.
-                return true;
-            }
-            if (!*str2) {
-                SASSERT(*str1); // the strings can't be equal.
-                return false;
-            }
-        }
-        else {
-            SASSERT(*str1 > *str2);
-            return false;
-        }
-    }
+    auto cmp = strcmp(s1.bare_str(), s2.bare_str());
+    SASSERT(cmp != 0);
+    return cmp < 0;
 }

@@ -227,7 +227,7 @@ namespace Microsoft.Z3
             Contract.Ensures(Contract.Result<Expr>() != null);
 
             IntPtr v = IntPtr.Zero;
-            if (Native.Z3_model_eval(Context.nCtx, NativeObject, t.NativeObject, (completion) ? 1 : 0, ref v) == 0)
+            if (Native.Z3_model_eval(Context.nCtx, NativeObject, t.NativeObject, (byte)(completion ? 1 : 0), ref v) == (byte)0)
                 throw new ModelEvaluationFailedException();
             else
                 return Expr.Create(Context, v);
@@ -253,7 +253,7 @@ namespace Microsoft.Z3
         /// The uninterpreted sorts that the model has an interpretation for. 
         /// </summary>
         /// <remarks>
-        /// Z3 also provides an intepretation for uninterpreted sorts used in a formula.
+        /// Z3 also provides an interpretation for uninterpreted sorts used in a formula.
         /// The interpretation for a sort is a finite set of distinct values. We say this finite set is
         /// the "universe" of the sort.
         /// </remarks>

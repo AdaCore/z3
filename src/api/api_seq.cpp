@@ -31,7 +31,7 @@ extern "C" {
         sort * ty =  mk_c(c)->sutil().str.mk_seq(to_sort(domain));
         mk_c(c)->save_ast_trail(ty);
         RETURN_Z3(of_sort(ty));
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_sort Z3_API Z3_mk_re_sort(Z3_context c, Z3_sort domain) {
@@ -41,7 +41,7 @@ extern "C" {
         sort * ty =  mk_c(c)->sutil().re.mk_re(to_sort(domain));
         mk_c(c)->save_ast_trail(ty);
         RETURN_Z3(of_sort(ty));
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_ast Z3_API Z3_mk_string(Z3_context c, Z3_string str) {
@@ -52,7 +52,7 @@ extern "C" {
         app* a = mk_c(c)->sutil().str.mk_string(s);
         mk_c(c)->save_ast_trail(a);
         RETURN_Z3(of_ast(a));
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_sort Z3_API Z3_mk_string_sort(Z3_context c) {
@@ -62,7 +62,7 @@ extern "C" {
         sort* ty = mk_c(c)->sutil().str.mk_string_sort();
         mk_c(c)->save_ast_trail(ty);
         RETURN_Z3(of_sort(ty));
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_bool Z3_API Z3_is_seq_sort(Z3_context c, Z3_sort s) {
@@ -107,7 +107,7 @@ extern "C" {
         RESET_ERROR_CODE();
         zstring str;
         if (!mk_c(c)->sutil().str.is_string(to_expr(s), str)) {
-            SET_ERROR_CODE(Z3_INVALID_ARG);
+            SET_ERROR_CODE(Z3_INVALID_ARG, "expression is not a string literal");
             return "";
         }
         std::string result = str.encode();
@@ -152,7 +152,7 @@ extern "C" {
         app* a = hi == 0 ? mk_c(c)->sutil().re.mk_loop(to_expr(r), lo) : mk_c(c)->sutil().re.mk_loop(to_expr(r), lo, hi);
         mk_c(c)->save_ast_trail(a);
         RETURN_Z3(of_ast(a));
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     MK_UNARY(Z3_mk_re_plus, mk_c(c)->get_seq_fid(), OP_RE_PLUS, SKIP);
@@ -165,7 +165,7 @@ extern "C" {
     MK_BINARY(Z3_mk_re_range, mk_c(c)->get_seq_fid(), OP_RE_RANGE, SKIP);
 
     MK_SORTED(Z3_mk_re_empty, mk_c(c)->sutil().re.mk_empty);
-    MK_SORTED(Z3_mk_re_full, mk_c(c)->sutil().re.mk_full);
+    MK_SORTED(Z3_mk_re_full, mk_c(c)->sutil().re.mk_full_seq);
 
 
 

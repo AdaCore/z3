@@ -27,13 +27,10 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_mk_bv_sort(c, sz);
         RESET_ERROR_CODE();
-        if (sz == 0) {
-            SET_ERROR_CODE(Z3_INVALID_ARG);
-        }
         parameter p(sz);
         Z3_sort r = of_sort(mk_c(c)->m().mk_sort(mk_c(c)->get_bv_fid(), BV_SORT, 1, &p));
         RETURN_Z3(r);
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
 #define MK_BV_UNARY(NAME, OP) MK_UNARY(NAME, mk_c(c)->get_bv_fid(), OP, SKIP)
@@ -85,7 +82,7 @@ extern "C" {
         RESET_ERROR_CODE();
         Z3_ast r = mk_extract_core(c, high, low, n);
         RETURN_Z3(r);
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
 #define MK_BV_PUNARY(NAME, OP)                                          \
@@ -146,7 +143,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
             check_sorts(c, a);
             RETURN_Z3(of_ast(a));
         }
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     /**
@@ -163,8 +160,8 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         // Not logging this one, since it is just syntax sugar.
         unsigned sz = Z3_get_bv_sort_size(c, s);
         if (sz == 0) {
-            SET_ERROR_CODE(Z3_INVALID_ARG);
-            return 0;
+            SET_ERROR_CODE(Z3_INVALID_ARG, "zero length bit-vector supplied");
+            return nullptr;
         }
         Z3_ast x = Z3_mk_int64(c, 1, s);
         Z3_inc_ref(c, x);
@@ -174,7 +171,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         Z3_dec_ref(c, x);
         Z3_dec_ref(c, y);
         return result;
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_ast Z3_mk_bvsmin(Z3_context c, Z3_sort s) {
@@ -229,7 +226,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
             Z3_dec_ref(c, r);
             return result;
         }
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     // only for signed machine integers
@@ -257,7 +254,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         Z3_dec_ref(c, args_neg);
         Z3_dec_ref(c, zero);
         return result;
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     // only for signed machine integers
@@ -286,7 +283,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         Z3_dec_ref(c, z);
         Z3_dec_ref(c, zero);
         return result;
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_ast Z3_API Z3_mk_bvsub_no_underflow(Z3_context c, Z3_ast t1, Z3_ast t2, Z3_bool is_signed) {
@@ -311,7 +308,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         else {
             return Z3_mk_bvule(c, t2, t1);
         }
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_ast Z3_API Z3_mk_bvmul_no_overflow(Z3_context c, Z3_ast n1, Z3_ast n2, Z3_bool is_signed) {
@@ -336,11 +333,11 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         Z3_TRY;
         RESET_ERROR_CODE();
         Z3_ast min = Z3_mk_bvsmin(c, Z3_get_sort(c, t));
-        if (Z3_get_error_code(c) != Z3_OK) return 0;
+        if (Z3_get_error_code(c) != Z3_OK) return nullptr;
         Z3_ast eq  = Z3_mk_eq(c, t, min);
-        if (Z3_get_error_code(c) != Z3_OK) return 0;
+        if (Z3_get_error_code(c) != Z3_OK) return nullptr;
         return Z3_mk_not(c, eq);
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     // only for signed machine integers
@@ -366,7 +363,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         Z3_dec_ref(c, z);
         Z3_dec_ref(c, u);
         return result;
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_ast Z3_API Z3_mk_bvsub(Z3_context c, Z3_ast n1, Z3_ast n2) {
@@ -374,7 +371,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         LOG_Z3_mk_bvsub(c, n1, n2);
         RESET_ERROR_CODE();
         MK_BINARY_BODY(Z3_mk_bvsub, mk_c(c)->get_bv_fid(), OP_BSUB, SKIP);
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_ast Z3_API Z3_mk_bvneg(Z3_context c, Z3_ast n) {
@@ -382,7 +379,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         LOG_Z3_mk_bvneg(c, n);
         RESET_ERROR_CODE();
         MK_UNARY_BODY(Z3_mk_bvneg, mk_c(c)->get_bv_fid(), OP_BNEG, SKIP);
-        Z3_CATCH_RETURN(0);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     unsigned Z3_API Z3_get_bv_sort_size(Z3_context c, Z3_sort t) {
@@ -393,7 +390,7 @@ Z3_ast Z3_API NAME(Z3_context c, unsigned i, Z3_ast n) {                \
         if (to_sort(t)->get_family_id() == mk_c(c)->get_bv_fid() && to_sort(t)->get_decl_kind() == BV_SORT) {
             return to_sort(t)->get_parameter(0).get_int();
         }
-        SET_ERROR_CODE(Z3_INVALID_ARG);
+        SET_ERROR_CODE(Z3_INVALID_ARG, "sort is not a bit-vector");
         return 0;
         Z3_CATCH_RETURN(0);
     }

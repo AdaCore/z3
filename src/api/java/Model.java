@@ -91,11 +91,11 @@ public class Model extends Z3Object {
                     return null;
                 else
                 {
-                    if (!Native.isAsArray(getContext().nCtx(), n))
-                        throw new Z3Exception(
-                                "Argument was not an array constant");
-                    long fd = Native.getAsArrayFuncDecl(getContext().nCtx(), n);
-                    return getFuncInterp(new FuncDecl(getContext(), fd));
+                    if (Native.isAsArray(getContext().nCtx(), n)) {
+                      long fd = Native.getAsArrayFuncDecl(getContext().nCtx(), n);
+                      return getFuncInterp(new FuncDecl(getContext(), fd));
+                    }
+		    return null;
                 }
             } else
             {
@@ -239,7 +239,7 @@ public class Model extends Z3Object {
 
     /**
      * The uninterpreted sorts that the model has an interpretation for.
-     * Remarks:  Z3 also provides an intepretation for uninterpreted sorts used
+     * Remarks:  Z3 also provides an interpretation for uninterpreted sorts used
      * in a formula. The interpretation for a sort is a finite set of distinct
      * values. We say this finite set is the "universe" of the sort. 
      * 

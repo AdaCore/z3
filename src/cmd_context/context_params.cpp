@@ -34,6 +34,7 @@ context_params::context_params() {
     m_debug_ref_count = false;
     m_smtlib2_compliant = false;
     m_well_sorted_check = false;
+    m_model_compress = true;
     m_timeout = UINT_MAX;
     m_rlimit  = 0;
     updt_params();
@@ -62,7 +63,7 @@ void context_params::set_uint(unsigned & opt, char const * param, char const * v
     }
 
     if (is_uint) {
-        long val = strtol(value, 0, 10);
+        long val = strtol(value, nullptr, 10);
         opt = static_cast<unsigned>(val);
     }
     else {
@@ -102,6 +103,9 @@ void context_params::set(char const * param, char const * value) {
     else if (p == "model_validate") {
         set_bool(m_model_validate, param, value);
     }
+    else if (p == "model_compress") {
+        set_bool(m_model_compress, param, value);
+    }
     else if (p == "dump_models") {
         set_bool(m_dump_models, param, value);
     }
@@ -135,7 +139,7 @@ void context_params::set(char const * param, char const * value) {
 }
 
 void context_params::updt_params() {
-    updt_params(gparams::get());
+    updt_params(gparams::get_ref());
 }
 
 void context_params::updt_params(params_ref const & p) {
@@ -146,6 +150,7 @@ void context_params::updt_params(params_ref const & p) {
     m_proof             = p.get_bool("proof", m_proof);
     m_model             = p.get_bool("model", m_model);
     m_model_validate    = p.get_bool("model_validate", m_model_validate);
+    m_model_compress    = p.get_bool("model_compress", m_model_compress);
     m_dump_models       = p.get_bool("dump_models", m_dump_models);
     m_trace             = p.get_bool("trace", m_trace);
     m_trace_file_name   = p.get_str("trace_file_name", "z3.log");
@@ -162,6 +167,7 @@ void context_params::collect_param_descrs(param_descrs & d) {
     d.insert("type_check", CPK_BOOL, "type checker (alias for well_sorted_check)", "true");
     d.insert("auto_config", CPK_BOOL, "use heuristics to automatically select solver and configure it", "true");
     d.insert("model_validate", CPK_BOOL, "validate models produced by solvers", "false");
+    d.insert("model_compress", CPK_BOOL, "compress models for easier consumption", "true");
     d.insert("dump_models", CPK_BOOL, "dump models whenever check-sat returns sat", "false");
     d.insert("trace", CPK_BOOL, "trace generation for VCC", "false");
     d.insert("trace_file_name", CPK_STRING, "trace out file name (see option 'trace')", "z3.log");
@@ -198,7 +204,7 @@ void context_params::get_solver_params(ast_manager const & m, params_ref & p, bo
 ast_manager * context_params::mk_ast_manager() {
     ast_manager * r = alloc(ast_manager,
                             m_proof ? PGM_ENABLED : PGM_DISABLED,
-                            m_trace ? m_trace_file_name.c_str() : 0);
+                            m_trace ? m_trace_file_name.c_str() : nullptr);
     if (m_smtlib2_compliant)
         r->enable_int_real_coercions(false);
     if (m_debug_ref_count)

@@ -23,8 +23,8 @@
 #include "ast/for_each_expr.h"
 #include "model/model_smt2_pp.h"
 
-lackr::lackr(ast_manager& m, params_ref p, lackr_stats& st, expr_ref_vector& formulas,
-    solver * uffree_solver)
+lackr::lackr(ast_manager& m, const params_ref& p, lackr_stats& st,
+             const ptr_vector<expr>& formulas, solver * uffree_solver)
     : m_m(m)
     , m_p(p)
     , m_formulas(formulas)
@@ -173,11 +173,10 @@ void lackr::abstract() {
     }
     m_info->seal();
     // perform abstraction of the formulas
-    const unsigned sz = m_formulas.size();
-    for (unsigned i = 0; i < sz; ++i) {
+    for (expr * f : m_formulas) {
         expr_ref a(m_m);
-        m_info->abstract(m_formulas.get(i), a);
-        m_abstr.push_back(a);
+        m_info->abstract(f, a);
+        m_abstr.push_back(std::move(a));
     }
 }
 
@@ -185,7 +184,7 @@ void lackr::add_term(app* a) {
     if (a->get_num_args() == 0) return;
     if (!m_ackr_helper.should_ackermannize(a)) return;
     func_decl* const fd = a->get_decl();
-    app_set* ts = 0;
+    app_set* ts = nullptr;
     if (!m_fun2terms.find(fd, ts)) {
         ts = alloc(app_set);
         m_fun2terms.insert(fd, ts);
@@ -205,7 +204,7 @@ lbool lackr::eager() {
     SASSERT(m_is_init);
     push_abstraction();
     TRACE("lackr", tout << "run sat 0\n"; );
-    const lbool rv0 = m_sat->check_sat(0, 0);
+    const lbool rv0 = m_sat->check_sat(0, nullptr);
     if (rv0 == l_false) return l_false;
     eager_enc();
     expr_ref all(m_m);
@@ -213,7 +212,7 @@ lbool lackr::eager() {
     m_simp(all);
     m_sat->assert_expr(all);
     TRACE("lackr", tout << "run sat all\n"; );
-    return m_sat->check_sat(0, 0);
+    return m_sat->check_sat(0, nullptr);
 }
 
 lbool lackr::lazy() {
@@ -225,7 +224,7 @@ lbool lackr::lazy() {
         m_st.m_it++;
         checkpoint();
         TRACE("lackr", tout << "lazy check: " << m_st.m_it << "\n";);
-        const lbool r = m_sat->check_sat(0, 0);
+        const lbool r = m_sat->check_sat(0, nullptr);
         if (r == l_undef) return l_undef; // give up
         if (r == l_false) return l_false; // abstraction unsat
         // reconstruct model
@@ -249,13 +248,9 @@ lbool lackr::lazy() {
 // Collect all uninterpreted terms, skipping 0-arity.
 //
 bool lackr::collect_terms() {
-    ptr_vector<expr> stack;
+    ptr_vector<expr> stack = m_formulas;
     expr *           curr;
     expr_mark        visited;
-    for(unsigned i = 0; i < m_formulas.size(); ++i) {
-        stack.push_back(m_formulas.get(i));
-        TRACE("lackr", tout << "infla: " <<mk_ismt2_pp(m_formulas.get(i), m_m, 2) <<  "\n";);
-    }
 
     while (!stack.empty()) {
         curr = stack.back();
