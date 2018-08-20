@@ -324,7 +324,7 @@ lia_move int_solver::mk_gomory_cut( unsigned inf_col, const row_strip<mpq> & row
     bool some_int_columns = false;
     mpq f_0  = int_solver::fractional_part(get_value(inf_col));
     mpq one_min_f_0 = 1 - f_0;
-    for (auto & p : row) {
+    for (const auto & p : row) {
         x_j = p.var();
         if (x_j == inf_col)
             continue;
@@ -1152,13 +1152,13 @@ bool int_solver::at_upper(unsigned j) const {
 
 void int_solver::display_row_info(std::ostream & out, unsigned row_index) const  {
     auto & rslv = m_lar_solver->m_mpq_lar_core_solver.m_r_solver;
-    for (auto &c: rslv.m_A.m_rows[row_index]) {
+    for (const auto &c: rslv.m_A.m_rows[row_index]) {
         if (numeric_traits<mpq>::is_pos(c.coeff()))
             out << "+";
         out << c.coeff() << rslv.column_name(c.var()) << " ";
     }
 
-    for (auto& c: rslv.m_A.m_rows[row_index]) {
+    for (const auto& c: rslv.m_A.m_rows[row_index]) {
         rslv.print_column_bound_info(c.var(), out);
     }
     rslv.print_column_bound_info(rslv.m_basis[row_index], out);

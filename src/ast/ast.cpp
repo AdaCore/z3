@@ -1403,6 +1403,7 @@ void ast_manager::init() {
     inc_ref(m_false);
 }
 
+
 template<typename T>
 static void mark_array_ref(ast_mark& mark, unsigned sz, T * const * a) {
     for(unsigned i = 0; i < sz; i++) {
@@ -1715,6 +1716,7 @@ ast * ast_manager::register_node_core(ast * n) {
 
 
     n->m_id   = is_decl(n) ? m_decl_id_gen.mk() : m_expr_id_gen.mk();
+    
 
     TRACE("ast", tout << "Object " << n->m_id << " was created.\n";);
     TRACE("mk_var_bug", tout << "mk_ast: " << n->m_id << "\n";);
@@ -2369,6 +2371,15 @@ bool ast_manager::is_pattern(expr const * n, ptr_vector<expr> &args) {
     return true;
 }
 
+static void trace_quant(std::ostream& strm, quantifier* q) {
+    strm << (is_lambda(q) ? "[mk-lambda]" : "[mk-quant]")
+         << " #" << q->get_id() << " " << q->get_qid();
+    for (unsigned i = 0; i < q->get_num_patterns(); ++i) {
+        strm << " #" << q->get_pattern(i)->get_id();
+    }
+    strm << " #" << q->get_expr()->get_id() << "\n";
+}
+
 
 quantifier * ast_manager::mk_quantifier(quantifier_kind k, unsigned num_decls, sort * const * decl_sorts, symbol const * decl_names,
                                         expr * body, int weight , symbol const & qid, symbol const & skid,
@@ -2401,12 +2412,7 @@ quantifier * ast_manager::mk_quantifier(quantifier_kind k, unsigned num_decls, s
     quantifier * r = register_node(new_node);
 
     if (m_trace_stream && r == new_node) {
-        *m_trace_stream << "[mk-quant] #" << r->get_id() << " " << qid;
-        for (unsigned i = 0; i < num_patterns; ++i) {
-            *m_trace_stream << " #" << patterns[i]->get_id();
-        }
-        *m_trace_stream << " #" << body->get_id() << "\n";
-
+        trace_quant(*m_trace_stream, r);
     }
 
     return r;
@@ -2420,6 +2426,9 @@ quantifier * ast_manager::mk_lambda(unsigned num_decls, sort * const * decl_sort
     sort* s = autil.mk_array_sort(num_decls, decl_sorts, ::get_sort(body));
     quantifier * new_node = new (mem) quantifier(num_decls, decl_sorts, decl_names, body, s);
     quantifier * r = register_node(new_node);
+    if (m_trace_stream && r == new_node) {
+        trace_quant(*m_trace_stream, r);
+    }
     return r;
 }
 
