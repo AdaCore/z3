@@ -1,3 +1,10 @@
+# Note
+
+
+This repository is NOT the official Z3 repository. It is a clone of Z3 for its
+use in [SPARK](https://github.com/adacore/spark2014). Please report any issues
+or pull requests to the [original project](https://github.com/Z3Prover/z3).
+
 # Z3
 
 Z3 is a theorem prover from Microsoft Research. It is licensed
