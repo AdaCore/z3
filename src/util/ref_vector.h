@@ -99,8 +99,8 @@ public:
         return *this;
     }
 
-    template <typename W, typename M>
-    ref_vector_core& push_back(obj_ref<W,M> && n) {
+    template <typename M>
+    ref_vector_core& push_back(obj_ref<T,M> && n) {
         m_nodes.push_back(n.get());
         n.steal();
         return *this;
@@ -249,7 +249,6 @@ public:
         }
 
         element_ref & operator=(T * n) {
-            SASSERT(n);
             m_manager.inc_ref(n);
             m_manager.dec_ref(m_ref);
             m_ref = n;

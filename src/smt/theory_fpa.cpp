@@ -125,7 +125,7 @@ namespace smt {
         m_is_initialized = true;
     }
 
-    app * theory_fpa::fpa_value_proc::mk_value(model_generator & mg, ptr_vector<expr> & values) {
+    app * theory_fpa::fpa_value_proc::mk_value(model_generator & mg, expr_ref_vector const & values) {
         TRACE("t_fpa_detail",
               ast_manager & m = m_th.get_manager();
               for (unsigned i = 0; i < values.size(); i++)
@@ -200,7 +200,7 @@ namespace smt {
         return result;
     }
 
-    app * theory_fpa::fpa_rm_value_proc::mk_value(model_generator & mg, ptr_vector<expr> & values) {
+    app * theory_fpa::fpa_rm_value_proc::mk_value(model_generator & mg, expr_ref_vector const & values) {
         SASSERT(values.size() == 1);
 
         TRACE("t_fpa_detail",
@@ -409,7 +409,9 @@ namespace smt {
         if (get_manager().is_true(e)) return;
         TRACE("t_fpa_detail", tout << "asserting " << mk_ismt2_pp(e, get_manager()) << "\n";);
         context & ctx = get_context();
+        if (get_manager().has_trace_stream()) log_axiom_instantiation(e);
         ctx.internalize(e, false);
+        if (get_manager().has_trace_stream()) get_manager().trace_stream() << "[end-of-instance]\n";
         literal lit(ctx.get_literal(e));
         ctx.mark_as_relevant(lit);
         ctx.mk_th_axiom(get_id(), 1, &lit);

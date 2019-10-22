@@ -20,6 +20,7 @@ Notes:
 #include "util/rational.h"
 #include "util/symbol.h"
 #include "util/dictionary.h"
+#include <atomic>
 
 params_ref params_ref::g_empty_params_ref;
 
@@ -298,7 +299,15 @@ void insert_produce_proofs(param_descrs & r) {
 }
 
 void insert_timeout(param_descrs & r) {
-    r.insert("timeout", CPK_UINT, "(default: infty) timeout in milliseconds.");
+    r.insert("timeout", CPK_UINT, "(default: infty) timeout in milliseconds.", "4294967295");
+}
+
+void insert_rlimit(param_descrs & r) {
+    r.insert("rlimit", CPK_UINT, "default resource limit used for solvers. Unrestricted when set to 0.", "0");
+}
+
+void insert_ctrl_c(param_descrs & r) {
+    r.insert("ctrl_c", CPK_BOOL, "enable interrupts from ctrl-c", "true");
 }
 
 class params {
@@ -315,8 +324,8 @@ class params {
         };
     };
     typedef std::pair<symbol, value> entry;
-    svector<entry> m_entries;
-    unsigned       m_ref_count;
+    svector<entry>        m_entries;
+    std::atomic<unsigned> m_ref_count;
     void del_value(entry & e);
     void del_values();
 
@@ -328,7 +337,7 @@ public:
 
     void inc_ref() { m_ref_count++; }
     void dec_ref() { 
-        SASSERT(m_ref_count > 0); 
+        SASSERT(m_ref_count > 0);
         if (--m_ref_count == 0) dealloc(this); 
     }
 

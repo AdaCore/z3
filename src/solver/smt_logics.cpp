@@ -35,6 +35,7 @@ bool smt_logics::logic_has_reals_only(symbol const& s) {
         s == "UFLRA" ||
         s == "LRA" ||
         s == "RDL" ||
+        s == "NRA" ||
         s == "QF_NRA" ||
         s == "QF_UFNRA" ||
         s == "QF_UFLRA";
@@ -80,6 +81,7 @@ bool smt_logics::logic_has_arith(symbol const & s) {
         s == "LRA" ||
         s == "UFIDL" ||
         s == "QF_FP" ||
+        s == "FP" ||
         s == "QF_FPBV" ||
         s == "QF_BVFP" ||
         s == "QF_S" ||
@@ -101,6 +103,7 @@ bool smt_logics::logic_has_bv(symbol const & s) {
         s == "QF_AUFBV" ||
         s == "QF_BVRE" ||
         s == "QF_FPBV" ||
+        s == "FP" ||
         s == "QF_BVFP" ||
         logic_is_allcsp(s) ||
         s == "QF_FD" ||
@@ -138,7 +141,7 @@ bool smt_logics::logic_has_str(symbol const & s) {
 }
 
 bool smt_logics::logic_has_fpa(symbol const & s) {
-    return s == "QF_FP" || s == "QF_FPBV" || s == "QF_BVFP" || s == "QF_FPLRA"  || logic_is_allcsp(s);
+    return s == "FP" || s == "QF_FP" || s == "QF_FPBV" || s == "QF_BVFP" || s == "QF_FPLRA"  || logic_is_allcsp(s);
 }
 
 bool smt_logics::logic_has_uf(symbol const & s) {

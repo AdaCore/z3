@@ -23,6 +23,7 @@ Revision History:
 #include "ast/ast_smt2_pp.h"
 #include "smt/smt_context.h"
 #include "smt/theory_datatype.h"
+#include "smt/theory_array.h"
 #include "smt/smt_model_generator.h"
 
 namespace smt {
@@ -139,8 +140,17 @@ namespace smt {
             expr * acc    = m.mk_app(d, n->get_owner());
             args.push_back(acc);
         }
-        expr * mk       = m.mk_app(c, args.size(), args.c_ptr());
+        expr_ref mk(m.mk_app(c, args.size(), args.c_ptr()), m);
+        if (m.has_trace_stream()) {
+            app_ref body(m);
+            body = m.mk_eq(n->get_owner(), mk);
+            if (antecedent != null_literal) {
+                body = m.mk_implies(get_context().bool_var2expr(antecedent.var()), body);
+            }
+            log_axiom_instantiation(body, 1, &n);
+        }
         assert_eq_axiom(n, mk, antecedent);
+        if (m.has_trace_stream()) m.trace_stream() << "[end-of-instance]\n";
     }
 
     /**
@@ -157,11 +167,24 @@ namespace smt {
         func_decl * d     = n->get_decl();
         ptr_vector<func_decl> const & accessors   = *m_util.get_constructor_accessors(d);
         SASSERT(n->get_num_args() == accessors.size());
+        app_ref_vector bindings(m);
+        vector<std::tuple<enode *, enode *>> used_enodes;
+        used_enodes.push_back(std::make_tuple(nullptr, n));
+        for (unsigned i = 0; i < n->get_num_args(); ++i) {
+            bindings.push_back(n->get_arg(i)->get_owner());
+        }
+        unsigned base_id = get_manager().has_trace_stream() && accessors.size() > 0 ? m_util.get_plugin()->get_axiom_base_id(d->get_name()) : 0;
         unsigned i = 0;
         for (func_decl * acc : accessors) {
-            app * acc_app     = m.mk_app(acc, n->get_owner());
+            app_ref acc_app(m.mk_app(acc, n->get_owner()), m);
             enode * arg       = n->get_arg(i);
+            if (m.has_trace_stream()) {
+                app_ref body(m);
+                body = m.mk_eq(arg->get_owner(), acc_app);
+                log_axiom_instantiation(body, base_id + 3*i, bindings.size(), bindings.c_ptr(), base_id - 3, used_enodes);
+            }
             assert_eq_axiom(arg, acc_app, null_literal);
+            if (m.has_trace_stream()) m.trace_stream() << "[end-of-instance]\n";
             ++i;
         }
     }
@@ -217,11 +240,20 @@ namespace smt {
                 ctx.internalize(acc_app, false);
                 arg = ctx.get_enode(acc_app);
             }
-            app * acc_own = m.mk_app(acc1, own);
+            app_ref acc_own(m.mk_app(acc1, own), m);
+            if (m.has_trace_stream()) {
+                app_ref body(m);
+                body = m.mk_implies(rec_app, m.mk_eq(arg->get_owner(), acc_own));
+                log_axiom_instantiation(body, 1, &n);
+            }
             assert_eq_axiom(arg, acc_own, is_con); 
+            if (m.has_trace_stream()) m.trace_stream() << "[end-of-instance]\n";
         }
         // update_field is identity if 'n' is not created by a matching constructor.        
+        app_ref imp(m.mk_implies(m.mk_not(rec_app), m.mk_eq(n->get_owner(), arg1)), m);
+        if (m.has_trace_stream()) log_axiom_instantiation(imp, 1, &n);
         assert_eq_axiom(n, arg1, ~is_con);
+        if (m.has_trace_stream()) m.trace_stream() << "[end-of-instance]\n";
     }
 
     theory_var theory_datatype::mk_var(enode * n) {
@@ -301,6 +333,13 @@ namespace smt {
             for (unsigned i = 0; i < num_args; i++) {
                 enode * arg = e->get_arg(i);
                 sort * s    = get_manager().get_sort(arg->get_owner());
+                if (m_autil.is_array(s) && m_util.is_datatype(get_array_range(s))) {
+                    app_ref def(m_autil.mk_default(arg->get_owner()), get_manager());
+                    if (!ctx.e_internalized(def)) {
+                        ctx.internalize(def, false);
+                    }
+                    arg = ctx.get_enode(def);       
+                }
                 if (!m_util.is_datatype(s))
                     continue;
                 if (is_attached_to_var(arg))
@@ -340,9 +379,18 @@ namespace smt {
         //   (assert (> (len a) 1)
         //   
         // If the theory variable is not created for 'a', then a wrong model will be generated.
-        TRACE("datatype", tout << "apply_sort_cnstr: #" << n->get_owner_id() << "\n";);
-        TRACE("datatype_bug", tout << "apply_sort_cnstr:\n" << mk_pp(n->get_owner(), get_manager()) << "\n";);
-        if ((get_context().has_quantifiers() || (m_util.is_datatype(s) && !s->is_infinite())) && !is_attached_to_var(n)) {
+        TRACE("datatype", tout << "apply_sort_cnstr: #" << n->get_owner_id() << " " << mk_pp(n->get_owner(), get_manager()) << "\n";);
+        TRACE("datatype_bug", 
+              tout << "apply_sort_cnstr:\n" << mk_pp(n->get_owner(), get_manager()) << " ";
+              tout << m_util.is_datatype(s) << " ";
+              if (m_util.is_datatype(s)) tout << "is-infinite: " << s->is_infinite() << " "; 
+              if (m_util.is_datatype(s)) tout << "attached: " << is_attached_to_var(n) << " ";
+              tout << "\n";);
+
+        if (!is_attached_to_var(n) &&
+            (get_context().has_quantifiers() || 
+             (m_util.is_datatype(s) && m_util.has_nested_arrays()) || 
+             (m_util.is_datatype(s) && !s->is_infinite()))) {
             mk_var(n);
         }
     }
@@ -455,33 +503,58 @@ namespace smt {
         return d->m_constructor;
     }
 
+    void theory_datatype::explain_is_child(enode* parent, enode* child) {
+        enode * parentc = oc_get_cstor(parent);        
+        if (parent != parentc) {
+            m_used_eqs.push_back(enode_pair(parent, parentc));
+        }
+
+        // collect equalities on all children that may have been used.
+        bool found = false;
+        ast_manager& m = get_manager();
+        for (enode * arg : enode::args(parentc)) {
+            // found an argument which is equal to root
+            if (arg->get_root() == child->get_root()) {
+                if (arg != child) {
+                    m_used_eqs.push_back(enode_pair(arg, child));
+                }
+                found = true;
+            }
+            sort * s = m.get_sort(arg->get_owner());
+            if (m_autil.is_array(s) && m_util.is_datatype(get_array_range(s))) {
+                for (enode* aarg : get_array_args(arg)) {
+                    if (aarg->get_root() == child->get_root()) {
+                        if (aarg != child) {
+                            m_used_eqs.push_back(enode_pair(aarg, child));
+                        }
+                        found = true;
+                    }
+                }
+            }
+        }
+        VERIFY(found);
+    }
+
     // explain the cycle root -> ... -> app -> root
     void theory_datatype::occurs_check_explain(enode * app, enode * root) {
         TRACE("datatype", tout << "occurs_check_explain " << mk_bounded_pp(app->get_owner(), get_manager()) << " <-> " << mk_bounded_pp(root->get_owner(), get_manager()) << "\n";);
-        enode* app_parent = nullptr;
 
         // first: explain that root=v, given that app=cstor(...,v,...)
-        for (enode * arg : enode::args(oc_get_cstor(app))) {
-            // found an argument which is equal to root
-            if (arg->get_root() == root->get_root()) {
-                if (arg != root)
-                    m_used_eqs.push_back(enode_pair(arg, root));
-                break;
-            }
-        }
+
+        explain_is_child(app, root);
 
         // now explain app=cstor(..,v,..) where v=root, and recurse with parent of app
         while (app->get_root() != root->get_root()) {
-            enode * app_cstor = oc_get_cstor(app);
-            if (app != app_cstor)
-                m_used_eqs.push_back(enode_pair(app, app_cstor));
-            app_parent = m_parent[app->get_root()];
-            app = app_parent;
+            enode* parent_app = m_parent[app->get_root()];
+            explain_is_child(parent_app, app);
+            SASSERT(is_constructor(parent_app));
+            app = parent_app;            
         }
         
         SASSERT(app->get_root() == root->get_root());
-        if (app != root)
+        if (app != root) {
             m_used_eqs.push_back(enode_pair(app, root));
+        }
 
         TRACE("datatype",
               tout << "occurs_check\n";
@@ -492,6 +565,7 @@ namespace smt {
 
     // start exploring subgraph below `app`
     bool theory_datatype::occurs_check_enter(enode * app) {
+        context& ctx = get_context();
         app = app->get_root();
         theory_var v = app->get_th_var(get_id());
         if (v == null_theory_var) {
@@ -513,13 +587,42 @@ namespace smt {
                 occurs_check_explain(parent, arg);
                 return true;
             }
-            // explore `arg` (with paren)
-            if (m_util.is_datatype(get_manager().get_sort(arg->get_owner()))) {
+            // explore `arg` (with parent)
+            expr* earg = arg->get_owner();
+            sort* s = get_manager().get_sort(earg);
+            if (m_util.is_datatype(s)) {
                 m_parent.insert(arg->get_root(), parent);
                 oc_push_stack(arg);
             }
+            else if (m_autil.is_array(s) && m_util.is_datatype(get_array_range(s))) {
+                for (enode* aarg : get_array_args(arg)) {
+                    if (oc_cycle_free(aarg)) {
+                        continue;
+                    }
+                    if (oc_on_stack(aarg)) {
+                        occurs_check_explain(parent, aarg);
+                        return true;
+                    }
+                    if (m_util.is_datatype(get_manager().get_sort(aarg->get_owner()))) {
+                        m_parent.insert(aarg->get_root(), parent);
+                        oc_push_stack(aarg);
+                    }
+                }
+            }            
         }
         return false;
+    }
+
+    ptr_vector<enode> const& theory_datatype::get_array_args(enode* n) {
+        m_array_args.reset();
+        context& ctx = get_context();
+        theory_array* th = dynamic_cast<theory_array*>(ctx.get_theory(m_autil.get_family_id()));
+        for (enode* p : th->parent_selects(n)) {
+            m_array_args.push_back(p);            
+        }
+        app_ref def(m_autil.mk_default(n->get_owner()), get_manager());
+        m_array_args.push_back(ctx.get_enode(def));
+        return m_array_args;
     }
 
     /**
@@ -587,6 +690,7 @@ namespace smt {
         theory(m.mk_family_id("datatype")),
         m_params(p),
         m_util(m),
+        m_autil(m),
         m_find(*this),
         m_trail_stack(*this) {
     }
@@ -623,7 +727,7 @@ namespace smt {
     }
 
     bool theory_datatype::include_func_interp(func_decl* f) {
-        return false; // return m_util.is_accessor(f);
+        return false; 
     }
 
     void theory_datatype::init_model(model_generator & m) {
@@ -641,7 +745,7 @@ namespace smt {
         void get_dependencies(buffer<model_value_dependency> & result) override {
             result.append(m_dependencies.size(), m_dependencies.c_ptr());
         }
-        app * mk_value(model_generator & mg, ptr_vector<expr> & values) override {
+        app * mk_value(model_generator & mg, expr_ref_vector const & values) override {
             SASSERT(values.size() == m_dependencies.size());
             return mg.get_manager().mk_app(m_constructor, values.size(), values.c_ptr());
         }
@@ -656,8 +760,15 @@ namespace smt {
         func_decl * c_decl = d->m_constructor->get_decl();
         datatype_value_proc * result = alloc(datatype_value_proc, c_decl);
         unsigned num = d->m_constructor->get_num_args();
-        for (unsigned i = 0; i < num; i++) 
-            result->add_dependency(d->m_constructor->get_arg(i));
+        for (enode* arg : enode::args(d->m_constructor)) {
+            result->add_dependency(arg);
+        }
+        TRACE("datatype", 
+              tout << mk_pp(n->get_owner(), get_manager()) << "\n";
+              tout << "depends on\n";
+              for (enode* arg : enode::args(d->m_constructor)) {
+                  tout << " " << mk_pp(arg->get_owner(), get_manager()) << "\n";
+              });
         return result;
     }
 
@@ -706,11 +817,11 @@ namespace smt {
         sort * s     = recognizer->get_decl()->get_domain(0);
         if (d->m_recognizers.empty()) {
             SASSERT(m_util.is_datatype(s));
-            d->m_recognizers.resize(m_util.get_datatype_num_constructors(s));
+            d->m_recognizers.resize(m_util.get_datatype_num_constructors(s), nullptr);
         }
         SASSERT(d->m_recognizers.size() == m_util.get_datatype_num_constructors(s));
         unsigned c_idx = m_util.get_recognizer_constructor_idx(recognizer->get_decl());
-        if (d->m_recognizers[c_idx] == 0) {
+        if (d->m_recognizers[c_idx] == nullptr) {
             lbool val = ctx.get_assignment(recognizer);
             TRACE("datatype", tout << "adding recognizer to v" << v << " rec: #" << recognizer->get_owner_id() << " val: " << val << "\n";);
             if (val == l_true) {
@@ -782,7 +893,7 @@ namespace smt {
             region & reg = ctx.get_region();
             TRACE("datatype_conflict", tout << mk_ismt2_pp(recognizer->get_owner(), get_manager()) << "\n";
                   for (literal l : lits) {
-                      ctx.display_detailed_literal(tout, l); tout << "\n";
+                      ctx.display_detailed_literal(tout, l) << "\n";
                   }
                   for (auto const& p : eqs) {
                       tout << enode_eq_pp(p, ctx);
@@ -832,7 +943,7 @@ namespace smt {
         TRACE("datatype_bug", tout << "non_rec_c: " << non_rec_c->get_name() << "\n";);
         unsigned non_rec_idx  = m_util.get_constructor_idx(non_rec_c);
         var_data * d          = m_var_data[v];
-        SASSERT(d->m_constructor == 0);
+        SASSERT(d->m_constructor == nullptr);
         func_decl * r         = nullptr;
         m_stats.m_splits++;
 

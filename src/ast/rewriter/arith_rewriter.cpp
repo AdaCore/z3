@@ -274,9 +274,8 @@ bool arith_rewriter::elim_to_real_pol(expr * p, expr_ref & new_p) {
     if (m_util.is_add(p)) {
         expr_ref_buffer new_monomials(m());
         expr_ref new_monomial(m());
-        unsigned num = to_app(p)->get_num_args();
-        for (unsigned i = 0; i < num; i++) {
-            if (!elim_to_real_mon(to_app(p)->get_arg(i), new_monomial))
+        for (expr* arg : *to_app(p)) {
+            if (!elim_to_real_mon(arg, new_monomial))
                 return false;
             new_monomials.push_back(new_monomial);
         }
@@ -455,6 +454,32 @@ br_status arith_rewriter::mk_le_ge_eq_core(expr * arg1, expr * arg2, op_kind kin
             arg2 = new_arg2.get();
             st = BR_DONE;
         }
+    }
+    expr* e1 = nullptr, *e2 = nullptr;
+    if (m_util.is_div(arg1, e1, e2) && (!is_numeral(e2, a2) || !a2.is_zero())) {
+        new_arg1 = e1;
+        new_arg2 = m_util.mk_mul(e2, arg2);
+        expr_ref zero(m_util.mk_numeral(rational(0), m_util.is_int(arg1)), m());
+        expr_ref is_zero(m().mk_eq(zero, e2), m());
+        expr_ref div0(m_util.mk_div(e1, zero), m());
+        expr_ref mul2(m_util.mk_mul(e2, arg2), m());
+        switch (kind) {
+        case LE: 
+            result = m().mk_or(
+                m().mk_and(is_zero, m_util.mk_le(div0, arg2)),
+                m().mk_and(m().mk_not(m_util.mk_le(e2, zero)), m_util.mk_le(e1, mul2)),
+                m().mk_and(m().mk_not(m_util.mk_ge(e2, zero)), m_util.mk_ge(e1, mul2)));
+            return BR_REWRITE_FULL;
+        case GE: 
+            result = m().mk_or(
+                m().mk_and(is_zero, m_util.mk_ge(div0, arg2)),
+                m().mk_and(m().mk_not(m_util.mk_le(e2, zero)), m_util.mk_ge(e1, mul2)),
+                m().mk_and(m().mk_not(m_util.mk_ge(e2, zero)), m_util.mk_le(e1, mul2)));
+            return BR_REWRITE_FULL;
+        case EQ: 
+            result = m().mk_ite(is_zero, m().mk_eq(div0, arg2), m().mk_eq(e1, mul2));
+            return BR_REWRITE2;
+        }        
     }
     if ((m_arith_lhs || m_arith_ineq_lhs) && is_numeral(arg2, a2) && is_neg_poly(arg1, new_arg1)) {
         a2.neg();
@@ -861,7 +886,8 @@ bool arith_rewriter::divides(expr* num, expr* den, expr_ref& result) {
         if (m_util.is_numeral(arg, num_r)) num_e = arg; 
     } 
     for (expr* arg : args2) { 
-        if (mark.is_marked(arg)) { 
+        // dont remove divisor on (div (* -1 x) (* -1 y)) because rewriting would diverge. 
+        if (mark.is_marked(arg) && (!m_util.is_numeral(arg, num_r) || !num_r.is_minus_one())) { 
             result = remove_divisor(arg, num, den); 
             return true; 
         } 
@@ -900,7 +926,14 @@ expr_ref arith_rewriter::remove_divisor(expr* arg, expr* num, expr* den) {
     expr_ref zero(m_util.mk_int(0), m()); 
     num = args1.empty() ? m_util.mk_int(1) : m_util.mk_mul(args1.size(), args1.c_ptr()); 
     den = args2.empty() ? m_util.mk_int(1) : m_util.mk_mul(args2.size(), args2.c_ptr()); 
-    return expr_ref(m().mk_ite(m().mk_eq(zero, arg), m_util.mk_idiv(zero, zero), m_util.mk_idiv(num, den)), m()); 
+    expr_ref d(m_util.mk_idiv(num, den), m());
+    expr_ref nd(m_util.mk_idiv(m_util.mk_uminus(num), m_util.mk_uminus(den)), m());
+    return expr_ref(m().mk_ite(m().mk_eq(zero, arg), 
+                               m_util.mk_idiv(zero, zero), 
+                               m().mk_ite(m_util.mk_ge(arg, zero), 
+                                          d,
+                                          nd)),
+                    m());
 } 
  
 void arith_rewriter::flat_mul(expr* e, ptr_buffer<expr>& args) { 

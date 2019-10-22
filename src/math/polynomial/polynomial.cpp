@@ -23,7 +23,6 @@ Notes:
 #include "util/id_gen.h"
 #include "util/buffer.h"
 #include "util/scoped_ptr_vector.h"
-#include "util/cooperate.h"
 #include "math/polynomial/upolynomial_factorization.h"
 #include "math/polynomial/polynomial_primes.h"
 #include "util/permutation.h"
@@ -411,8 +410,8 @@ namespace polynomial {
                         proc(out, x);
                     }
                 }
+                out << ")";
             }
-            out << ")";
         }
 
         bool is_unit() const { return m_size == 0; }
@@ -1577,12 +1576,20 @@ namespace polynomial {
                 display_num_smt2(out, nm, a_i);
             }
             else if (nm.is_one(a_i)) {
-                m_i->display(out, proc);
+                if (m_i->size() == 1) {
+                    m_i->display_smt2(out, proc);
+                }
+                else {
+                    out << "(* ";
+                    m_i->display_smt2(out, proc);
+                    out << ")";
+                }
             }
             else {
                 out << "(* ";
                 display_num_smt2(out, nm, a_i);
-                m_i->display(out, proc);
+                out << " ";
+                m_i->display_smt2(out, proc);
                 out << ")";
             }
         }
@@ -2372,7 +2379,6 @@ namespace polynomial {
             if (!m_limit.inc()) {
                 throw polynomial_exception(Z3_CANCELED_MSG);
             }
-            cooperate("polynomial");
         }
 
         mpzzp_manager & m() const { return const_cast<imp*>(this)->m_manager; }

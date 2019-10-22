@@ -61,25 +61,12 @@ private:
     // This is relevant for big benchmarks that are meant to be solved
     // by a non-incremental solver.                                                 );
 
-    bool                 m_solver2_initialized;
-
     bool                 m_ignore_solver1;
     inc_unknown_behavior m_inc_unknown_behavior;
     unsigned             m_inc_timeout;
     
-    void init_solver2_assertions() {
-        if (m_solver2_initialized)
-            return;
-        unsigned sz = m_solver1->get_num_assertions();
-        for (unsigned i = 0; i < sz; i++) {
-            m_solver2->assert_expr(m_solver1->get_assertion(i));
-        }
-        m_solver2_initialized = true;
-    }
-
     void switch_inc_mode() {
         m_inc_mode = true;
-        init_solver2_assertions();
     }
 
     struct aux_timeout_eh : public event_handler {
@@ -131,7 +118,6 @@ public:
         m_solver1 = s1;
         m_solver2 = s2;
         updt_local_params(p);
-        m_solver2_initialized = false;
         m_inc_mode            = false;
         m_check_sat_executed  = false;
         m_use_solver1_results = true;
@@ -142,7 +128,6 @@ public:
         solver* s1 = m_solver1->translate(m, p);
         solver* s2 = m_solver2->translate(m, p);
         combined_solver* r = alloc(combined_solver, s1, s2, p);
-        r->m_solver2_initialized = m_solver2_initialized;
         r->m_inc_mode = m_inc_mode;
         r->m_check_sat_executed = m_check_sat_executed;
         r->m_use_solver1_results = m_use_solver1_results;
@@ -171,15 +156,13 @@ public:
         if (m_check_sat_executed)
             switch_inc_mode();
         m_solver1->assert_expr(t);
-        if (m_solver2_initialized)
-            m_solver2->assert_expr(t);
+        m_solver2->assert_expr(t);
     }
 
     void assert_expr_core2(expr * t, expr * a) override {
         if (m_check_sat_executed)
             switch_inc_mode();
         m_solver1->assert_expr(t, a);
-        init_solver2_assertions();
         m_solver2->assert_expr(t, a);
     }
 
@@ -218,7 +201,7 @@ public:
         return l_undef;
     }
 
-    lbool check_sat(unsigned num_assumptions, expr * const * assumptions) override {
+    lbool check_sat_core(unsigned num_assumptions, expr * const * assumptions) override {
         m_check_sat_executed  = true;        
         m_use_solver1_results = false;
 
@@ -227,13 +210,13 @@ public:
             m_ignore_solver1)  {
             // must use incremental solver
             switch_inc_mode();
-            return m_solver2->check_sat(num_assumptions, assumptions);
+            return m_solver2->check_sat_core(num_assumptions, assumptions);
         }
         
         if (m_inc_mode) {
             if (m_inc_timeout == UINT_MAX) {
                 IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"using solver 2 (without a timeout)\")\n";);            
-                lbool r = m_solver2->check_sat(num_assumptions, assumptions);
+                lbool r = m_solver2->check_sat_core(num_assumptions, assumptions);
                 if (r != l_undef || !use_solver1_when_undef() || get_manager().canceled()) {
                     return r;
                 }
@@ -244,7 +227,7 @@ public:
                 lbool r = l_undef;
                 try {
                     scoped_timer timer(m_inc_timeout, &eh);
-                    r = m_solver2->check_sat(num_assumptions, assumptions);
+                    r = m_solver2->check_sat_core(num_assumptions, assumptions);
                 }
                 catch (z3_exception&) {
                     if (!eh.m_canceled) {
@@ -260,7 +243,7 @@ public:
         
         IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"using solver 1\")\n";);
         m_use_solver1_results = true;
-        return m_solver1->check_sat(num_assumptions, assumptions);
+        return m_solver1->check_sat_core(num_assumptions, assumptions);
     }
     
     void set_progress_callback(progress_callback * callback) override {
@@ -281,7 +264,8 @@ public:
     }
 
     expr_ref_vector cube(expr_ref_vector& vars, unsigned backtrack_level) override {
-        return m_solver1->cube(vars, backtrack_level);
+        switch_inc_mode();
+        return m_solver2->cube(vars, backtrack_level);
     }
 
     expr * get_assumption(unsigned idx) const override {
@@ -312,6 +296,20 @@ public:
             m_solver1->get_model(m);
         else
             m_solver2->get_model(m);
+    }
+
+    void get_levels(ptr_vector<expr> const& vars, unsigned_vector& depth) override {
+        if (m_use_solver1_results)
+            m_solver1->get_levels(vars, depth);
+        else
+            m_solver2->get_levels(vars, depth);
+    }
+
+    expr_ref_vector get_trail() override {
+        if (m_use_solver1_results)
+            return m_solver1->get_trail();
+        else
+            return m_solver2->get_trail();
     }
 
     proof * get_proof() override {

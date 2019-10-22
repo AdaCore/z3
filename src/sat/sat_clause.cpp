@@ -38,7 +38,6 @@ namespace sat {
         memcpy(m_lits, lits, sizeof(literal) * sz);
         mark_strengthened();
         SASSERT(check_approx());
-        SASSERT(sz > 1);
     }
 
     var_approx_set clause::approx(unsigned num, literal const * lits) {
@@ -83,6 +82,7 @@ namespace sat {
         i++;
         for (; i < m_size; i++)
             m_lits[i-1] = m_lits[i];
+        m_lits[m_size-1] = l;
         m_size--;
         mark_strengthened();
     }
@@ -93,6 +93,11 @@ namespace sat {
             m_size = num_lits; 
             mark_strengthened(); 
         } 
+    }
+    
+    void clause::restore(unsigned num_lits) {
+        SASSERT(num_lits <= m_capacity);
+        m_size = num_lits;
     }
 
     bool clause::satisfied_by(model const & m) const {

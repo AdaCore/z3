@@ -16,7 +16,8 @@ Author:
 Revision History:
 
 --*/
-#include<sstream>
+#include <sstream>
+#include <iomanip>
 #include "util/mpz.h"
 #include "util/buffer.h"
 #include "util/trace.h"
@@ -138,8 +139,6 @@ uint64_t u64_gcd(uint64_t u, uint64_t v) {
 template<bool SYNCH>
 mpz_manager<SYNCH>::mpz_manager():
     m_allocator("mpz_manager") {
-    if (SYNCH)
-        omp_init_nest_lock(&m_lock);
 #ifndef _MP_GMP
     if (sizeof(digit_t) == sizeof(uint64_t)) {
         // 64-bit machine
@@ -196,8 +195,6 @@ mpz_manager<SYNCH>::~mpz_manager() {
     mpz_clear(m_int64_max);
     mpz_clear(m_int64_min);
 #endif
-    if (SYNCH)
-        omp_destroy_nest_lock(&m_lock);
 }
 
 #ifndef _MP_GMP
@@ -275,7 +272,12 @@ void mpz_manager<SYNCH>::set_big_i64(mpz & c, int64_t v) {
     c.m_kind = mpz_large;
     SASSERT(capacity(c) >= m_init_cell_capacity);
     uint64_t _v;
-    if (v < 0) {
+    if (v == std::numeric_limits<int64_t>::min()) {
+        // min-int is even
+        _v = -(v/2);
+        c.m_val = -1;
+    }
+    else if (v < 0) {
         _v = -v;
         c.m_val = -1;
     }
@@ -301,14 +303,15 @@ void mpz_manager<SYNCH>::set_big_i64(mpz & c, int64_t v) {
     }
     c.m_kind = mpz_large;
     uint64_t _v;
-    bool sign;
-    if (v < 0) {
+    bool sign = v < 0;
+    if (v == std::numeric_limits<int64_t>::min()) {
+        _v = -(v/2);
+    }
+    else if (v < 0) {
         _v   = -v;
-        sign = true;
     }
     else {
         _v   = v;
-        sign = false;
     }
     mpz_set_ui(*c.m_ptr, static_cast<unsigned>(_v));
     MPZ_BEGIN_CRITICAL();
@@ -319,6 +322,9 @@ void mpz_manager<SYNCH>::set_big_i64(mpz & c, int64_t v) {
     if (sign)
         mpz_neg(*c.m_ptr, *c.m_ptr);
 #endif
+    if (v == std::numeric_limits<int64_t>::min()) {
+        big_add(c, c, c);
+    }
 }
 
 template<bool SYNCH>
@@ -1726,6 +1732,102 @@ void mpz_manager<SYNCH>::display_smt2(std::ostream & out, mpz const & a, bool de
 }
 
 template<bool SYNCH>
+void mpz_manager<SYNCH>::display_hex(std::ostream & out, mpz const & a, unsigned num_bits) const {
+    SASSERT(num_bits % 4 == 0);
+    std::ios fmt(nullptr);
+    fmt.copyfmt(out);
+    out << std::hex;
+    if (is_small(a)) {
+        out << std::setw(num_bits/4) << std::setfill('0') << get_uint64(a);
+    } else {
+#ifndef _MP_GMP
+        digit_t *ds = digits(a);
+        unsigned sz = size(a);
+        unsigned bitSize = sz * sizeof(digit_t) * 8;
+        unsigned firstDigitSize;
+        if (num_bits >= bitSize) {
+            firstDigitSize = sizeof(digit_t) * 2;
+
+            for (unsigned i = 0; i < (num_bits - bitSize)/4; ++i) {
+                out << "0";
+            }
+        } else {
+            firstDigitSize = num_bits % (sizeof(digit_t) * 8) / 4;
+        }
+
+        out << std::setfill('0') << std::setw(firstDigitSize) << ds[sz-1] << std::setw(sizeof(digit_t)*2);
+        for (unsigned i = 1; i < sz; ++i) {
+            out << ds[sz-i-1];
+        }
+#else
+        // GMP version
+        size_t sz = mpz_sizeinbase(*(a.m_ptr), 16);
+        unsigned requiredLength = num_bits / 4;
+        unsigned padding = requiredLength > sz ? requiredLength - sz : 0;
+        sbuffer<char, 1024> buffer(sz, 0);
+        mpz_get_str(buffer.c_ptr(), 16, *(a.m_ptr));
+        for (unsigned i = 0; i < padding; ++i) {
+            out << "0";
+        }
+        out << buffer.c_ptr() + (sz > requiredLength ? sz - requiredLength : 0);
+#endif
+    }
+    out.copyfmt(fmt);
+}
+
+void display_binary_data(std::ostream &out, unsigned val, unsigned numBits) {
+    SASSERT(numBits <= sizeof(unsigned)*8);
+    for (int shift = numBits-1; shift >= 0; --shift) {
+        if (val & (1 << shift)) {
+            out << "1";
+        } else {
+            out << "0";
+        }
+    }
+ }
+
+template<bool SYNCH>
+void mpz_manager<SYNCH>::display_bin(std::ostream & out, mpz const & a, unsigned num_bits) const {
+    if (is_uint(a)) {
+        display_binary_data(out, get_uint(a), num_bits);
+    } 
+    else {
+#ifndef _MP_GMP
+        digit_t *ds = digits(a);
+        unsigned sz = size(a);
+        const unsigned digitBitSize = sizeof(digit_t) * 8;
+        unsigned bitSize = sz * digitBitSize;
+        unsigned firstDigitLength;
+        if (num_bits > bitSize) {
+            firstDigitLength = 0;
+            for (unsigned i = 0; i < (num_bits - bitSize); ++i) {
+                out << "0";
+            }
+        } else {
+            firstDigitLength = num_bits % digitBitSize;
+        }
+        for (unsigned i = 0; i < sz; ++i) {
+            if (i == 0 && firstDigitLength != 0) {
+                display_binary_data(out, ds[sz-1], firstDigitLength);
+            } else {
+                display_binary_data(out, ds[sz-i-1], digitBitSize);
+            }
+        }
+#else
+        // GMP version
+        size_t sz = mpz_sizeinbase(*(a.m_ptr), 2);
+        unsigned padding = num_bits > sz ? num_bits - sz : 0;
+        sbuffer<char, 1024> buffer(sz, 0);
+        mpz_get_str(buffer.c_ptr(), 2, *(a.m_ptr));
+        for (unsigned i = 0; i < padding; ++i) {
+            out << "0";
+        }
+        out << buffer.c_ptr() + (sz > num_bits ? sz - num_bits : 0);
+#endif
+    }
+}
+
+template<bool SYNCH>
 std::string mpz_manager<SYNCH>::to_string(mpz const & a) const {
     std::ostringstream buffer;
     display(buffer, a);
@@ -2373,7 +2475,7 @@ bool mpz_manager<SYNCH>::divides(mpz const & a, mpz const & b) {
     return r;
 }
 
-#ifndef _NO_OMP_
+#ifndef SINGLE_THREAD
 template class mpz_manager<true>;
 #endif
 template class mpz_manager<false>;

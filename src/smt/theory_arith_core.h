@@ -240,12 +240,23 @@ namespace smt {
                 return;
             }
         }
-        rational _val;
+        rational _val1, _val2;
         expr* arg1, *arg2;
-        if (m_util.is_mul(m, arg1, arg2) && m_util.is_numeral(arg1, _val) && is_app(arg1) && is_app(arg2)) {
+        if (m_util.is_mul(m, arg1, arg2) && m_util.is_numeral(arg1, _val1) && is_app(arg1) && is_app(arg2)) {
             SASSERT(m->get_num_args() == 2);
-            numeral val(_val);
-            theory_var v = internalize_term_core(to_app(arg2));
+            if (m_util.is_numeral(arg2, _val2)) {
+                numeral val(_val1 + _val2);
+                if (reflection_enabled()) {
+                    internalize_term_core(to_app(arg1));
+                    internalize_term_core(to_app(arg2));
+                    mk_enode(m);
+                }
+                theory_var v = internalize_numeral(m, val);
+                add_row_entry<true>(r_id, numeral::one(), v);
+                return;
+            }
+            numeral val(_val1);
+            theory_var v = internalize_term_core(to_app(arg2));            
             if (reflection_enabled()) {
                 internalize_term_core(to_app(arg1));
                 mk_enode(m);
@@ -329,6 +340,7 @@ namespace smt {
     theory_var theory_arith<Ext>::internalize_mul(app * m) {
         rational _val;
         SASSERT(m_util.is_mul(m));
+        SASSERT(!m_util.is_numeral(m->get_arg(1)));
         if (m_util.is_numeral(m->get_arg(0), _val)) {
             SASSERT(m->get_num_args() == 2);
             numeral val(_val);
@@ -426,6 +438,7 @@ namespace smt {
         bool negated;
 
         s(ante, s_ante);
+
         if (ctx.get_cancel_flag()) return;
         negated = m.is_not(s_ante, s_ante_n);
         if (negated) s_ante = s_ante_n;
@@ -447,7 +460,14 @@ namespace smt {
               tout << l_ante << "\n" << l_conseq << "\n";);
 
         // literal lits[2] = {l_ante, l_conseq};
+        if (m.has_trace_stream()) {
+            app_ref body(m);
+            body = m.mk_or(ante, conseq);
+            log_axiom_instantiation(body);
+        }
         mk_clause(l_ante, l_conseq, 0, nullptr);
+        if (m.has_trace_stream()) m.trace_stream() << "[end-of-instance]\n";
+
         if (ctx.relevancy()) {
             if (l_ante == false_literal) {
                 ctx.mark_as_relevant(l_conseq);
@@ -482,12 +502,12 @@ namespace smt {
 
     template<typename Ext>
     void theory_arith<Ext>::mk_idiv_mod_axioms(expr * dividend, expr * divisor) {
+        th_rewriter & s  = get_context().get_rewriter();
         if (!m_util.is_zero(divisor)) {
             ast_manager & m = get_manager();
             // if divisor is zero, then idiv and mod are uninterpreted functions.
             expr_ref div(m), mod(m), zero(m), abs_divisor(m), one(m);
             expr_ref eqz(m), eq(m), lower(m), upper(m);
-            th_rewriter & s  = get_context().get_rewriter();
             div         = m_util.mk_idiv(dividend, divisor);
             mod         = m_util.mk_mod(dividend, divisor);
             zero        = m_util.mk_int(0);
@@ -508,6 +528,17 @@ namespace smt {
             mk_axiom(eqz, upper, !m_util.is_numeral(abs_divisor));
             rational k;
             context& ctx = get_context();
+
+            if (!m_util.is_numeral(divisor)) {
+                // (=> (> y 0) (<= (* y (div x y)) x))
+                // (=> (< y 0) ???)
+                expr_ref div_ge(m), div_non_pos(m);
+                div_ge = m_util.mk_ge(m_util.mk_sub(dividend, m_util.mk_mul(divisor, div)), zero);
+                s(div_ge);
+                div_non_pos = m_util.mk_le(divisor, zero);
+                mk_axiom(div_non_pos, div_ge, false);
+            }
+
             (void)ctx;
             if (m_params.m_arith_enum_const_mod && m_util.is_numeral(divisor, k) &&
                 k.is_pos() && k < rational(8)) {
@@ -517,7 +548,9 @@ namespace smt {
                 expr_ref mod_j(m);
                 while(j < k) {
                     mod_j = m.mk_eq(mod, m_util.mk_numeral(j, true));
+                    if (m.has_trace_stream()) log_axiom_instantiation(mod_j);
                     ctx.internalize(mod_j, false);
+                    if (m.has_trace_stream()) m.trace_stream() << "[end-of-instance]\n";
                     literal lit(ctx.get_literal(mod_j));
                     lits.push_back(lit);
                     ctx.mark_as_relevant(lit);
@@ -542,6 +575,7 @@ namespace smt {
                 }
 #endif
             }
+
 #if 0
             // e-matching is too restrictive for multiplication.
             // also suffers from use-after free so formulas have to be pinned in solver.
@@ -691,7 +725,16 @@ namespace smt {
         rational _val;
         VERIFY(m_util.is_numeral(n, _val));
         numeral val(_val);
-        SASSERT(!get_context().e_internalized(n));
+        return internalize_numeral(n, val);
+    }
+
+    template<typename Ext>
+    theory_var theory_arith<Ext>::internalize_numeral(app * n, numeral const& val) {
+        
+        context& ctx = get_context();
+        if (ctx.e_internalized(n)) {
+            return mk_var(ctx.get_enode(n));
+        }
         enode * e    = mk_enode(n);
         // internalizer is marking enodes as interpreted whenever the associated ast is a value and a constant.
         // e->mark_as_interpreted();
@@ -1607,11 +1650,6 @@ namespace smt {
         theory::reset_eh();
     }
 
-    template<typename Ext>
-    bool theory_arith<Ext>::validate_eq_in_model(theory_var v1, theory_var v2, bool is_true) const {
-        return true;
-    }
-
     /**
        \brief Compute the value of a base or quasi-base variable using
        the value of the dependent variables.
@@ -1623,13 +1661,11 @@ namespace smt {
         sum.reset();
         unsigned r_id = get_var_row(v);
         row const & r   = m_rows[r_id];
-        typename vector<row_entry>::const_iterator it  = r.begin_entries();
-        typename vector<row_entry>::const_iterator end = r.end_entries();
-        for (; it != end; ++it) {
-            if (!it->is_dead() && it->m_var != v) {
-                SASSERT(!is_quasi_base(it->m_var));
-                SASSERT(get_value(it->m_var) == m_value[it->m_var]);
-                sum += it->m_coeff * get_value(it->m_var);
+        for (row_entry const& re : r) {
+            if (!re.is_dead() && re.m_var != v) {
+                SASSERT(!is_quasi_base(re.m_var));
+                SASSERT(get_value(re.m_var) == m_value[re.m_var]);
+                sum += re.m_coeff * get_value(re.m_var);
             }
         }
         sum.neg();
@@ -1651,19 +1687,17 @@ namespace smt {
         result.reset();
         unsigned r_id = get_var_row(v);
         row const & r   = m_rows[r_id];
-        typename vector<row_entry>::const_iterator it  = r.begin_entries();
-        typename vector<row_entry>::const_iterator end = r.end_entries();
-        for (; it != end; ++it) {
-            if (!it->is_dead() && it->m_var != v) {
-                theory_var v2 = it->m_var;
+        for (row_entry const& re : r) {
+            if (!re.is_dead() && re.m_var != v) {
+                theory_var v2 = re.m_var;
                 SASSERT(!is_quasi_base(v2));
                 SASSERT(get_value(v2) == m_value[v2]);
                 if (m_in_update_trail_stack.contains(v2)) {
-                    result += it->m_coeff * m_old_value[v2];
+                    result += re.m_coeff * m_old_value[v2];
                     is_diff = true;
                 }
                 else {
-                    result += it->m_coeff * m_value[v2];
+                    result += re.m_coeff * m_value[v2];
                 }
             }
         }
@@ -1887,15 +1921,13 @@ namespace smt {
         c.compress_if_needed(m_rows);
 
         inf_numeral delta2;
-        typename svector<col_entry>::const_iterator it  = c.begin_entries();
-        typename svector<col_entry>::const_iterator end = c.end_entries();
-        for (; it != end; ++it) {
-            if (!it->is_dead()) {
-                row & r      = m_rows[it->m_row_id];
+        for (auto& ce : c) {
+            if (!ce.is_dead()) {
+                row & r      = m_rows[ce.m_row_id];
                 theory_var s = r.get_base_var();
                 if (s != null_theory_var && !is_quasi_base(s)) {
                     delta2   = delta;
-                    delta2  *= r[it->m_row_idx].m_coeff;
+                    delta2  *= r[ce.m_row_idx].m_coeff;
                     delta2.neg();
                     update_value_core(s, delta2);
                 }
@@ -2246,16 +2278,7 @@ namespace smt {
                       << ", best_error: " << best_error << ", curr_error: " << curr_error << "\n";);
                 best = v;
                 best_error = curr_error;
-                //n = 2;
             }
-#if 0
-            else if (false && n > 0 && curr_error == best_error) {
-                n++;
-                if (m_random()%n == 0) {
-                    best = v;
-                }
-            }
-#endif
         }
         if (best == null_theory_var)
             m_to_patch.clear(); // all variables are satisfied
@@ -2282,6 +2305,7 @@ namespace smt {
             return select_smallest_var();
         }
     }
+
 
     /**
        \brief Return true if it was possible to patch all variables in m_to_patch.
@@ -2555,12 +2579,9 @@ namespace smt {
     */
     template<typename Ext>
     void theory_arith<Ext>::mark_rows_for_bound_prop(theory_var v) {
-        column const & c = m_columns[v];
-        typename svector<col_entry>::const_iterator it  = c.begin_entries();
-        typename svector<col_entry>::const_iterator end = c.end_entries();
-        for (; it != end; ++it) {
-            if (!it->is_dead())
-                mark_row_for_bound_prop(it->m_row_id);
+        for (col_entry const& ce : m_columns[v]) {
+            if (!ce.is_dead())
+                mark_row_for_bound_prop(ce.m_row_id);
         }
     }
 
@@ -2698,18 +2719,17 @@ namespace smt {
         // bb = (Sum_{a_i < 0} -a_i*lower(x_i)) + (Sum_{a_j > 0} -a_j * upper(x_j))  If is_lower = true
         // bb = (Sum_{a_i > 0} -a_i*lower(x_i)) + (Sum_{a_j < 0} -a_j * upper(x_j))  If is_lower = false
         inf_numeral bb;
-        typename vector<row_entry>::const_iterator it  = r.begin_entries();
-        typename vector<row_entry>::const_iterator end = r.end_entries();
-        for (; it != end; ++it) {
-            if (!it->is_dead()) {
-                inf_numeral const & b = get_bound(it->m_var, is_lower ? it->m_coeff.is_pos() : it->m_coeff.is_neg())->get_value();
-                // bb -= it->m_coeff * b;
-                bb.submul(it->m_coeff, b);
+        for (row_entry const& re : r) {
+            if (!re.is_dead()) {
+                inf_numeral const & b = get_bound(re.m_var, is_lower ? re.m_coeff.is_pos() : re.m_coeff.is_neg())->get_value();
+                // bb -= re.m_coeff * b;
+                bb.submul(re.m_coeff, b);
             }
         }
 
         inf_numeral implied_k;
-        it = r.begin_entries();
+        typename vector<row_entry>::const_iterator it  = r.begin();
+        typename vector<row_entry>::const_iterator end = r.end();
         for (int idx = 0; it != end; ++it, ++idx) {
             if (!it->is_dead() && m_unassigned_atoms[it->m_var] > 0) {
                 inf_numeral const & b = get_bound(it->m_var, is_lower ? it->m_coeff.is_pos() : it->m_coeff.is_neg())->get_value();
@@ -2983,7 +3003,7 @@ namespace smt {
                 js = alloc(theory_lemma_justification, get_id(), ctx, lits.size(), lits.c_ptr(),
                            ante.num_params(), ante.params("assign-bounds"));
             }
-            ctx.mk_clause(lits.size(), lits.c_ptr(), js, CLS_AUX_LEMMA, nullptr);
+            ctx.mk_clause(lits.size(), lits.c_ptr(), js, CLS_TH_LEMMA, nullptr);
         }
         else {
             region & r = ctx.get_region();
@@ -3102,12 +3122,10 @@ namespace smt {
     */
     template<typename Ext>
         void theory_arith<Ext>::collect_fixed_var_justifications(row const & r, antecedents& antecedents) const {
-        typename vector<row_entry>::const_iterator it  = r.begin_entries();
-        typename vector<row_entry>::const_iterator end = r.end_entries();
-        for (; it != end; ++it) {
-            if (!it->is_dead() && is_fixed(it->m_var)) {
-                lower(it->m_var)->push_justification(antecedents, it->m_coeff, coeffs_enabled());
-                upper(it->m_var)->push_justification(antecedents, it->m_coeff, coeffs_enabled());
+        for (row_entry const& re : r) {
+            if (!re.is_dead() && is_fixed(re.m_var)) {
+                lower(re.m_var)->push_justification(antecedents, re.m_coeff, coeffs_enabled());
+                upper(re.m_var)->push_justification(antecedents, re.m_coeff, coeffs_enabled());
             }
         }
     }
@@ -3517,13 +3535,10 @@ namespace smt {
     template<typename Ext>
     void theory_arith<Ext>::del_row(unsigned r_id) {
         row & r      = m_rows[r_id];
-        typename vector<row_entry>::const_iterator it  = r.begin_entries();
-        typename vector<row_entry>::const_iterator end = r.end_entries();
-        for (; it != end; ++it) {
-            if (!it->is_dead()) {
-                theory_var v = it->m_var;
-                column & c   = m_columns[v];
-                c.del_col_entry(it->m_col_idx);
+        for (row_entry const& re : r) {
+            if (!re.is_dead()) {
+                column & c   = m_columns[re.m_var];
+                c.del_col_entry(re.m_col_idx);
             }
         }
         r.m_base_var = null_theory_var;

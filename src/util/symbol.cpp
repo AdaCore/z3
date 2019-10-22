@@ -17,11 +17,13 @@ Revision History:
 
 --*/
 #include "util/symbol.h"
+#include "util/mutex.h"
 #include "util/str_hashtable.h"
 #include "util/region.h"
 #include "util/string_buffer.h"
-#include "util/z3_omp.h"
 #include <cstring>
+
+static DECLARE_MUTEX(g_symbol_lock);
 
 symbol symbol::m_dummy(TAG(void*, nullptr, 2));
 const symbol symbol::null;
@@ -35,20 +37,18 @@ class internal_symbol_table {
 public:
 
     char const * get_str(char const * d) {
-        char * result;
-        #pragma omp critical (cr_symbol) 
-        {
-        char * r_d = const_cast<char *>(d);
+        const char * result;
+        lock_guard lock(*g_symbol_lock);
         str_hashtable::entry * e;
-        if (m_table.insert_if_not_there_core(r_d, e)) {
+        if (m_table.insert_if_not_there_core(d, e)) {
             // new entry
             size_t l   = strlen(d);
             // store the hash-code before the string
             size_t * mem = static_cast<size_t*>(m_region.allocate(l + 1 + sizeof(size_t)));
             *mem = e->get_hash();
             mem++;
-            result = reinterpret_cast<char*>(mem);
-            memcpy(result, d, l+1);
+            result = reinterpret_cast<const char*>(mem);
+            memcpy(mem, d, l+1);
             // update the entry with the new ptr.
             e->set_data(result);
         }
@@ -56,7 +56,6 @@ public:
             result = e->get_data();
         }
         SASSERT(m_table.contains(result));
-        }
         return result;
     }
 };
@@ -65,11 +64,13 @@ static internal_symbol_table* g_symbol_table = nullptr;
 
 void initialize_symbols() {
     if (!g_symbol_table) {
+        ALLOC_MUTEX(g_symbol_lock);
         g_symbol_table = alloc(internal_symbol_table);
     }
 }
 
 void finalize_symbols() {
+    DEALLOC_MUTEX(g_symbol_lock);
     dealloc(g_symbol_table);
     g_symbol_table = nullptr;
 }

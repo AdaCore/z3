@@ -31,6 +31,11 @@ namespace nlsat {
     class evaluator;
     class explain;
 
+    class display_assumption_proc {
+    public:
+        virtual std::ostream& operator()(std::ostream& out, assumption a) const = 0;
+    };
+
     class solver {
         struct imp;
         imp * m_imp;
@@ -54,6 +59,8 @@ namespace nlsat {
         pmanager & pm();
 
         void set_display_var(display_var_proc const & proc);
+
+        void set_display_assumption(display_assumption_proc const& proc);
 
         // -----------------------
         //
@@ -159,7 +166,7 @@ namespace nlsat {
         void get_rvalues(assignment& as);
         void set_rvalues(assignment const& as);
 
-        void get_bvalues(svector<lbool>& vs);
+        void get_bvalues(svector<bool_var> const& bvars, svector<lbool>& vs);
         void set_bvalues(svector<lbool> const& vs);
 
         /**
@@ -234,7 +241,16 @@ namespace nlsat {
 
         std::ostream& display(std::ostream & out, unsigned n, literal const* ls) const;
 
+        std::ostream& display(std::ostream & out, literal_vector const& ls) const;
+
         std::ostream& display(std::ostream & out, atom const& a) const;
+
+        std::ostream& display_smt2(std::ostream & out, literal l) const;
+
+        std::ostream& display_smt2(std::ostream & out, unsigned n, literal const* ls) const;
+
+        std::ostream& display_smt2(std::ostream & out, literal_vector const& ls) const;
+
 
         /**
            \brief Display variable

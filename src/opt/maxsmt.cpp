@@ -18,17 +18,18 @@ Notes:
 --*/
 
 #include <typeinfo>
+#include "util/uint_set.h"
+#include "ast/ast_pp.h"
+#include "ast/ast_util.h"
+#include "ast/pb_decl_plugin.h"
 #include "opt/maxsmt.h"
 #include "opt/maxres.h"
+#include "opt/maxlex.h"
 #include "opt/wmax.h"
 #include "opt/opt_params.hpp"
-#include "ast/ast_pp.h"
-#include "util/uint_set.h"
 #include "opt/opt_context.h"
 #include "smt/theory_wmaxsat.h"
 #include "smt/theory_pb.h"
-#include "ast/ast_util.h"
-#include "ast/pb_decl_plugin.h"
 
 
 namespace opt {
@@ -61,7 +62,7 @@ namespace opt {
         rational k(0), cost(0);
         vector<rational> weights;
         for (soft const& s : m_soft) {
-            if (s.is_true) {
+            if (s.is_true()) {
                 k += s.weight;
             }
             else {
@@ -80,13 +81,13 @@ namespace opt {
         m_lower.reset();
         m_upper.reset();
         for (soft& s : m_soft) {
-            s.is_true = m.is_true(s.s);
-            if (!s.is_true) m_upper += s.weight;
+            s.set_value(m.is_true(s.s));
+            if (!s.is_true()) m_upper += s.weight;
         }
         
         TRACE("opt", 
               tout << "upper: " << m_upper << " assignments: ";
-              for (soft& s : m_soft) tout << (s.is_true?"T":"F");              
+              for (soft& s : m_soft) tout << (s.is_true()?"T":"F");              
               tout << "\n";);
         return true;
     }
@@ -170,8 +171,8 @@ namespace opt {
         if (is_sat != l_true) {
             return is_sat;
         }
-        for (unsigned i = 0; i < mutexes.size(); ++i) {
-            process_mutex(mutexes[i], new_soft);
+        for (auto& mux : mutexes) {
+            process_mutex(mux, new_soft);
         }
         return l_true;
     }
@@ -186,8 +187,8 @@ namespace opt {
 
     void maxsmt_solver_base::process_mutex(expr_ref_vector& mutex, obj_map<expr, rational>& new_soft) {
         TRACE("opt", 
-              for (unsigned i = 0; i < mutex.size(); ++i) {
-                  tout << mk_pp(mutex[i].get(), m) << " |-> " << new_soft.find(mutex[i].get()) << "\n";
+              for (expr* e : mutex) {
+                  tout << mk_pp(e, m) << " |-> " << new_soft.find(e) << "\n";
               });
         if (mutex.size() <= 1) {
             return;
@@ -200,14 +201,13 @@ namespace opt {
 
         rational weight(0), sum1(0), sum2(0);
         vector<rational> weights;
-        for (unsigned i = 0; i < mutex.size(); ++i) {
-            rational w = new_soft.find(mutex[i].get());
+        for (expr* e : mutex) {
+            rational w = new_soft.find(e);
             weights.push_back(w);
             sum1 += w;
-            new_soft.remove(mutex[i].get());
+            new_soft.remove(e);
         }
-        for (unsigned i = mutex.size(); i > 0; ) {
-            --i;
+        for (unsigned i = mutex.size(); i-- > 0; ) {
             expr_ref soft(m.mk_or(i+1, mutex.c_ptr()), m);
             m_trail.push_back(soft);
             rational w = weights[i];
@@ -231,10 +231,14 @@ namespace opt {
     lbool maxsmt::operator()() {
         lbool is_sat = l_undef;
         m_msolver = nullptr;
+        opt_params optp(m_params);
         symbol const& maxsat_engine = m_c.maxsat_engine();
         IF_VERBOSE(1, verbose_stream() << "(maxsmt)\n";);
         TRACE("opt_verbose", s().display(tout << "maxsmt\n") << "\n";);
-        if (m_soft_constraints.empty() || maxsat_engine == symbol("maxres") || maxsat_engine == symbol::null) {            
+        if (optp.maxlex_enable() && is_maxlex(m_weights)) {
+            m_msolver = mk_maxlex(m_c, m_index, m_weights, m_soft_constraints);
+        }
+        else if (m_soft_constraints.empty() || maxsat_engine == symbol("maxres") || maxsat_engine == symbol::null) {            
             m_msolver = mk_maxres(m_c, m_index, m_weights, m_soft_constraints);
         }
         else if (maxsat_engine == symbol("pd-maxres")) {            
