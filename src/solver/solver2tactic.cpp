@@ -44,10 +44,7 @@ void extract_clauses_and_dependencies(goal_ref const& g, expr_ref_vector& clause
             deps.reset();
             m.linearize(d, deps);
             SASSERT(!deps.empty()); // d != 0, then deps must not be empty
-            ptr_vector<expr>::iterator it  = deps.begin();
-            ptr_vector<expr>::iterator end = deps.end();
-            for (; it != end; ++it) {
-                expr * d = *it;
+            for (expr* d : deps) {
                 if (is_uninterp_const(d) && m.is_bool(d)) {
                     // no need to create a fresh boolean variable for d
                     if (!bool2dep.contains(d)) {
@@ -111,10 +108,18 @@ public:
         ref<solver> local_solver = m_solver->translate(m, m_params);
         local_solver->assert_expr(clauses);
         TRACE("solver2tactic", tout << "clauses asserted\n";);
-        lbool r = local_solver->check_sat(assumptions.size(), assumptions.c_ptr()); 
+        lbool r;
+        try {
+            r = local_solver->check_sat(assumptions.size(), assumptions.c_ptr()); 
+        }
+        catch (...) {
+            local_solver->collect_statistics(m_st);
+            throw;
+        }
         TRACE("solver2tactic", tout << "check sat result " << r << "\n";);
         proof* pr = local_solver->get_proof();
         if (pr) in->set(proof2proof_converter(m, pr));
+        local_solver->collect_statistics(m_st);
         switch (r) {
         case l_true: 
             if (in->models_enabled()) {
@@ -145,22 +150,23 @@ public:
             break;
         }
         case l_undef:
-            if (m.canceled()) {
+            if (!m.inc()) {
                 throw tactic_exception(Z3_CANCELED_MSG);
             }
-            model_converter_ref mc;
-            mc = local_solver->get_model_converter();                
-            mc = concat(fmc.get(), mc.get());            
-            in->reset();
-            in->add(mc.get());
-            unsigned sz = local_solver->get_num_assertions();
-            for (unsigned i = 0; i < sz; ++i) {
-                in->assert_expr(local_solver->get_assertion(i));
+            if (!in->unsat_core_enabled()) {
+                model_converter_ref mc;
+                mc = local_solver->get_model_converter();                
+                mc = concat(fmc.get(), mc.get());            
+                in->reset();
+                in->add(mc.get());
+                unsigned sz = local_solver->get_num_assertions();
+                for (unsigned i = 0; i < sz; ++i) {
+                    in->assert_expr(local_solver->get_assertion(i));
+                }
             }
             result.push_back(in.get());
             break;
         }
-        local_solver->collect_statistics(m_st);
     }
 
     void collect_statistics(statistics & st) const override {

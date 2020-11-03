@@ -33,7 +33,7 @@ Notes:
 #include "util/gparams.h"
 #include "qe/qe_mbp.h"
 #include "qe/qe_mbi.h"
-#include "qe/qe_term_graph.h"
+#include "qe/mbp/mbp_term_graph.h"
 
 
 BINARY_SYM_CMD(get_quantifier_body_cmd,
@@ -369,12 +369,41 @@ public:
             }
             vars.push_back(to_app(v));
         }
-        qe::mbp mbp(m);
+        qe::mbproj mbp(m);
         expr_ref fml(m_fml, m);
         mbp.spacer(vars, *mdl.get(), fml);
         ctx.regular_stream() << fml << "\n";
     }
 };
+
+class get_interpolant_cmd : public cmd {
+    expr* m_a;
+    expr* m_b;
+public:
+    get_interpolant_cmd():cmd("get-interpolant") {}
+    char const * get_usage() const override { return "<expr> <expr>"; }
+    char const * get_descr(cmd_context & ctx) const override { return "perform model based interpolation"; }
+    unsigned get_arity() const override { return 2; }
+    cmd_arg_kind next_arg_kind(cmd_context& ctx) const override {
+        return CPK_EXPR; 
+    }
+    void set_next_arg(cmd_context& ctx, expr * arg) override { 
+        if (m_a == nullptr) 
+            m_a = arg; 
+        else 
+            m_b = arg; 
+    }
+    void prepare(cmd_context & ctx) override { m_a = nullptr; m_b = nullptr;  }
+    void execute(cmd_context & ctx) override { 
+        ast_manager& m = ctx.m();
+        qe::interpolator mbi(m);
+        expr_ref itp(m);
+         mbi.pogo(ctx.get_solver_factory(), m_a, m_b, itp);
+        ctx.regular_stream() << itp << "\n";
+    }
+};
+
+
 
 class mbi_cmd : public cmd {
     expr* m_a;
@@ -468,7 +497,7 @@ public:
         solver_ref sNotB = sf(m, p, false /* no proofs */, true, true, symbol::null);
         sA->assert_expr(a);
         sB->assert_expr(b);
-        qe::euf_arith_mbi_plugin pA(sA.get(), sNotA.get());
+        qe::uflia_mbi pA(sA.get(), sNotA.get());
         qe::prop_mbi_plugin pB(sB.get());
         pA.set_shared(vars);
         pB.set_shared(vars);
@@ -518,7 +547,7 @@ public:
         }
         model_ref mdl;
         s->get_model(mdl);
-        qe::euf_arith_mbi_plugin plugin(s.get(), se.get());
+        qe::uflia_mbi plugin(s.get(), se.get());
         plugin.set_shared(vars);
         plugin.project(mdl, lits);
         ctx.regular_stream() << lits << "\n";
@@ -550,6 +579,7 @@ void install_dbg_cmds(cmd_context & ctx) {
     ctx.insert(alloc(instantiate_cmd));
     ctx.insert(alloc(instantiate_nested_cmd));
     ctx.insert(alloc(set_next_id));
+    ctx.insert(alloc(get_interpolant_cmd));
     ctx.insert(alloc(mbp_cmd));
     ctx.insert(alloc(mbi_cmd));
     ctx.insert(alloc(euf_project_cmd));

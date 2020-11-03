@@ -16,8 +16,8 @@ Author:
 Notes:
 
 --*/
+#include "params/rewriter_params.hpp"
 #include "ast/rewriter/th_rewriter.h"
-#include "ast/rewriter/rewriter_params.hpp"
 #include "ast/rewriter/bool_rewriter.h"
 #include "ast/rewriter/arith_rewriter.h"
 #include "ast/rewriter/bv_rewriter.h"
@@ -26,6 +26,7 @@ Notes:
 #include "ast/rewriter/fpa_rewriter.h"
 #include "ast/rewriter/dl_rewriter.h"
 #include "ast/rewriter/pb_rewriter.h"
+#include "ast/rewriter/recfun_rewriter.h"
 #include "ast/rewriter/seq_rewriter.h"
 #include "ast/rewriter/rewriter_def.h"
 #include "ast/rewriter/var_subst.h"
@@ -46,6 +47,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     dl_rewriter         m_dl_rw;
     pb_rewriter         m_pb_rw;
     seq_rewriter        m_seq_rw;
+    recfun_rewriter     m_rec_rw;
     arith_util          m_a_util;
     bv_util             m_bv_util;
     unsigned long long  m_max_memory; // in bytes
@@ -107,7 +109,8 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     bool cache_all_results() const { return m_cache_all; }
 
     bool max_steps_exceeded(unsigned num_steps) const {
-        if (memory::get_allocation_size() > m_max_memory)
+        if (m_max_memory != SIZE_MAX && 
+            memory::get_allocation_size() > m_max_memory)
             throw rewriter_exception(Z3_MAX_MEMORY_MSG);
         return num_steps > m_max_steps;
     }
@@ -200,6 +203,11 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                 if (st != BR_FAILED)
                     return st;
             }
+            if ((k == OP_AND || k == OP_OR /*|| k == OP_EQ*/) && m_seq_rw.u().has_re()) {
+                st = m_seq_rw.mk_bool_app(f, num, args, result); 
+                if (st != BR_FAILED)
+                    return st;
+            }
             return m_b_rw.mk_app_core(f, num, args, result);
         }
         if (fid == m_a_rw.get_fid())
@@ -218,6 +226,8 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             return m_pb_rw.mk_app_core(f, num, args, result);
         if (fid == m_seq_rw.get_fid())
             return m_seq_rw.mk_app_core(f, num, args, result);
+        if (fid == m_rec_rw.get_fid())
+            return m_rec_rw.mk_app_core(f, num, args, result);
         return BR_FAILED;
     }
 
@@ -570,7 +580,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         }
     }
 
-    void log_rewrite_axiom_instantiation(func_decl * f, unsigned num, expr * const * args, expr_ref & result, proof_ref & result_pr) {
+    void log_rewrite_axiom_instantiation(func_decl * f, unsigned num, expr * const * args, expr_ref & result) {
         family_id fid = f->get_family_id();
         if (fid == m_b_rw.get_fid()) {
             decl_kind k = f->get_decl_kind();
@@ -586,8 +596,6 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         app_ref tmp(m());
         tmp = m().mk_app(f, num, args);
         m().trace_stream() << "[inst-discovered] theory-solving " << static_cast<void *>(nullptr) << " " << m().get_family_name(fid) << "# ; #" << tmp->get_id() << "\n";
-        if (m().proofs_enabled())
-            result_pr = m().mk_rewrite(tmp, result);
         tmp = m().mk_eq(tmp, result);
         m().trace_stream() << "[instance] " << static_cast<void *>(nullptr) << " #" << tmp->get_id() << "\n";
 
@@ -617,7 +625,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         br_status st = reduce_app_core(f, num, args, result);
 
         if (st != BR_FAILED && m().has_trace_stream()) {
-            log_rewrite_axiom_instantiation(f, num, args, result, result_pr);
+            log_rewrite_axiom_instantiation(f, num, args, result);
         }
 
         if (st != BR_DONE && st != BR_FAILED) {
@@ -663,7 +671,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                            expr_ref & result,
                            proof_ref & result_pr) {
         quantifier_ref q1(m());
-        proof * p1 = nullptr;
+        proof_ref p1(m()); 
         if (is_quantifier(new_body) &&
             to_quantifier(new_body)->get_kind() == old_q->get_kind() &&
             to_quantifier(new_body)->get_kind() != lambda_k && 
@@ -692,15 +700,15 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             SASSERT(is_well_sorted(m(), q1));
 
             if (m().proofs_enabled()) {
-                SASSERT(old_q->get_expr() == new_body);
                 p1 = m().mk_pull_quant(old_q, q1);
             }
         }
-        else if (
-                 old_q->get_kind() == lambda_k &&
+        else if (old_q->get_kind() == lambda_k &&
                  is_ground(new_body)) {
             result = m_ar_rw.util().mk_const_array(old_q->get_sort(), new_body);
-            result_pr = nullptr;
+            if (m().proofs_enabled()) {
+                result_pr = m().mk_rewrite(old_q, result);
+            }
             return true;
         }
         else {
@@ -718,6 +726,9 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                                        new_body);
             TRACE("reduce_quantifier", tout << mk_ismt2_pp(old_q, m()) << "\n----->\n" << mk_ismt2_pp(q1, m()) << "\n";);
             SASSERT(is_well_sorted(m(), q1));
+            if (m().proofs_enabled() && q1 != old_q) {
+                p1 = m().mk_rewrite(old_q, q1);
+            }
         }
         SASSERT(m().get_sort(old_q) == m().get_sort(q1));
         result = elim_unused_vars(m(), q1, params_ref());
@@ -727,7 +738,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
 
         result_pr = nullptr;
         if (m().proofs_enabled()) {
-            proof * p2 = nullptr;
+            proof_ref p2(m());
             if (q1.get() != result.get() && q1->get_kind() != lambda_k) 
                 p2 = m().mk_elim_unused_vars(q1, result);
             result_pr = m().mk_transitivity(p1, p2);
@@ -746,6 +757,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         m_dl_rw(m),
         m_pb_rw(m),
         m_seq_rw(m),
+        m_rec_rw(m),
         m_a_util(m),
         m_bv_util(m),
         m_used_dependencies(m),
@@ -776,8 +788,6 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
 
 };
 }
-
-template class rewriter_tpl<th_rewriter_cfg>;
 
 struct th_rewriter::imp : public rewriter_tpl<th_rewriter_cfg> {
     th_rewriter_cfg m_cfg;

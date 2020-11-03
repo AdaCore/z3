@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DL_RULE_TRANSFORMER_H_
-#define DL_RULE_TRANSFORMER_H_
+#pragma once
 
 #include "util/map.h"
 #include "util/vector.h"
@@ -108,10 +107,9 @@ namespace datalog {
         /**
            Removes duplicate tails.
         */
-        static void remove_duplicate_tails(app_ref_vector& tail, svector<bool>& tail_neg);
+        static void remove_duplicate_tails(app_ref_vector& tail, bool_vector& tail_neg);
 
     };
 };
 
-#endif /* DL_RULE_TRANSFORMER_H_ */
 

@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef MODEL_EVALUATOR_H_
-#define MODEL_EVALUATOR_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/rewriter/rewriter_types.h"
@@ -37,6 +36,7 @@ public:
     ~model_evaluator();
 
     ast_manager & m () const;
+    model_core const& get_model() const;
     void set_model_completion(bool f);
     bool get_model_completion() const; 
     void set_expand_array_equalities(bool f);
@@ -73,4 +73,3 @@ public:
     unsigned get_num_steps() const;
 };
 
-#endif

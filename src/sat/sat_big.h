@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SAT_BIG_H_
-#define SAT_BIG_H_
+#pragma once
 
 #include "sat/sat_types.h"
 #include "util/statistics.h"
@@ -30,7 +29,7 @@ namespace sat {
         random_gen&            m_rand;
         unsigned               m_num_vars;
         vector<literal_vector> m_dag;
-        svector<bool>          m_roots;
+        bool_vector          m_roots;
         svector<int>           m_left, m_right;
         literal_vector         m_root, m_parent;
         bool                   m_learned;
@@ -90,4 +89,3 @@ namespace sat {
     };
 };
 
-#endif

@@ -22,8 +22,7 @@ Revision History:
 
 --*/
 
-#ifndef RECFUN_REPLACE_H_
-#define RECFUN_REPLACE_H_
+#pragma once
 
 #include "ast/recfun_decl_plugin.h"
 #include "ast/rewriter/expr_safe_replace.h"
@@ -33,9 +32,9 @@ class recfun_replace : public recfun::replace {
     expr_safe_replace m_replace;
 public:
     recfun_replace(ast_manager& m): m(m), m_replace(m) {}
+    ~recfun_replace() override {}
     void reset() override { m_replace.reset(); }
     void insert(expr* s, expr* t) override { m_replace.insert(s, t); }
     expr_ref operator()(expr* e) override { expr_ref r(m); m_replace(e, r); return r; }
 };
 
-#endif /* RECFUN_REPLACE_H_ */

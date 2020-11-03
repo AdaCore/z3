@@ -17,8 +17,7 @@ Notes:
    
 --*/
 
-#ifndef NETWORK_FLOW_DEF_H_
-#define NETWORK_FLOW_DEF_H_
+#pragma once
 
 #include "math/simplex/network_flow.h"
 #include "util/uint_set.h"
@@ -224,7 +223,7 @@ namespace smt {
         node src = m_graph.get_source(m_enter_id);
         node tgt = m_graph.get_target(m_enter_id); 
         svector<edge_id> path;
-        svector<bool> against;
+        bool_vector against;
         m_tree->get_path(src, tgt, path, against);
         SASSERT(path.size() >= 1);
         for (unsigned i = 0; i < path.size(); ++i) {
@@ -241,7 +240,7 @@ namespace smt {
         m_delta.set_invalid();
         edge_id leave_id = null_edge_id;
         svector<edge_id> path;
-        svector<bool> against;
+        bool_vector against;
         m_tree->get_path(src, tgt, path, against);
         SASSERT(path.size() >= 1);
         for (unsigned i = 0; i < path.size(); ++i) {
@@ -523,4 +522,3 @@ namespace smt {
     }
 }
 
-#endif

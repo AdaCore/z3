@@ -23,6 +23,7 @@ Notes:
 #include "ast/ast_pp.h"
 #include "solver/solver.h"
 #include "solver/combined_solver_params.hpp"
+#include <atomic>
 #define PS_VB_LVL 15
 
 /**
@@ -71,7 +72,7 @@ private:
 
     struct aux_timeout_eh : public event_handler {
         solver *        m_solver;
-        volatile bool   m_canceled;
+        std::atomic<bool> m_canceled;
         aux_timeout_eh(solver * s):m_solver(s), m_canceled(false) {}
         ~aux_timeout_eh() override {
             if (m_canceled) {                
@@ -191,7 +192,7 @@ public:
             return m_solver2->get_consequences(asms, vars, consequences);
         }
         catch (z3_exception& ex) {
-            if (get_manager().canceled()) {
+            if (!get_manager().inc()) {
                 throw;
             }
             else {
@@ -217,7 +218,7 @@ public:
             if (m_inc_timeout == UINT_MAX) {
                 IF_VERBOSE(PS_VB_LVL, verbose_stream() << "(combined-solver \"using solver 2 (without a timeout)\")\n";);            
                 lbool r = m_solver2->check_sat_core(num_assumptions, assumptions);
-                if (r != l_undef || !use_solver1_when_undef() || get_manager().canceled()) {
+                if (r != l_undef || !use_solver1_when_undef() || !get_manager().inc()) {
                     return r;
                 }
             }

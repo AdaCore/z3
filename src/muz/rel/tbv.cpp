@@ -44,6 +44,7 @@ void tbv_manager::reset() {
 }
 tbv* tbv_manager::allocate() {
     tbv* r = static_cast<tbv*>(m.allocate());
+    m.reset(*r);
     DEBUG_CODE(
         if (s_debug_alloc) {
             TRACE("doc", tout << allocated_tbvs.size() << " " << r << "\n";);
@@ -175,6 +176,7 @@ tbv* tbv_manager::allocate(rational const& r) {
     return v;
 }
 void tbv_manager::deallocate(tbv* bv) {
+#if 0
     DEBUG_CODE(
         if (!allocated_tbvs.contains(bv)) {
             std::cout << "double deallocate: " << bv << "\n";
@@ -184,6 +186,7 @@ void tbv_manager::deallocate(tbv* bv) {
             TRACE("doc", tout << "deallocate: " << bv << "\n";);
         }
         allocated_tbvs.erase(bv););
+#endif
     m.deallocate(bv);
 }    
 void tbv_manager::copy(tbv& dst, tbv const& src) const {

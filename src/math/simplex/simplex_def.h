@@ -5,8 +5,6 @@ Module Name:
 
     simplex_def.h
 
-Abstract:
-
 Author:
 
     Nikolaj Bjorner (nbjorner) 2014-01-15
@@ -19,14 +17,18 @@ Notes:
 
 --*/
 
-#ifndef SIMPLEX_DEF_H_
-#define SIMPLEX_DEF_H_
+#pragma once
 
 
 namespace simplex {
 
     template<typename Ext>
     const typename simplex<Ext>::var_t simplex<Ext>::null_var = UINT_MAX; 
+
+    template<typename Ext>
+    simplex<Ext>::~simplex() {
+        reset();
+    }
 
     template<typename Ext>
     typename simplex<Ext>::row 
@@ -314,6 +316,12 @@ namespace simplex {
     void simplex<Ext>::reset() {
         M.reset();
         m_to_patch.reset();
+        for (var_info& v : m_vars) {
+            em.del(v.m_value);
+            em.del(v.m_lower);
+            em.del(v.m_upper);
+            m.del(v.m_base_coeff);
+        }
         m_vars.reset();
         m_row2base.reset();
         m_left_basis.reset();
@@ -1029,5 +1037,4 @@ namespace simplex {
 
 };
 
-#endif
 

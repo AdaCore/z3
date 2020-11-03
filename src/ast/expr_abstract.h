@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef EXPR_ABSTRACT_H_
-#define EXPR_ABSTRACT_H_
+#pragma once
 
 #include "ast/ast.h"
 
@@ -33,9 +32,13 @@ public:
 };
 
 void expr_abstract(ast_manager& m, unsigned base, unsigned num_bound, expr* const* bound, expr* n, expr_ref&  result);
+inline expr_ref expr_abstract(ast_manager& m, unsigned base, unsigned num_bound, expr* const* bound, expr* n) { expr_ref r(m); expr_abstract(m, base, num_bound, bound, n, r); return r; }
+inline expr_ref expr_abstract(expr_ref_vector const& bound, expr* n) { return expr_abstract(bound.m(), 0, bound.size(), bound.c_ptr(), n); }
+inline expr_ref expr_abstract(app_ref_vector const& bound, expr* n) { return expr_abstract(bound.m(), 0, bound.size(), (expr*const*)bound.c_ptr(), n); }
 expr_ref mk_forall(ast_manager& m, unsigned num_bound, app* const* bound, expr* n);
 expr_ref mk_exists(ast_manager& m, unsigned num_bound, app* const* bound, expr* n);
+inline expr_ref mk_forall(ast_manager& m, app* b, expr* n) { return mk_forall(m, 1, &b, n); }
+inline expr_ref mk_forall(ast_manager& m, expr* b, expr* n) { return mk_forall(m, to_app(b), n); }
 
-#endif
 
 

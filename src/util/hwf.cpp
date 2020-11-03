@@ -48,7 +48,7 @@ Revision History:
 // clear to the compiler what instructions should be used. E.g., for sqrt(), the Windows compiler selects
 // the x87 FPU, even when /arch:SSE2 is on.
 // Luckily, these are kind of standardized, at least for Windows/Linux/macOS.
-#ifdef __clang__
+#if defined(__clang__) || defined(_M_ARM) && defined(_M_ARM64)
 #undef USE_INTRINSICS
 #endif
 
@@ -276,7 +276,7 @@ void hwf_manager::round_to_integral(mpf_rounding_mode rm, hwf const & x, hwf & o
 
     // According to the Intel Architecture manual, the x87-instruction FRNDINT is the
     // same in 32-bit and 64-bit mode. The _mm_round_* intrinsics are SSE4 extensions.
-#ifdef _WINDOWS
+#if defined(_WINDOWS) && !defined(_M_ARM) && !defined(_M_ARM64)
 #if defined( __MINGW32__ ) && ( defined( __GNUG__ ) || defined( __clang__ ) )
     o.value = nearbyint(x.value);
 #else
@@ -342,7 +342,7 @@ void hwf_manager::minimum(hwf const & x, hwf const & y, hwf & o) {
     _mm_store_sd(&o.value, _mm_min_sd(_mm_set_sd(x.value), _mm_set_sd(y.value)));
 #else
     // use __min ?
-    if (is_nan(x) || is_nan(x))
+    if (is_nan(x))
         o.value = y.value;
     else if (is_nan(y))
         o.value = x.value;

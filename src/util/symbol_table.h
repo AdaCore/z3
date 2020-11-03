@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SYMBOL_TABLE_H_
-#define SYMBOL_TABLE_H_
+#pragma once
 #include "util/vector.h"
 #include "util/hashtable.h"
 #include "util/hash.h"
@@ -143,7 +142,6 @@ public:
             if (e != nullptr) {
                 m_trail_stack.push_back(e->m_data);
                 e->m_data.m_data = data;
-                return;
             }
             else {
                 m_trail_stack.push_back(dummy);
@@ -200,5 +198,4 @@ public:
     }
 };
 
-#endif /* SYMBOL_TABLE_H_ */
 

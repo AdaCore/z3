@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DL_FINITE_PRODUCT_RELATION_H_
-#define DL_FINITE_PRODUCT_RELATION_H_
+#pragma once
 
 
 #include "muz/rel/dl_base.h"
@@ -36,10 +35,10 @@ namespace datalog {
     public:
         struct rel_spec {
             family_id m_inner_kind; //null_family_id means we don't care about the kind
-            svector<bool> m_table_cols;
+            bool_vector m_table_cols;
 
             rel_spec() : m_inner_kind(null_family_id) {}
-            rel_spec(const svector<bool>& table_cols) 
+            rel_spec(const bool_vector& table_cols) 
                 : m_inner_kind(null_family_id), m_table_cols(table_cols) {}
 
             bool operator==(const rel_spec & o) const {
@@ -74,8 +73,8 @@ namespace datalog {
         family_id get_relation_kind(finite_product_relation & r, const bool * table_columns);
 
         static void get_all_possible_table_columns(relation_manager & rmgr, const relation_signature & s, 
-            svector<bool> & table_columns);
-        void get_all_possible_table_columns(const relation_signature & s, svector<bool> & table_columns) {
+            bool_vector & table_columns);
+        void get_all_possible_table_columns(const relation_signature & s, bool_vector & table_columns) {
             get_all_possible_table_columns(get_manager(), s, table_columns);
         }
 
@@ -362,5 +361,4 @@ namespace datalog {
 
 };
 
-#endif /* DL_FINITE_PRODUCT_RELATION_H_ */
 

@@ -15,8 +15,7 @@ Author:
 Notes:
 
 --*/
-#ifndef OPT_CONTEXT_H_
-#define OPT_CONTEXT_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/arith_decl_plugin.h"
@@ -133,6 +132,7 @@ namespace opt {
                 m_hard(m),
                 m_asms(m)
             {}
+            unsigned num_scopes() const { return m_hard_lim.size(); }
             void push();
             void pop();
             void add(expr* hard);
@@ -328,4 +328,3 @@ namespace opt {
 
 }
 
-#endif

@@ -14,8 +14,7 @@
   Revision History:
 
   --*/
-#ifndef _THEORY_STR_H_
-#define _THEORY_STR_H_
+#pragma once
 
 #include "util/trail.h"
 #include "util/union_find.h"
@@ -26,15 +25,17 @@
 #include "ast/rewriter/th_rewriter.h"
 #include "ast/rewriter/seq_rewriter.h"
 #include "ast/seq_decl_plugin.h"
+#include "model/value_factory.h"
 #include "smt/smt_theory.h"
 #include "smt/params/theory_str_params.h"
-#include "smt/proto_model/value_factory.h"
 #include "smt/smt_model_generator.h"
 #include "smt/smt_arith_value.h"
+#include "smt/smt_kernel.h"
 #include<set>
 #include<stack>
 #include<vector>
 #include<map>
+#include<functional>
 
 namespace smt {
 
@@ -64,7 +65,7 @@ public:
             while (true) {
                 std::ostringstream strm;
                 strm << delim << std::hex << (m_next++) << std::dec << delim;
-                symbol sym(strm.str().c_str());
+                symbol sym(strm.str());
                 if (m_strings.contains(sym)) continue;
                 m_strings.insert(sym);
                 return u.str.mk_string(sym);
@@ -106,6 +107,8 @@ public:
     }
 };
 
+struct c_hash { unsigned operator()(char u) const { return (unsigned)u; } };
+struct c_eq { bool operator()(char u1, char u2) const { return u1 == u2; } };
 
 class nfa {
 protected:
@@ -209,10 +212,112 @@ public:
     eautomaton * get_automaton() const { return aut; }
     expr * get_regex_term() const { return re_term; }
     bool get_polarity() const { return polarity; }
+};
 
-    virtual ~regex_automaton_under_assumptions() {
-        // don't free str_in_re or aut;
-        // they are managed separately
+class char_union_find {
+    unsigned_vector   m_find;
+    unsigned_vector   m_size;
+    unsigned_vector   m_next;
+
+    integer_set char_const_set;
+
+    u_map<svector<expr*> > m_justification; // representative -> list of formulas justifying EQC
+
+    void ensure_size(unsigned v) {
+        while (v >= get_num_vars()) {
+            mk_var();
+        }
+    }
+ public:
+    unsigned mk_var() {
+        unsigned r = m_find.size();
+        m_find.push_back(r);
+        m_size.push_back(1);
+        m_next.push_back(r);
+        return r;
+    }
+    unsigned get_num_vars() const { return m_find.size(); }
+    void mark_as_char_const(unsigned r) {
+        char_const_set.insert((int)r);
+    }
+    bool is_char_const(unsigned r) {
+        return char_const_set.contains((int)r);
+    }
+
+    unsigned find(unsigned v) const {
+        if (v >= get_num_vars()) {
+            return v;
+        }
+        while (true) {
+            unsigned new_v = m_find[v];
+            if (new_v == v)
+                return v;
+            v = new_v;
+        }
+    }
+
+    unsigned next(unsigned v) const {
+        if (v >= get_num_vars()) {
+            return v;
+        }
+        return m_next[v];
+    }
+
+    bool is_root(unsigned v) const {
+        return v >= get_num_vars() || m_find[v] == v;
+    }
+
+    svector<expr*> get_justification(unsigned v) {
+        unsigned r = find(v);
+        svector<expr*> retval;
+        if (m_justification.find(r, retval)) {
+            return retval;
+        } else {
+            return svector<expr*>();
+        }
+    }
+
+    void merge(unsigned v1, unsigned v2, expr * justification) {
+        unsigned r1 = find(v1);
+        unsigned r2 = find(v2);
+        if (r1 == r2)
+            return;
+        ensure_size(v1);
+        ensure_size(v2);
+        // swap r1 and r2 if:
+        // 1. EQC of r1 is bigger than EQC of r2
+        // 2. r1 is a character constant and r2 is not.
+        // this maintains the invariant that if a character constant is in an eqc then it is the root of that eqc
+        if (m_size[r1] > m_size[r2] || (is_char_const(r1) && !is_char_const(r2))) {
+            std::swap(r1, r2);
+        }
+        m_find[r1] = r2;
+        m_size[r2] += m_size[r1];
+        std::swap(m_next[r1], m_next[r2]);
+
+        if (m_justification.contains(r1)) {
+            // add r1's justifications to r2
+            if (!m_justification.contains(r2)) {
+                m_justification.insert(r2, m_justification[r1]);
+            } else {
+                m_justification[r2].append(m_justification[r1]);
+            }
+            m_justification.remove(r1);
+        }
+        if (justification != nullptr) {
+            if (!m_justification.contains(r2)) {
+                m_justification.insert(r2, svector<expr*>());
+            }
+            m_justification[r2].push_back(justification);
+        }
+    }
+
+    void reset() {
+        m_find.reset();
+        m_next.reset();
+        m_size.reset();
+        char_const_set.reset();
+        m_justification.reset();
     }
 };
 
@@ -233,10 +338,22 @@ class theory_str : public theory {
     typedef map<rational, expr*, obj_hash<rational>, default_eq<rational> > rational_map;
     struct zstring_hash_proc {
         unsigned operator()(zstring const & s) const {
-            return string_hash(s.encode().c_str(), static_cast<unsigned>(s.length()), 17);
+            auto str = s.encode();
+            return string_hash(str.c_str(), static_cast<unsigned>(s.length()), 17);
         }
     };
     typedef map<zstring, expr*, zstring_hash_proc, default_eq<zstring> > string_map;
+
+    struct stats {
+        stats() { reset(); }
+        void reset() { memset(this, 0, sizeof(stats)); }
+        unsigned m_refine_eq;
+        unsigned m_refine_neq;
+        unsigned m_refine_f;
+        unsigned m_refine_nf;
+        unsigned m_solved_by;
+        unsigned m_fixed_length_iterations;
+    };
 
 protected:
     theory_str_params const & m_params;
@@ -328,7 +445,6 @@ protected:
     expr_ref_vector m_delayed_axiom_setup_terms;
 
     ptr_vector<enode> m_basicstr_axiom_todo;
-    svector<std::pair<enode*,enode*> > m_str_eq_todo;
     ptr_vector<enode> m_concat_axiom_todo;
     ptr_vector<enode> m_string_constant_length_todo;
     ptr_vector<enode> m_concat_eval_todo;
@@ -346,10 +462,11 @@ protected:
     // include an occurrence of the term for which axioms are being generated
     obj_hashtable<expr> axiomatized_terms;
 
+    // hashtable of all top-level exprs for which set_up_axioms() has been called
+    obj_hashtable<expr> existing_toplevel_exprs;
+
     int tmpStringVarCount;
     int tmpXorVarCount;
-    int tmpLenTestVarCount;
-    int tmpValTestVarCount;
     // obj_pair_map<expr, expr, std::map<int, expr*> > varForBreakConcat;
     std::map<std::pair<expr*,expr*>, std::map<int, expr*> > varForBreakConcat;
     bool avoidLoopCut;
@@ -360,40 +477,12 @@ protected:
 
     obj_hashtable<expr> variable_set;
     obj_hashtable<expr> internal_variable_set;
-    obj_hashtable<expr> regex_variable_set;
     std::map<int, obj_hashtable<expr> > internal_variable_scope_levels;
-
-    obj_hashtable<expr> internal_lenTest_vars;
-    obj_hashtable<expr> internal_valTest_vars;
-    obj_hashtable<expr> internal_unrollTest_vars;
-
-    obj_hashtable<expr> input_var_in_len;
-
-    obj_map<expr, unsigned int> fvar_len_count_map;
-    obj_map<expr, ptr_vector<expr> > fvar_lenTester_map;
-    obj_map<expr, expr*> lenTester_fvar_map;
-
-
-    obj_map<expr, std::map<int, svector<std::pair<int, expr*> > > > fvar_valueTester_map;
-
-    obj_map<expr, expr*> valueTester_fvar_map;
-
-    obj_map<expr, int_vector> val_range_map;
-
-    // This can't be an expr_ref_vector because the constructor is wrong,
-    // we would need to modify the allocator so we pass in ast_manager
-    obj_map<expr, std::map<std::set<expr*>, ptr_vector<expr> > > unroll_tries_map;
-    obj_map<expr, expr*> unroll_var_map;
-    obj_pair_map<expr, expr, expr*> concat_eq_unroll_ast_map;
 
     expr_ref_vector contains_map;
 
     theory_str_contain_pair_bool_map_t contain_pair_bool_map;
     obj_map<expr, std::set<std::pair<expr*, expr*> > > contain_pair_idx_map;
-
-    // TBD: do a curried map for determinism.
-    std::map<std::pair<expr*, zstring>, expr*> regex_in_bool_map;
-    obj_map<expr, std::set<zstring> > regex_in_var_reg_str_map;
 
     // regex automata
     scoped_ptr_vector<eautomaton> m_automata;
@@ -430,11 +519,6 @@ protected:
     expr_ref_vector string_int_conversion_terms;
     obj_hashtable<expr> string_int_axioms;
 
-    // used when opt_FastLengthTesterCache is true
-    rational_map lengthTesterCache;
-    // used when opt_FastValueTesterCache is true
-    string_map valueTesterCache;
-
     string_map stringConstantCache;
     unsigned long totalCacheAccessCount;
     unsigned long cacheHitCount;
@@ -446,46 +530,34 @@ protected:
     obj_map<expr, app*> length_ast_map;
 
     th_trail_stack m_trail_stack;
+    th_trail_stack m_library_aware_trail_stack;
     th_union_find m_find;
     theory_var get_var(expr * n) const;
     expr * get_eqc_next(expr * n);
     app * get_ast(theory_var i);
 
-    // binary search heuristic data
-    struct binary_search_info {
-        rational lowerBound;
-        rational midPoint;
-        rational upperBound;
-        rational windowSize;
+    // fixed length model construction
+    expr_ref_vector fixed_length_subterm_trail; // trail for subterms generated *in the subsolver*
+    expr_ref_vector fixed_length_assumptions; // cache of boolean terms to assert *into the subsolver*, unsat core is a subset of these
+    obj_map<expr, rational> fixed_length_used_len_terms; // constraints used in generating fixed length model
+    obj_map<expr, ptr_vector<expr> > var_to_char_subterm_map; // maps a var to a list of character terms *in the subsolver*
+    obj_map<expr, ptr_vector<expr> > uninterpreted_to_char_subterm_map; // maps an "uninterpreted" string term to a list of character terms *in the subsolver*
+    obj_map<expr, std::tuple<rational, expr*, expr*>> fixed_length_lesson; //keep track of information for the lesson
+    unsigned preprocessing_iteration_count; // number of attempts we've made to solve by preprocessing length information
+    obj_map<expr, zstring> candidate_model;
 
-        binary_search_info() : lowerBound(rational::zero()), midPoint(rational::zero()),
-                upperBound(rational::zero()), windowSize(rational::zero()) {}
-        binary_search_info(rational lower, rational mid, rational upper, rational windowSize) :
-            lowerBound(lower), midPoint(mid), upperBound(upper), windowSize(windowSize) {}
+    expr_ref_vector bitvector_character_constants; // array-indexed map of bv.mk_numeral terms
+    
+    stats m_stats;
 
-        void calculate_midpoint() {
-            midPoint = floor(lowerBound + ((upperBound - lowerBound) / rational(2)) );
-        }
-    };
-    // maps a free string var to a stack of active length testers.
-    // can use binary_search_trail to record changes to this object
-    obj_map<expr, ptr_vector<expr> > binary_search_len_tester_stack;
-    // maps a length tester var to the *active* search window
-    obj_map<expr, binary_search_info> binary_search_len_tester_info;
-    // maps a free string var to the first length tester to be (re)used
-    obj_map<expr, expr*> binary_search_starting_len_tester;
-    // maps a length tester to the next length tester to be (re)used if the split is "low"
-    obj_map<expr, expr*> binary_search_next_var_low;
-    // maps a length tester to the next length tester to be (re)used if the split is "high"
-    obj_map<expr, expr*> binary_search_next_var_high;
-
-    // finite model finding data
-    // maps a finite model tester var to a list of variables that will be tested
-    obj_map<expr, ptr_vector<expr> > finite_model_test_varlists;
 protected:
+    void reset_internal_data_structures();
+
     void assert_axiom(expr * e);
     void assert_implication(expr * premise, expr * conclusion);
     expr * rewrite_implication(expr * premise, expr * conclusion);
+    // Use the rewriter to simplify an axiom, then assert it.
+    void assert_axiom_rw(expr * e);
 
     expr * mk_string(zstring const& str);
     expr * mk_string(const char * str);
@@ -512,18 +584,22 @@ protected:
     void track_variable_scope(expr * var);
     app * mk_str_var(std::string name);
     app * mk_int_var(std::string name);
-    app * mk_nonempty_str_var();
+    app_ref mk_nonempty_str_var();
     app * mk_internal_xor_var();
-    expr * mk_internal_valTest_var(expr * node, int len, int vTries);
-    app * mk_regex_rep_var();
-    app * mk_unroll_bound_var();
-    app * mk_unroll_test_var();
     void add_nonempty_constraint(expr * s);
 
     void instantiate_concat_axiom(enode * cat);
     void try_eval_concat(enode * cat);
     void instantiate_basic_string_axioms(enode * str);
     void instantiate_str_eq_length_axiom(enode * lhs, enode * rhs);
+
+    // for count abstraction and refinement
+    expr* refine(expr* lhs, expr* rhs, rational offset);
+    expr* refine_eq(expr* lhs, expr* rhs, unsigned offset);
+    expr* refine_dis(expr* lhs, expr* rhs);
+    expr* refine_function(expr* f);
+    bool flatten(expr* ex, expr_ref_vector & flat);
+    rational get_refine_length(expr* ex, expr_ref_vector& extra_deps);
 
     void instantiate_axiom_CharAt(enode * e);
     void instantiate_axiom_prefixof(enode * e);
@@ -541,13 +617,9 @@ protected:
 
     expr * mk_RegexIn(expr * str, expr * regexp);
     void instantiate_axiom_RegexIn(enode * e);
-    app * mk_unroll(expr * n, expr * bound);
-    void process_unroll_eq_const_str(expr * unrollFunc, expr * constStr);
-    void unroll_str2reg_constStr(expr * unrollFunc, expr * eqConstStr);
-    void process_concat_eq_unroll(expr * concat, expr * unroll);
 
     // regex automata and length-aware regex
-    void solve_regex_automata();
+    bool solve_regex_automata();
     unsigned estimate_regex_complexity(expr * re);
     unsigned estimate_regex_complexity_under_complement(expr * re);
     unsigned estimate_automata_intersection_difficulty(eautomaton * aut1, eautomaton * aut2);
@@ -569,9 +641,11 @@ protected:
 
     app * mk_value_helper(app * n);
     expr * get_eqc_value(expr * n, bool & hasEqcValue);
+    bool get_string_constant_eqc(expr * n, zstring & stringVal);
     expr * z3str2_get_eqc_value(expr * n , bool & hasEqcValue);
     bool in_same_eqc(expr * n1, expr * n2);
     expr * collect_eq_nodes(expr * n, expr_ref_vector & eqcSet);
+    bool is_var(expr * e) const;
 
     bool get_arith_value(expr* e, rational& val) const;
     bool get_len_value(expr* e, rational& val);
@@ -643,6 +717,10 @@ protected:
     bool new_eq_check(expr * lhs, expr * rhs);
     void group_terms_by_eqc(expr * n, std::set<expr*> & concats, std::set<expr*> & vars, std::set<expr*> & consts);
 
+    void check_consistency_prefix(expr * e, bool is_true);
+    void check_consistency_suffix(expr * e, bool is_true);
+    void check_consistency_contains(expr * e, bool is_true);
+
     int ctx_dep_analysis(std::map<expr*, int> & strVarMap, std::map<expr*, int> & freeVarMap,
             std::map<expr*, std::set<expr*> > & unrollGroupMap, std::map<expr*, std::map<expr*, int> > & var_eq_concat_map);
     void trace_ctx_dep(std::ofstream & tout,
@@ -660,26 +738,6 @@ protected:
     void classify_ast_by_type_in_positive_context(std::map<expr*, int> & varMap,
             std::map<expr*, int> & concatMap, std::map<expr*, int> & unrollMap);
 
-    expr * mk_internal_lenTest_var(expr * node, int lTries);
-    expr * gen_len_val_options_for_free_var(expr * freeVar, expr * lenTesterInCbEq, zstring lenTesterValue);
-    void process_free_var(std::map<expr*, int> & freeVar_map);
-    expr * gen_len_test_options(expr * freeVar, expr * indicator, int tries);
-    expr * gen_free_var_options(expr * freeVar, expr * len_indicator,
-            zstring len_valueStr, expr * valTesterInCbEq, zstring valTesterValueStr);
-    expr* gen_val_options(expr * freeVar, expr * len_indicator, expr * val_indicator,
-            zstring lenStr, int tries);
-    void print_value_tester_list(svector<std::pair<int, expr*> > & testerList);
-    bool get_next_val_encode(int_vector & base, int_vector & next);
-    zstring gen_val_string(int len, int_vector & encoding);
-
-    // binary search heuristic
-    expr * binary_search_length_test(expr * freeVar, expr * previousLenTester, zstring previousLenTesterValue);
-    expr_ref binary_search_case_split(expr * freeVar, expr * tester, binary_search_info & bounds, literal_vector & case_split_lits);
-
-    bool free_var_attempt(expr * nn1, expr * nn2);
-    void more_len_tests(expr * lenTester, zstring lenTesterValue);
-    void more_value_tests(expr * valTester, zstring valTesterValue);
-
     expr * get_alias_index_ast(std::map<expr*, expr*> & aliasIndexMap, expr * node);
     expr * getMostLeftNodeInConcat(expr * node);
     expr * getMostRightNodeInConcat(expr * node);
@@ -690,18 +748,22 @@ protected:
 
     bool finalcheck_str2int(app * a);
     bool finalcheck_int2str(app * a);
+    bool string_integer_conversion_valid(zstring str, rational& converted) const;
 
-    // strRegex
-
-    void get_eqc_allUnroll(expr * n, expr * &constStr, std::set<expr*> & unrollFuncSet);
-    void get_eqc_simpleUnroll(expr * n, expr * &constStr, std::set<expr*> & unrollFuncSet);
-    void gen_assign_unroll_reg(std::set<expr*> & unrolls);
-    expr * gen_assign_unroll_Str2Reg(expr * n, std::set<expr*> & unrolls);
-    expr * gen_unroll_conditional_options(expr * var, std::set<expr*> & unrolls, zstring lcmStr);
-    expr * gen_unroll_assign(expr * var, zstring lcmStr, expr * testerVar, int l, int h);
-    void reduce_virtual_regex_in(expr * var, expr * regex, expr_ref_vector & items);
-    void check_regex_in(expr * nn1, expr * nn2);
-    zstring get_std_regex_str(expr * r);
+    lbool fixed_length_model_construction(expr_ref_vector formulas, expr_ref_vector &precondition,
+            expr_ref_vector& free_variables,
+            obj_map<expr, zstring> &model, expr_ref_vector &cex);
+    bool fixed_length_reduce_string_term(smt::kernel & subsolver, expr * term, ptr_vector<expr> & term_chars, expr_ref & cex);
+    bool fixed_length_get_len_value(expr * e, rational & val);
+    bool fixed_length_reduce_eq(smt::kernel & subsolver, expr_ref lhs, expr_ref rhs, expr_ref & cex);
+    bool fixed_length_reduce_diseq(smt::kernel & subsolver, expr_ref lhs, expr_ref rhs, expr_ref & cex);
+    bool fixed_length_reduce_contains(smt::kernel & subsolver, expr_ref f, expr_ref & cex);
+    bool fixed_length_reduce_negative_contains(smt::kernel & subsolver, expr_ref f, expr_ref & cex);
+    bool fixed_length_reduce_prefix(smt::kernel & subsolver, expr_ref f, expr_ref & cex);
+    bool fixed_length_reduce_negative_prefix(smt::kernel & subsolver, expr_ref f, expr_ref & cex);
+    bool fixed_length_reduce_suffix(smt::kernel & subsolver, expr_ref f, expr_ref & cex);
+    bool fixed_length_reduce_negative_suffix(smt::kernel & subsolver, expr_ref f, expr_ref & cex);
+    bool fixed_length_reduce_regex_membership(smt::kernel & subsolver, expr_ref f, expr_ref & cex, bool polarity);
 
     void dump_assignments();
     void initialize_charset();
@@ -714,18 +776,23 @@ protected:
     void get_unique_non_concat_nodes(expr * node, std::set<expr*> & argSet);
     bool propagate_length_within_eqc(expr * var);
 
+
+    const rational NEQ = rational(-1); // negative word equation lesson
+    const rational PFUN = rational(-2); // positive function lesson
+    const rational NFUN = rational(-3); // negative function lesson
+
     // TESTING
     void refresh_theory_var(expr * e);
 
-    expr_ref set_up_finite_model_test(expr * lhs, expr * rhs);
-    void finite_model_test(expr * v, expr * c);
-
 public:
-    theory_str(ast_manager & m, theory_str_params const & params);
+    theory_str(context& ctx, ast_manager & m, theory_str_params const & params);
     ~theory_str() override;
 
     char const * get_name() const override { return "seq"; }
+    void init() override;
     void display(std::ostream & out) const override;
+
+    void collect_statistics(::statistics & st) const override;
 
     bool overlapping_variables_detected() const { return loopDetected; }
 
@@ -742,8 +809,7 @@ protected:
     void new_eq_eh(theory_var, theory_var) override;
     void new_diseq_eh(theory_var, theory_var) override;
 
-    theory* mk_fresh(context*) override { return alloc(theory_str, get_manager(), m_params); }
-    void init(context * ctx) override;
+    theory* mk_fresh(context* c) override { return alloc(theory_str, *c, c->get_manager(), m_params); }
     void init_search_eh() override;
     void add_theory_assumptions(expr_ref_vector & assumptions) override;
     lbool validate_unsat_core(expr_ref_vector & unsat_core) override;
@@ -766,4 +832,3 @@ protected:
 
 };
 
-#endif /* _THEORY_STR_H_ */

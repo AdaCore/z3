@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DL_CONTEXT_H_
-#define DL_CONTEXT_H_
+#pragma once
 
 #include "ast/arith_decl_plugin.h"
 #include "util/map.h"
@@ -497,7 +496,7 @@ namespace datalog {
         // -----------------------------------
 
         bool canceled() {
-            return m.canceled() && (m_last_status = CANCELED, true);
+            return !m.inc() && (m_last_status = CANCELED, true);
         }
 
         void cleanup();
@@ -527,6 +526,8 @@ namespace datalog {
            for PDR mode and Duality mode.
          */
         model_ref get_model();
+
+        bool is_monotone();
 
         /**
            \brief retrieve proof from derivation of the query.
@@ -606,7 +607,6 @@ namespace datalog {
         */
         void reset_tables();
 
-
         void flush_add_rules();
 
         void ensure_engine(expr* e = nullptr);
@@ -624,4 +624,3 @@ namespace datalog {
 
 };
 
-#endif /* DL_CONTEXT_H_ */

@@ -34,6 +34,7 @@ Notes:
 #include "tactic/smtlogics/nra_tactic.h"
 #include "tactic/portfolio/default_tactic.h"
 #include "tactic/fd_solver/fd_solver.h"
+#include "tactic/fd_solver/smtfd_solver.h"
 #include "tactic/ufbv/ufbv_tactic.h"
 #include "tactic/fpa/qffp_tactic.h"
 #include "muz/fp/horn_tactic.h"
@@ -107,6 +108,8 @@ static solver* mk_special_solver_for_logic(ast_manager & m, params_ref const & p
     parallel_params pp(p);
     if ((logic == "QF_FD" || logic == "SAT") && !m.proofs_enabled() && !pp.enable())
         return mk_fd_solver(m, p);
+    if (logic == "SMTFD" && !m.proofs_enabled() && !pp.enable())
+        return mk_smtfd_solver(m, p);
     return nullptr;
 }
 
@@ -165,3 +168,6 @@ solver_factory * mk_smt_strategic_solver_factory(symbol const & logic) {
     return alloc(smt_strategic_solver_factory, logic);
 }
 
+solver* mk_smt2_solver(ast_manager& m, params_ref const& p) {
+    return mk_inc_sat_solver(m, p);
+}

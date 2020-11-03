@@ -18,8 +18,7 @@ Revision History:
 TODO: eager equality propagation
 
 --*/
-#ifndef THEORY_DENSE_DIFF_LOGIC_H_
-#define THEORY_DENSE_DIFF_LOGIC_H_
+#pragma once
 
 #include "smt/theory_arith.h"
 #include "smt/params/theory_arith_params.h"
@@ -124,7 +123,7 @@ namespace smt {
         atoms                 m_bv2atoms;
         edges                 m_edges;  // list of asserted edges
         matrix                m_matrix;
-        svector<bool>         m_is_int;
+        bool_vector         m_is_int;
         vector<cell_trail>    m_cell_trail;
         svector<scope>        m_scopes;
         bool                  m_non_diff_logic_exprs;
@@ -162,7 +161,7 @@ namespace smt {
         struct var_value_eq {
             theory_dense_diff_logic & m_th;
             var_value_eq(theory_dense_diff_logic & th):m_th(th) {}
-            bool operator()(theory_var v1, theory_var v2) const { return m_th.m_assignment[v1] == m_th.m_assignment[v2] && m_th.is_int(v1) == m_th.is_int(v2); }
+            bool operator()(theory_var v1, theory_var v2) const { return m_th.m_assignment[v1] == m_th.m_assignment[v2]; }
         };
 
         typedef int_hashtable<var_value_hash, var_value_eq> var_value_table;
@@ -277,7 +276,7 @@ namespace smt {
         //
         // -----------------------------------
     public:
-        theory_dense_diff_logic(ast_manager & m, theory_arith_params & p);
+        theory_dense_diff_logic(context& ctx);
         ~theory_dense_diff_logic() override { reset_eh(); }
         
         theory * mk_fresh(context * new_ctx) override;
@@ -296,5 +295,4 @@ namespace smt {
     typedef theory_dense_diff_logic<si_ext>  theory_dense_si;
 };
 
-#endif /* THEORY_DENSE_DIFF_LOGIC_H_ */
 

@@ -18,8 +18,7 @@ Revision History:
     Christoph Wintersteiger, 2010-03-30: Added Destr. Multi-Equality Resolution
 
 --*/
-#ifndef DER_H_
-#define DER_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/rewriter/var_subst.h"
@@ -123,11 +122,11 @@ Revision History:
    (forall (X Y) (or X /= s C[X])) --> (forall (Y) C[Y])
 */
 class der {
-    ast_manager &   m_manager;
+    ast_manager &   m;
     var_subst       m_subst;
     expr_ref_buffer m_new_exprs;
     
-    ptr_vector<expr> m_map;
+    expr_ref_vector  m_map;
     int_vector       m_pos2var;
     ptr_vector<var>  m_inx2var;
     unsigned_vector  m_order;
@@ -153,8 +152,7 @@ class der {
     void reduce1(quantifier * q, expr_ref & r, proof_ref & pr);
 
 public:
-    der(ast_manager & m):m_manager(m),m_subst(m),m_new_exprs(m),m_subst_map(m),m_new_args(m) {}
-    ast_manager & m() const { return m_manager; }
+    der(ast_manager & m):m(m),m_subst(m),m_new_exprs(m),m_map(m), m_subst_map(m),m_new_args(m) {}
     void operator()(quantifier * q, expr_ref & r, proof_ref & pr);
 };
 
@@ -180,5 +178,4 @@ public:
 
 typedef der_rewriter der_star; 
 
-#endif /* DER_H_ */
 

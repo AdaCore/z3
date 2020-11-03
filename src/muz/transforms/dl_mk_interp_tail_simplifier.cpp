@@ -582,13 +582,11 @@ namespace datalog {
     bool mk_interp_tail_simplifier::transform_rules(const rule_set & orig, rule_set & tgt) {
         bool modified = false;
         rule_manager& rm = m_context.get_rule_manager();
-        rule_set::iterator rit = orig.begin();
-        rule_set::iterator rend = orig.end();
-        for (; rit!=rend; ++rit) {
+        for (rule * r : orig) {
             rule_ref new_rule(rm);
-            if (transform_rule(*rit, new_rule)) {
-                rm.mk_rule_rewrite_proof(**rit, *new_rule.get());
-                bool is_modified = *rit != new_rule;
+            if (transform_rule(r, new_rule)) {
+                rm.mk_rule_rewrite_proof(*r, *new_rule.get());
+                bool is_modified = r != new_rule;
                 modified |= is_modified;
                 tgt.add_rule(new_rule);
             }
@@ -604,17 +602,17 @@ namespace datalog {
             return nullptr;
         }
 
-        rule_set * res = alloc(rule_set, m_context);
+        scoped_ptr<rule_set> res = alloc(rule_set, m_context);
         if (transform_rules(source, *res)) {
             res->inherit_predicates(source);
             TRACE("dl",
                   source.display(tout);
                   res->display(tout););
-        } else {
-            dealloc(res);
+        } 
+        else {
             res = nullptr;
         }
-        return res;
+        return res.detach();
     }
 
 };

@@ -18,8 +18,7 @@ Revision History:
 
 --*/
 
-#ifndef __MODEL_BASED_OPT_H__
-#define __MODEL_BASED_OPT_H__
+#pragma once
 
 #include "util/util.h"
 #include "util/rational.h"
@@ -67,7 +66,6 @@ namespace opt {
         struct def {
             def(): m_div(1) {}
             def(row const& r, unsigned x);
-            def(def const& other): m_vars(other.m_vars), m_coeff(other.m_coeff), m_div(other.m_div) {}
             vector<var> m_vars;
             rational    m_coeff;
             rational    m_div; 
@@ -85,7 +83,7 @@ namespace opt {
         static const unsigned   m_objective_id = 0;
         vector<unsigned_vector> m_var2row_ids;
         vector<rational>        m_var2value;
-        svector<bool>           m_var2is_int;
+        bool_vector           m_var2is_int;
         vector<var>             m_new_vars;
         unsigned_vector         m_lub, m_glb, m_mod;
         unsigned_vector         m_above, m_below;
@@ -208,4 +206,3 @@ inline std::ostream& operator<<(std::ostream& out, opt::model_based_opt::row con
 
 inline std::ostream& operator<<(std::ostream& out, opt::model_based_opt::var const v) { return out << "v" << v.m_id; }
 
-#endif 

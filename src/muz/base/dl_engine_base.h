@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DL_ENGINE_BASE_H_
-#define DL_ENGINE_BASE_H_
+#pragma once
 
 #include "model/model.h"
 #include "muz/base/dl_util.h"
@@ -96,13 +95,14 @@ namespace datalog {
             throw default_exception(std::string("certificates are not supported for ") + m_name);
         }
         virtual model_ref get_model() {
-            return model_ref(alloc(model, m));
+            return model_ref();
         }
+
         virtual void get_rules_along_trace (rule_ref_vector& rules) {
             throw default_exception(std::string("get_rules_along_trace is not supported for ") + m_name);
         }
         virtual proof_ref get_proof() {
-            return proof_ref(m.mk_asserted(m.mk_true()), m);
+            return proof_ref(m.mk_asserted(m.mk_false()), m);
         }
         virtual void add_callback(void *state,
                                   const t_new_lemma_eh new_lemma_eh,
@@ -127,4 +127,3 @@ namespace datalog {
     };
 }
 
-#endif

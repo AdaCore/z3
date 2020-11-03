@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef EXPR_SUBSTITUTION_H_
-#define EXPR_SUBSTITUTION_H_
+#pragma once
 
 #include "ast/ast.h"
 
@@ -43,6 +42,7 @@ public:
     bool unsat_core_enabled() const { return m_cores_enabled; }
 
     bool empty() const { return m_subst.empty(); }
+    unsigned size() const { return m_subst.size(); }
     void insert(expr * s, expr * def, proof * def_pr = nullptr, expr_dependency * def_dep = nullptr);
     void erase(expr * s);
     bool find(expr * s, expr * & def, proof * & def_pr);
@@ -82,6 +82,7 @@ public:
     }
     unsigned scope_level() const { return m_trail_lim.size(); }
     bool empty() const { return m_subst.empty(); }
+    unsigned size() const { return m_subst.size(); }
     expr* find(expr * e) { proof* pr; expr* d = nullptr; if (find(e, d, pr)) return d; else return e; }
     bool find(expr * s, expr * & def, proof * & def_pr) { return m_subst.find(s, def, def_pr); }
     bool find(expr * s, expr * & def, proof * & def_pr, expr_dependency * & def_dep) { return m_subst.find(s, def, def_pr, def_dep); }
@@ -90,4 +91,3 @@ public:
     std::ostream& display(std::ostream& out) { return m_subst.display(out); }
 };
 
-#endif

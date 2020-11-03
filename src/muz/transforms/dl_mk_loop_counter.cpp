@@ -68,12 +68,12 @@ namespace datalog {
         m_old2new.reset();
         m_new2old.reset();
         rule_manager& rm = source.get_rule_manager();
-        rule_set * result = alloc(rule_set, m_ctx);
+        scoped_ptr<rule_set> result = alloc(rule_set, m_ctx);
         unsigned sz = source.get_num_rules();
         rule_ref new_rule(rm);
         app_ref_vector tail(m);
         app_ref head(m);
-        svector<bool> neg;
+        bool_vector neg;
         rule_counter& vc = rm.get_counter();
         for (unsigned i = 0; i < sz; ++i) {            
             tail.reset();
@@ -118,7 +118,7 @@ namespace datalog {
         // model converter: remove references to extra argument.
         // proof converter: remove references to extra argument as well.
 
-        return result;
+        return result.detach();
     }
 
     rule_set * mk_loop_counter::revert(rule_set const & source) {
@@ -129,7 +129,7 @@ namespace datalog {
         rule_ref new_rule(rm);
         app_ref_vector tail(m);
         app_ref head(m);
-        svector<bool> neg;
+        bool_vector neg;
         for (unsigned i = 0; i < sz; ++i) {            
             tail.reset();
             neg.reset();

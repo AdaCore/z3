@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef GPARAMS_H_
-#define GPARAMS_H_
+#pragma once
 
 #include "util/params.h"
 
@@ -82,7 +81,9 @@ public:
        "tells" the automatic code generator how to register the parameters for the given
        module.
     */
-    static void register_module(char const * module_name, param_descrs * d); 
+
+    typedef std::function<param_descrs*(void)> lazy_descrs_t;
+    static void register_module(char const* module_name, lazy_descrs_t& get_descrs);
 
     /**
        \brief Add a (small) description to the given module.
@@ -101,8 +102,6 @@ public:
        params_ref const & p = get_module_params("pp")
     */
     static params_ref get_module(char const * module_name);
-    static params_ref get_module(symbol const & module_name);
-
     /**
        \brief Return the global parameter set (i.e., parameters that are not associated with any particular module).
     */
@@ -138,4 +137,3 @@ public:
 
 
 
-#endif

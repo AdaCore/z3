@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef VAR_SUBST_H_
-#define VAR_SUBST_H_
+#pragma once
 
 #include "ast/rewriter/rewriter.h"
 #include "ast/used_vars.h"
@@ -49,6 +48,10 @@ public:
        Otherwise, (VAR 0) is stored in the first position, (VAR 1) in the second, and so on.
     */
     expr_ref operator()(expr * n, unsigned num_args, expr * const * args);
+    inline expr_ref operator()(expr * n, expr_ref_vector const& args) { return (*this)(n, args.size(), args.c_ptr()); }
+    inline expr_ref operator()(expr * n, var_ref_vector const& args) { return (*this)(n, args.size(), (expr*const*)args.c_ptr()); }
+    inline expr_ref operator()(expr * n, app_ref_vector const& args) { return (*this)(n, args.size(), (expr*const*)args.c_ptr()); }
+    inline expr_ref operator()(expr * n, ptr_vector<expr> const& args) { return (*this)(n, args.size(), args.c_ptr()); }
     void reset() { m_reducer.reset(); }
 };
 
@@ -90,6 +93,8 @@ class expr_free_vars {
     ptr_vector<sort> m_sorts;
     ptr_vector<expr> m_todo;
 public:
+    expr_free_vars() {}
+    expr_free_vars(expr* e) { (*this)(e); }
     void reset();
     void operator()(expr* e);
     void accumulate(expr* e);
@@ -102,6 +107,5 @@ public:
     sort*const* c_ptr() const { return m_sorts.c_ptr(); }
 };
 
-#endif
 
 

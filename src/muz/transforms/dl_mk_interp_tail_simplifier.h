@@ -17,8 +17,7 @@ Revision History:
 
 --*/
 
-#ifndef DL_MK_INTERP_TAIL_SIMPLIFIER_H_
-#define DL_MK_INTERP_TAIL_SIMPLIFIER_H_
+#pragma once
 
 #include "muz/base/dl_context.h"
 #include "muz/base/dl_rule_transformer.h"
@@ -38,7 +37,7 @@ namespace datalog {
             unifier        m_unif;
             app_ref        m_head;
             app_ref_vector m_tail;
-            svector<bool>  m_neg;
+            bool_vector  m_neg;
             rule *         m_rule;
 
             void apply(app * a, app_ref& res);
@@ -76,7 +75,7 @@ namespace datalog {
         app_ref_vector    m_tail;
         expr_ref_vector   m_itail_members;
         expr_ref_vector   m_conj;
-        svector<bool>     m_tail_neg;
+        bool_vector     m_tail_neg;
         normalizer_cfg*   m_cfg;
         normalizer_rw*    m_rw;
 
@@ -105,5 +104,4 @@ namespace datalog {
 
 };
 
-#endif /* DL_MK_INTERP_TAIL_SIMPLIFIER_H_ */
 

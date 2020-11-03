@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_RELEVANCY_H_
-#define SMT_RELEVANCY_H_
+#pragma once
 
 #include "ast/ast.h"
 
@@ -94,6 +93,7 @@ namespace smt {
         virtual ~relevancy_propagator() {}
 
         context & get_context() { return m_context; }
+
 
         /**
            \brief Install an event handler that is invoked whenever n is marked as relevant.
@@ -200,5 +200,4 @@ namespace smt {
 
 };
 
-#endif /* SMT_RELEVANCY_H_ */
 

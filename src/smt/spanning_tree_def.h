@@ -16,8 +16,7 @@ Notes:
    
 --*/
 
-#ifndef SPANNING_TREE_DEF_H_
-#define SPANNING_TREE_DEF_H_
+#pragma once
 
 #include "smt/spanning_tree.h"
 
@@ -67,7 +66,7 @@ namespace smt {
     }
 
     template<typename Ext>
-    void thread_spanning_tree<Ext>::get_path(node_id start, node_id end, svector<edge_id> & path, svector<bool> & against) {
+    void thread_spanning_tree<Ext>::get_path(node_id start, node_id end, svector<edge_id> & path, bool_vector & against) {
         node_id join = get_common_ancestor(start, end);
         path.reset();
         while (start != join) {
@@ -282,7 +281,7 @@ namespace smt {
 
         // Check that m_thread traverses each node.
         // This gets checked using union-find as well.
-        svector<bool> found(m_thread.size(), false);
+        bool_vector found(m_thread.size(), false);
         found[root] = true;
         for (node_id x = m_thread[root]; x != root; x = m_thread[x]) {
             SASSERT(x != m_thread[x]);
@@ -486,4 +485,3 @@ namespace smt {
 
 }
 
-#endif

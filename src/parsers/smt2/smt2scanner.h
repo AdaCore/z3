@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT2SCANNER_H_
-#define SMT2SCANNER_H_
+#pragma once
 
 #include<iostream>
 #include "util/symbol.h"
@@ -31,6 +30,7 @@ namespace smt2 {
     
     class scanner {
     private:
+        cmd_context&       ctx;
         bool               m_interactive;
         int                m_spos; // position in the current line of the stream
         char               m_curr;  // current char;
@@ -55,7 +55,6 @@ namespace smt2 {
         svector<char>      m_cache;
         svector<char>      m_cache_result;
         
-        bool               m_smtlib2_compliant;
         
         char curr() const { return m_curr; }
         void new_line() { m_line++; m_spos = 0; }
@@ -102,10 +101,10 @@ namespace smt2 {
         void stop_caching() { m_cache_input = false; }
         unsigned cache_size() const { return m_cache.size(); }
         void reset_cache() { m_cache.reset(); }
+
         char const * cached_str(unsigned begin, unsigned end);
     };
 
 };
 
-#endif /* SCANNER_H_ */
 

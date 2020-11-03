@@ -36,6 +36,7 @@ add_executable(test-z3
   dl_table.cpp
   dl_util.cpp
   doc.cpp
+  egraph.cpp
   escaped.cpp
   ex.cpp
   expr_rand.cpp
@@ -43,6 +44,7 @@ add_executable(test-z3
   ext_numeral.cpp
   f2n.cpp
   factor_rewriter.cpp
+  finder.cpp
   fixed_bit_vector.cpp
   for_each_file.cpp
   get_consequences.cpp
@@ -82,6 +84,8 @@ add_executable(test-z3
   optional.cpp
   parray.cpp
   pb2bv.cpp
+  pdd.cpp
+  pdd_solver.cpp
   permutation.cpp
   polynomial.cpp
   polynorm.cpp
@@ -119,9 +123,12 @@ add_executable(test-z3
   udoc_relation.cpp
   uint_set.cpp
   upolynomial.cpp
+  value_generator.cpp
+  value_sweep.cpp
   var_subst.cpp
   vector.cpp
   lp/lp.cpp
+  lp/nla_solver_test.cpp
   ${z3_test_extra_object_files}
 )
 z3_add_install_tactic_rule(${z3_test_deps})

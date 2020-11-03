@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SAT_CLAUSE_USE_LIST_H_
-#define SAT_CLAUSE_USE_LIST_H_
+#pragma once
 
 #include "sat/sat_types.h"
 #include "util/trace.h"
@@ -73,7 +72,7 @@ namespace sat {
         void erase(clause & c) { 
             STRACE("clause_use_list_bug", tout << "[cul_erase] " << this << " " << &c << "\n";);
             SASSERT(m_clauses.contains(&c)); 
-            SASSERT(c.was_removed()); 
+            // SASSERT(c.was_removed()); 
             m_size--; 
             if (c.is_learned()) --m_num_redundant;
         }
@@ -137,4 +136,3 @@ namespace sat {
 
 };
 
-#endif

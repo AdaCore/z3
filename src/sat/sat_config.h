@@ -17,8 +17,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SAT_CONFIG_H_
-#define SAT_CONFIG_H_
+#pragma once
 
 #include "util/params.h"
 
@@ -49,8 +48,7 @@ namespace sat {
 
     enum branching_heuristic {
         BH_VSIDS,
-        BH_CHB,
-        BH_LRB
+        BH_CHB
     };
 
     enum pb_resolve {
@@ -105,9 +103,11 @@ namespace sat {
         double             m_fast_glue_avg;
         double             m_slow_glue_avg;
         unsigned           m_inprocess_max;
+        symbol             m_inprocess_out;
         double             m_random_freq;
         unsigned           m_random_seed;
         unsigned           m_burst_search;
+        bool               m_enable_pre_simplify;
         unsigned           m_max_conflicts;
         unsigned           m_num_threads;
         bool               m_ddfw_search;
@@ -117,9 +117,19 @@ namespace sat {
         bool               m_local_search;
         local_search_mode  m_local_search_mode;
         bool               m_local_search_dbg_flips;
-        unsigned           m_unit_walk_threads;
-        bool               m_unit_walk;
         bool               m_binspr;
+        bool               m_cut_simplify;
+        unsigned           m_cut_delay;
+        bool               m_cut_aig;
+        bool               m_cut_lut;
+        bool               m_cut_xor;
+        bool               m_cut_npn3;
+        bool               m_cut_dont_cares;
+        bool               m_cut_redundancies;
+        bool               m_cut_force;
+        bool               m_anf_simplify;
+        unsigned           m_anf_delay;
+        bool               m_anf_exlin;
         bool               m_lookahead_simplify;
         bool               m_lookahead_simplify_bca;
         cutoff_t           m_lookahead_cube_cutoff;
@@ -194,4 +204,3 @@ namespace sat {
     };
 };
 
-#endif

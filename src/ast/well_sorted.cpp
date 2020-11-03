@@ -25,6 +25,8 @@ Revision History:
 #include "util/warning.h"
 #include "ast/ast_smt2_pp.h"
 
+namespace {
+
 struct well_sorted_proc {
     ast_manager & m_manager;
     bool          m_error;
@@ -65,16 +67,19 @@ struct well_sorted_proc {
                       );
                 std::ostringstream strm;
                 strm << "Sort mismatch for argument " << i+1 << " of " << mk_ll_pp(n, m_manager, false) << "\n";
-                strm << "Expected sort: " << mk_pp(expected_sort, m_manager) << "\n";
-                strm << "Actual sort:   " << mk_pp(actual_sort, m_manager) << "\n";
-                strm << "Function sort: " << mk_pp(decl, m_manager) << ".";
-                warning_msg("%s", strm.str().c_str());
+                strm << "Expected sort: " << mk_pp(expected_sort, m_manager) << '\n';
+                strm << "Actual sort:   " << mk_pp(actual_sort, m_manager) << '\n';
+                strm << "Function sort: " << mk_pp(decl, m_manager) << '.';
+                auto str = strm.str();
+                warning_msg("%s", str.c_str());
                 m_error = true;
                 return;
             }
         }
     }
 };
+
+}
 
 bool is_well_sorted(ast_manager const & m, expr * n) {
     well_sorted_proc p(const_cast<ast_manager&>(m));

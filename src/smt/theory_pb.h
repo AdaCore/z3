@@ -356,9 +356,9 @@ namespace smt {
         literal_vector    m_antecedents;
         tracked_uint_set  m_active_var_set;
         expr_ref_vector   m_antecedent_exprs;
-        svector<bool>     m_antecedent_signs;
+        bool_vector     m_antecedent_signs;
         expr_ref_vector   m_cardinality_exprs;
-        svector<bool>     m_cardinality_signs;
+        bool_vector     m_cardinality_signs;
 
         void normalize_active_coeffs();
         void inc_coeff(literal l, int offset);
@@ -404,7 +404,7 @@ namespace smt {
         justification* justify(literal_vector const& lits);
 
     public:
-        theory_pb(ast_manager& m, theory_pb_params& p);
+        theory_pb(context& ctx);
         
         ~theory_pb() override;
 

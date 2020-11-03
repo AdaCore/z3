@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef HASH_H_
-#define HASH_H_
+#pragma once
 
 #include<algorithm>
 #include "util/util.h"
@@ -68,16 +67,21 @@ inline unsigned hash_u_u(unsigned a, unsigned b) {
 
 unsigned string_hash(const char * str, unsigned len, unsigned init_value);
 
+inline unsigned unsigned_ptr_hash(unsigned const* vec, unsigned len, unsigned init_value) {
+    return string_hash((char const*)(vec), len*4, init_value);
+}
+
 template<typename Composite, typename GetKindHashProc, typename GetChildHashProc>
 unsigned get_composite_hash(Composite app, unsigned n, GetKindHashProc const & khasher = GetKindHashProc(), GetChildHashProc const & chasher = GetChildHashProc()) {
     unsigned a, b, c;
-    SASSERT(n > 0);
     unsigned kind_hash = khasher(app);
 
     a = b = 0x9e3779b9;
     c = 11;    
 
     switch (n) {
+    case 0:
+        return c;
     case 1:
         a += kind_hash;
         b  = chasher(app, 0);
@@ -245,5 +249,4 @@ inline unsigned mk_mix(unsigned a, unsigned b, unsigned c) {
     return c;
 }
 
-#endif /* HASH_H_ */
 

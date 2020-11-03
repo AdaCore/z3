@@ -18,8 +18,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef NLSAT_SOLVER_H_
-#define NLSAT_SOLVER_H_
+#pragma once
 
 #include "nlsat/nlsat_types.h"
 #include "util/params.h"
@@ -38,7 +37,10 @@ namespace nlsat {
 
     class solver {
         struct imp;
+        struct ctx;
         imp * m_imp;
+        ctx * m_ctx;
+        solver(ctx& c);
     public:
         solver(reslimit& rlim, params_ref const & p, bool incremental);
         ~solver();
@@ -262,4 +264,3 @@ namespace nlsat {
 
 };
 
-#endif

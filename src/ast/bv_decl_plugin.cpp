@@ -131,12 +131,8 @@ void bv_decl_plugin::finalize() {
 
     DEC_REF(m_int2bv);
     DEC_REF(m_bv2int);
-    vector<ptr_vector<func_decl> >::iterator it  = m_bit2bool.begin();
-    vector<ptr_vector<func_decl> >::iterator end = m_bit2bool.end();
-    for (; it != end; ++it) {
-        ptr_vector<func_decl> & ds = *it;
+    for (auto& ds : m_bit2bool)
         DEC_REF(ds);
-    }
     DEC_REF(m_mkbv);
 }
 
@@ -151,7 +147,7 @@ void bv_decl_plugin::mk_bv_sort(unsigned bv_size) {
         else {
             sz = sort_size(rational::power_of_two(bv_size));
         }
-        m_bv_sorts[bv_size] = m_manager->mk_sort(symbol("bv"), sort_info(m_family_id, BV_SORT, sz, 1, &p));
+        m_bv_sorts[bv_size] = m_manager->mk_sort(m_bv_sym, sort_info(m_family_id, BV_SORT, sz, 1, &p));
         m_manager->inc_ref(m_bv_sorts[bv_size]);
     }
 }
@@ -163,7 +159,7 @@ inline sort * bv_decl_plugin::get_bv_sort(unsigned bv_size) {
     }
     parameter p(bv_size);
     sort_size sz(sort_size::mk_very_big());
-    return m_manager->mk_sort(symbol("bv"), sort_info(m_family_id, BV_SORT, sz, 1, &p));
+    return m_manager->mk_sort(m_bv_sym, sort_info(m_family_id, BV_SORT, sz, 1, &p));
 }
 
 sort * bv_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, parameter const * parameters) {
@@ -815,6 +811,14 @@ bool bv_recognizers::is_zero(expr const * n) const {
     return decl->get_parameter(0).get_rational().is_zero();
 }
 
+bool bv_recognizers::is_one(expr const* n) const {
+    if (!is_app_of(n, get_fid(), OP_BV_NUM)) {
+        return false;
+    }
+    func_decl* decl = to_app(n)->get_decl();
+    return decl->get_parameter(0).get_rational().is_one();
+}
+
 bool bv_recognizers::is_extract(expr const* e, unsigned& low, unsigned& high, expr*& b) const {
     if (!is_extract(e)) return false;
     low = get_extract_low(e);
@@ -826,6 +830,14 @@ bool bv_recognizers::is_extract(expr const* e, unsigned& low, unsigned& high, ex
 bool bv_recognizers::is_bv2int(expr const* e, expr*& r) const {
     if (!is_bv2int(e)) return false;
     r = to_app(e)->get_arg(0);
+    return true;
+}
+
+bool bv_recognizers::is_bit2bool(expr* e, expr*& bv, unsigned& idx) const {
+    if (!is_bit2bool(e))
+        return false;
+    bv = to_app(e)->get_arg(0);
+    idx = to_app(e)->get_parameter(0).get_int();
     return true;
 }
 
@@ -855,9 +867,9 @@ bool bv_recognizers::mult_inverse(rational const & n, unsigned bv_size, rational
 bv_util::bv_util(ast_manager & m):
     bv_recognizers(m.mk_family_id(symbol("bv"))),
     m_manager(m) {
-    SASSERT(m.has_plugin(symbol("bv")));
     m_plugin = static_cast<bv_decl_plugin*>(m.get_plugin(m.mk_family_id("bv")));
-}
+    SASSERT(m.has_plugin(symbol("bv")));
+    }
 
 app * bv_util::mk_numeral(rational const & val, sort* s) const {
     if (!is_bv_sort(s)) {

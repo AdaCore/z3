@@ -16,25 +16,15 @@ Author:
 Revision History:
 
 --*/
-#ifndef MPN_H_
-#define MPN_H_
+#pragma once
 
 #include<ostream>
-#include<mutex>
 #include "util/util.h"
 #include "util/buffer.h"
 
 typedef unsigned int mpn_digit;
 
 class mpn_manager {
-#ifndef SINGLE_THREAD
-    std::recursive_mutex m_lock;
-#define MPN_BEGIN_CRITICAL() m_lock.lock()
-#define MPN_END_CRITICAL() m_lock.unlock()
-#else
-#define MPN_BEGIN_CRITICAL() {}
-#define MPN_END_CRITICAL()   {}
-#endif
 
 public:
     mpn_manager();
@@ -90,7 +80,6 @@ private:
     #endif
 
     static const mpn_digit zero;
-    mpn_sbuffer u, v, t_ms, t_ab;
     void display_raw(std::ostream & out, mpn_digit const * a, size_t lng) const;
 
     size_t div_normalize(mpn_digit const * numer, size_t lnum,
@@ -116,4 +105,3 @@ private:
     void trace_nl(mpn_digit const * a, size_t lnga) const;
 };
 
-#endif

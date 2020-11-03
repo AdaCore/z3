@@ -165,17 +165,25 @@ namespace smt {
             m_plugin->add(q);
         }
 
+        bool has_quantifiers() const { return !m_quantifiers.empty(); }
+
         void display_stats(std::ostream & out, quantifier * q) {
             quantifier_stat * s     = get_stat(q);
             unsigned num_instances  = s->get_num_instances();
+            unsigned num_instances_simplify_true = s->get_num_instances_simplify_true();
+            unsigned num_instances_checker_sat  = s->get_num_instances_checker_sat();
             unsigned max_generation = s->get_max_generation();
             float max_cost          = s->get_max_cost();
-            if (num_instances > 0) {
+            if (num_instances > 0 || num_instances_simplify_true>0 || num_instances_checker_sat>0) {
                 out << "[quantifier_instances] ";
                 out.width(10);
                 out << q->get_qid().str() << " : ";
                 out.width(6);
                 out << num_instances << " : ";
+                out.width(3);
+                out << num_instances_simplify_true << " : ";
+                out.width(3);
+                out << num_instances_checker_sat << " : ";
                 out.width(3);
                 out << max_generation << " : " << max_cost << "\n";
             }
@@ -195,6 +203,34 @@ namespace smt {
 
         bool is_shared(enode * n) const {
             return m_plugin->is_shared(n);
+        }
+
+        void log_causality(
+            fingerprint* f,
+            app * pat,
+            vector<std::tuple<enode *, enode *>> & used_enodes) {
+
+            if (pat != nullptr) {
+                if (used_enodes.size() > 0) {
+                    STRACE("causality", tout << "New-Match: "<< static_cast<void*>(f););
+                    STRACE("triggers",  tout <<", Pat: "<< expr_ref(pat, m()););
+                    STRACE("causality", tout <<", Father:";);
+                }
+                for (auto n : used_enodes) {
+                    enode *orig = std::get<0>(n);
+                    enode *substituted = std::get<1>(n);
+                    (void) substituted;
+                    if (orig == nullptr) {
+                        STRACE("causality", tout << " #" << substituted->get_owner_id(););
+                    }
+                    else {
+                        STRACE("causality", tout << " (#" << orig->get_owner_id() << " #" << substituted->get_owner_id() << ")";);
+                    }
+                }
+                if (used_enodes.size() > 0) {
+                    STRACE("causality", tout << "\n";);
+                }
+            }
         }
 
         void log_add_instance(
@@ -259,6 +295,7 @@ namespace smt {
                           unsigned min_top_generation,
                           unsigned max_top_generation,
                           vector<std::tuple<enode *, enode *>> & used_enodes) {
+
             max_generation = std::max(max_generation, get_generation(q));
             if (m_num_instances > m_params.m_qi_max_instances) {
                 return false;
@@ -266,6 +303,9 @@ namespace smt {
             get_stat(q)->update_max_generation(max_generation);
             fingerprint * f = m_context.add_fingerprint(q, q->get_id(), num_bindings, bindings, def);
             if (f) {
+                if (is_trace_enabled("causality")) {
+                    log_causality(f,pat,used_enodes);
+                }
                 if (has_trace_stream()) {
                     log_add_instance(f, q, pat, num_bindings, bindings, used_enodes);
                 }
@@ -273,10 +313,10 @@ namespace smt {
                 m_num_instances++;
             }
 
-            CTRACE("quantifier_", f != nullptr, 
-                  tout << expr_ref(q, m()) << " ";
+            CTRACE("bindings", f != nullptr, 
+                  tout << expr_ref(q, m()) << "\n";
                   for (unsigned i = 0; i < num_bindings; ++i) {
-                      tout << expr_ref(bindings[i]->get_owner(), m()) << " ";
+                      tout << expr_ref(bindings[i]->get_owner(), m()) << " [r " << bindings[i]->get_root()->get_owner_id() << "] ";
                   }
                   tout << "\n";
                   );
@@ -330,7 +370,7 @@ namespace smt {
         }
 
         bool check_quantifier(quantifier* q) {
-            return m_context.is_relevant(q) && m_context.get_assignment(q) == l_true; // && !m().is_rec_fun_def(q);
+            return m_context.is_relevant(q) && m_context.get_assignment(q) == l_true;
         }
 
         bool quick_check_quantifiers() {
@@ -387,6 +427,9 @@ namespace smt {
     quantifier_manager::quantifier_manager(context & ctx, smt_params & fp, params_ref const & p) {
         m_imp = alloc(imp, *this, ctx, fp, mk_default_plugin());
         m_imp->m_plugin->set_manager(*this);
+        m_lazy_scopes = 0;
+        m_lazy = true;
+        
     }
 
     quantifier_manager::~quantifier_manager() {
@@ -397,12 +440,11 @@ namespace smt {
         return m_imp->m_context;
     }
 
-    void quantifier_manager::set_plugin(quantifier_manager_plugin * plugin) {
-        m_imp->m_plugin = plugin;
-        plugin->set_manager(*this);
-    }
-
     void quantifier_manager::add(quantifier * q, unsigned generation) {
+        if (m_lazy) {
+            while (m_lazy_scopes-- > 0) m_imp->push();
+            m_lazy = false;
+        }
         m_imp->add(q, generation);
     }
 
@@ -478,6 +520,10 @@ namespace smt {
         return m_imp->m_plugin->model_based();
     }
 
+    bool quantifier_manager::has_quantifiers() const {
+        return m_imp->has_quantifiers();
+    }
+
     bool quantifier_manager::mbqi_enabled(quantifier *q) const {
         return m_imp->m_plugin->mbqi_enabled(q);
     }
@@ -490,12 +536,18 @@ namespace smt {
         return m_imp->check_model(m, root2value);
     }
 
-    void quantifier_manager::push() {
-        m_imp->push();
+    void quantifier_manager::push() {        
+        if (m_lazy) 
+            ++m_lazy_scopes;
+        else 
+            m_imp->push();
     }
 
     void quantifier_manager::pop(unsigned num_scopes) {
-        m_imp->pop(num_scopes);
+        if (m_lazy)
+            m_lazy_scopes -= num_scopes;
+        else
+            m_imp->pop(num_scopes);
     }
 
     void quantifier_manager::reset() {
@@ -558,7 +610,7 @@ namespace smt {
         }
 
         void set_manager(quantifier_manager & qm) override {
-            SASSERT(m_qm == 0);
+            SASSERT(m_qm == nullptr);
             m_qm            = &qm;
             m_context       = &(qm.get_context());
             m_fparams       = &(m_context->get_fparams());
@@ -590,6 +642,7 @@ namespace smt {
            mbqi.id to be instantiated with MBQI. The default value is the
            empty string, so all quantifiers are instantiated. */
         void add(quantifier * q) override {
+            TRACE("model_finder", tout << "add " << q->get_id() << ": " << q << " " << m_fparams->m_mbqi << " " << mbqi_enabled(q) << "\n";);
             if (m_fparams->m_mbqi && mbqi_enabled(q)) {
                 m_active = true;
                 m_model_finder->register_quantifier(q);
@@ -601,34 +654,26 @@ namespace smt {
         void push() override {
             m_mam->push_scope();
             m_lazy_mam->push_scope();
-            if (m_fparams->m_mbqi) {
-                m_model_finder->push_scope();
-            }
+            m_model_finder->push_scope();            
         }
 
         void pop(unsigned num_scopes) override {
             m_mam->pop_scope(num_scopes);
             m_lazy_mam->pop_scope(num_scopes);
-            if (m_fparams->m_mbqi) {
-                m_model_finder->pop_scope(num_scopes);
-            }
+            m_model_finder->pop_scope(num_scopes);            
         }
 
         void init_search_eh() override {
             m_lazy_matching_idx = 0;
-            if (m_fparams->m_mbqi) {
-                m_model_finder->init_search_eh();
-                m_model_checker->init_search_eh();
-            }
+            m_model_finder->init_search_eh();
+            m_model_checker->init_search_eh();            
         }
 
         void assign_eh(quantifier * q) override {
             m_active = true;
             ast_manager& m = m_context->get_manager();
+            (void)m;
             if (!m_fparams->m_ematching) {
-                return;
-            }
-            if (false && m.is_rec_fun_def(q) && mbqi_enabled(q)) {
                 return;
             }
             bool has_unary_pattern = false;
@@ -647,11 +692,7 @@ namespace smt {
                 app * mp = to_app(q->get_pattern(i));
                 SASSERT(m.is_pattern(mp));
                 bool unary = (mp->get_num_args() == 1);
-                if (m.is_rec_fun_def(q) && i > 0) {
-                    // add only the first pattern
-                    TRACE("quantifier", tout << "skip recursive function body " << mk_ismt2_pp(mp, m) << "\n";);
-                }
-                else if (!unary && j >= num_eager_multi_patterns) {
+                if (!unary && j >= num_eager_multi_patterns) {
                     TRACE("quantifier", tout << "delaying (too many multipatterns):\n" << mk_ismt2_pp(mp, m) << "\n"
                           << "j: " << j << " unary: " << unary << " m_params.m_qi_max_eager_multipatterns: " << m_fparams->m_qi_max_eager_multipatterns
                           << " num_eager_multi_patterns: " << num_eager_multi_patterns << "\n";);
@@ -683,7 +724,7 @@ namespace smt {
         }
 
         bool can_propagate() const override {
-            return m_mam->has_work();
+            return m_active && m_mam->has_work();
         }
 
         void restart_eh() override {
@@ -705,6 +746,8 @@ namespace smt {
         }
 
         void propagate() override {
+            if (!m_active)
+                return;
             m_mam->match();
             if (!m_context->relevancy() && use_ematching()) {
                 ptr_vector<enode>::const_iterator it  = m_context->begin_enodes();

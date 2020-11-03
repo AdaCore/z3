@@ -62,7 +62,6 @@ extern "C" {
         }
         sort * _ty = to_sort(ty);
         bool is_float = mk_c(c)->fpautil().is_float(_ty);
-        std::string fixed_num;
         char const* m = n;
         while (*m) {
             if (!(('0' <= *m && *m <= '9') ||
@@ -83,7 +82,7 @@ extern "C" {
             // avoid expanding floats into huge rationals.
             fpa_util & fu = mk_c(c)->fpautil();
             scoped_mpf t(fu.fm());
-            fu.fm().set(t, fu.get_ebits(_ty), fu.get_sbits(_ty), MPF_ROUND_TOWARD_ZERO, n);
+            fu.fm().set(t, fu.get_ebits(_ty), fu.get_sbits(_ty), MPF_ROUND_NEAREST_TEVEN, n);
             a = fu.mk_value(t);
             mk_c(c)->save_ast_trail(a);
         }
@@ -181,6 +180,27 @@ extern "C" {
     }
 
 
+    Z3_string Z3_API Z3_get_numeral_binary_string(Z3_context c, Z3_ast a) {
+        Z3_TRY;
+        // This function invokes Z3_get_numeral_rational, but it is still ok to add LOG command here because it does not return a Z3 object.
+        LOG_Z3_get_numeral_binary_string(c, a);
+        RESET_ERROR_CODE();
+        CHECK_IS_EXPR(a, "");
+        rational r;
+        bool ok = Z3_get_numeral_rational(c, a, r);
+        if (ok && r.is_int() && !r.is_neg()) {
+            std::stringstream strm;
+            r.display_bin(strm, r.get_num_bits());
+            return mk_c(c)->mk_external_string(strm.str());
+        }
+        else {
+            SET_ERROR_CODE(Z3_INVALID_ARG, nullptr);
+            return "";
+        }
+        Z3_CATCH_RETURN("");
+
+    }
+
     Z3_string Z3_API Z3_get_numeral_string(Z3_context c, Z3_ast a) {
         Z3_TRY;
         // This function invokes Z3_get_numeral_rational, but it is still ok to add LOG command here because it does not return a Z3 object.
@@ -239,13 +259,21 @@ extern "C" {
         expr* e = to_expr(a);
         fpa_util & fu = mk_c(c)->fpautil();
         scoped_mpf tmp(fu.fm());
-        if (!mk_c(c)->fpautil().is_numeral(e, tmp) ||
-            tmp.get().get_ebits() > 11 ||
-            tmp.get().get_sbits() > 53) {
-            SET_ERROR_CODE(Z3_INVALID_ARG, nullptr);
-            return NAN;
+        if (mk_c(c)->fpautil().is_numeral(e, tmp)) {
+            if (tmp.get().get_ebits() > 11 ||
+                tmp.get().get_sbits() > 53) {
+                SET_ERROR_CODE(Z3_INVALID_ARG, nullptr);
+                return NAN;
+            }
+            return fu.fm().to_double(tmp);
         }
-        return fu.fm().to_double(tmp);
+        rational r;
+        arith_util & u = mk_c(c)->autil();
+        if (u.is_numeral(e, r)) {
+            return r.get_double();
+        }
+        SET_ERROR_CODE(Z3_INVALID_ARG, nullptr);
+        return 0.0;
     }
 
     Z3_string Z3_API Z3_get_numeral_decimal_string(Z3_context c, Z3_ast a, unsigned precision) {

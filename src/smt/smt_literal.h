@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_LITERAL_H_
-#define SMT_LITERAL_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "smt/smt_types.h"
@@ -62,6 +61,8 @@ namespace smt {
         friend literal to_literal(int x);
 
         void display(std::ostream & out, ast_manager & m, expr * const * bool_var2expr_map) const;
+
+        void display_smt2(std::ostream & out, ast_manager & m, expr * const * bool_var2expr_map) const;
 
         void display_compact(std::ostream & out, expr * const * bool_var2expr_map) const;
 
@@ -118,5 +119,4 @@ namespace smt {
     bool backward_subsumption(unsigned num_lits1, literal const * lits1, unsigned num_lits2, literal const * lits2);
 };
 
-#endif /* SMT_LITERAL_H_ */
 

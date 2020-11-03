@@ -47,7 +47,7 @@ public:
     bv_size_reduction_tactic(ast_manager & m) :
         m(m),
         m_util(m),
-        m_replacer(mk_default_expr_replacer(m)) {
+        m_replacer(mk_default_expr_replacer(m, false)) {
     }
 
     tactic * translate(ast_manager & m) override {
@@ -68,39 +68,39 @@ public:
 
     void update_signed_lower(app * v, numeral const & k) {
         // k <= v
-        obj_map<app, numeral>::obj_map_entry * entry = m_signed_lowers.insert_if_not_there2(v, k);
-        if (entry->get_data().m_value < k) {
+        auto& value = m_signed_lowers.insert_if_not_there(v, k);
+        if (value < k) {
             // improve bound
-            entry->get_data().m_value = k;
+            value = k;
         }
     }
 
     void update_signed_upper(app * v, numeral const & k) {
         // v <= k
-        obj_map<app, numeral>::obj_map_entry * entry = m_signed_uppers.insert_if_not_there2(v, k);
-        if (k < entry->get_data().m_value) {
+        auto& value = m_signed_uppers.insert_if_not_there(v, k);
+        if (k < value) {
             // improve bound
-            entry->get_data().m_value = k;
+            value = k;
         }
     }
     
     void update_unsigned_lower(app * v, numeral const & k) {
         SASSERT(k > numeral(0));
         // k <= v
-        obj_map<app, numeral>::obj_map_entry * entry = m_unsigned_lowers.insert_if_not_there2(v, k);
-        if (entry->get_data().m_value < k) {
+        auto& value = m_unsigned_lowers.insert_if_not_there(v, k);
+        if (value < k) {
             // improve bound
-            entry->get_data().m_value = k;
+            value = k;
         }
     }
 
     void update_unsigned_upper(app * v, numeral const & k) {
         SASSERT(k > numeral(0));
         // v <= k
-        obj_map<app, numeral>::obj_map_entry * entry = m_unsigned_uppers.insert_if_not_there2(v, k);
-        if (k < entry->get_data().m_value) {
+        auto& value = m_unsigned_uppers.insert_if_not_there(v, k);
+        if (k < value) {
             // improve bound
-            entry->get_data().m_value = k;
+            value = k;
         }
     }
 
@@ -171,7 +171,7 @@ public:
     }
     
     void checkpoint() {
-        if (m.canceled())
+        if (!m.inc())
             throw tactic_exception(m.limit().get_cancel_msg());
     }
     
@@ -184,7 +184,7 @@ public:
         m_mc = nullptr;
         unsigned num_reduced = 0;
         {
-            tactic_report report("bv-size-reduction", g);
+            tactic_report report("reduce-bv-size", g);
             collect_bounds(g);
             
             // create substitution
@@ -372,16 +372,15 @@ public:
 
 void bv_size_reduction_tactic::operator()(goal_ref const & g, 
                                           goal_ref_buffer & result) {
-    SASSERT(g->is_well_sorted());
     fail_if_proof_generation("bv-size-reduction", g);
     fail_if_unsat_core_generation("bv-size-reduction", g);
+    TRACE("goal", g->display(tout););
     result.reset();
     model_converter_ref mc;
     run(*(g.get()), mc);
     g->inc_depth();
     g->add(mc.get());
     result.push_back(g.get());
-    SASSERT(g->is_well_sorted());
 }
 }
 

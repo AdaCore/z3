@@ -258,14 +258,13 @@ class factor_tactic : public tactic {
 
         void operator()(goal_ref const & g,
                         goal_ref_buffer & result) {
-            SASSERT(g->is_well_sorted());
             tactic_report report("factor", *g);
             bool produce_proofs = g->proofs_enabled();
 
             expr_ref   new_curr(m);
             proof_ref  new_pr(m);
             unsigned   size = g->size();
-            for (unsigned idx = 0; idx < size; idx++) {
+            for (unsigned idx = 0; !g->inconsistent() && idx < size; idx++) {
                 expr * curr = g->form(idx);
                 m_rw(curr, new_curr, new_pr);
                 if (produce_proofs) {
@@ -276,8 +275,6 @@ class factor_tactic : public tactic {
             }
             g->inc_depth();
             result.push_back(g.get());
-            TRACE("factor", g->display(tout););
-            SASSERT(g->is_well_sorted());
         }
     };
 

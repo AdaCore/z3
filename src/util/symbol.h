@@ -16,10 +16,10 @@ Author:
 Revision History:
 
 --*/
-#ifndef SYMBOL_H_
-#define SYMBOL_H_
-#include<ostream>
-#include<climits>
+#pragma once
+#include <climits>
+#include <string>
+#include <ostream>
 
 #include "util/util.h"
 #include "util/tptr.h"
@@ -54,6 +54,7 @@ public:
         m_data(nullptr) {
     }
     explicit symbol(char const * d);
+    explicit symbol(const std::string & str) : symbol(str.c_str()) {}
     explicit symbol(unsigned idx):
         m_data(BOXTAGINT(char const *, idx, 1)) {
 #if !defined(__LP64__) && !defined(_WIN64)
@@ -66,6 +67,8 @@ public:
     friend bool operator==(symbol const & s1, symbol const & s2) { return s1.m_data == s2.m_data; }
     friend bool operator!=(symbol const & s1, symbol const & s2) { return s1.m_data != s2.m_data; }
     bool is_numerical() const { return GET_TAG(m_data) == 1; }
+    bool is_null() const { return m_data == nullptr; }
+    bool is_non_empty_string() const { return !is_null() && !is_numerical() && 0 != bare_str()[0]; }
     unsigned int get_num() const { SASSERT(is_numerical()); return UNBOXINT(m_data); }
     std::string str() const;
     friend bool operator==(symbol const & s1, char const * s2) {
@@ -78,11 +81,10 @@ public:
         return s1.str() == s2;
     }
     friend bool operator!=(symbol const & s1, char const * s2) { return !operator==(s1, s2); }
-    void const * c_ptr() const { return m_data; }
-    // Low level function.
-    // It is the inverse of c_ptr().
-    // It was made public to simplify the implementation of the C API.
-    static symbol mk_symbol_from_c_ptr(void const * ptr) { 
+    
+    // C-API only functions
+    void * c_api_symbol2ext() const { return const_cast<char*>(m_data); }
+    static symbol c_api_ext2symbol(void const * ptr) { 
         return symbol(ptr);
     }
     unsigned hash() const { 
@@ -91,7 +93,7 @@ public:
         else return static_cast<unsigned>(reinterpret_cast<size_t const *>(m_data)[-1]);
     }
     bool contains(char c) const;
-    unsigned size() const;
+    unsigned display_size() const;
     char const * bare_str() const { SASSERT(!is_numerical()); return m_data; }
     friend std::ostream & operator<<(std::ostream & target, symbol s) {
         SASSERT(!s.is_marked());
@@ -151,5 +153,4 @@ void finalize_symbols();
 // two non-numerical symbols are compared using string comparison.
 bool lt(symbol const & s1, symbol const & s2);
 
-#endif /* SYMBOL_H_ */
 

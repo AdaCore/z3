@@ -17,8 +17,7 @@ Revision History:
 
 --*/
 
-#ifndef DL_MK_EXPLANATIONS_H_
-#define DL_MK_EXPLANATIONS_H_
+#pragma once
 
 #include "muz/base/dl_context.h"
 #include "muz/base/dl_rule_transformer.h"
@@ -66,6 +65,8 @@ namespace datalog {
         */
         mk_explanations(context & ctx);
 
+        ~mk_explanations() override;
+
         /**
            \brief Return explanation predicate that corresponds to \c orig_decl.
         */
@@ -82,5 +83,4 @@ namespace datalog {
     };
 };
 
-#endif /* DL_MK_EXPLANATIONS_H_ */
 

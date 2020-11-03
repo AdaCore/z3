@@ -18,8 +18,7 @@ Revision History:
     Extracted from dl_context
 
 --*/
-#ifndef REL_CONTEXT_H_
-#define REL_CONTEXT_H_
+#pragma once
 #include "ast/ast.h"
 #include "muz/rel/dl_relation_manager.h"
 #include "muz/rel/dl_instruction.h"
@@ -91,6 +90,8 @@ namespace datalog {
 
         void transform_rules() override;
 
+        model_ref get_model() override;
+
         bool try_get_size(func_decl* pred, unsigned& rel_size) const override;
         /**
            \brief query result if it contains fact.
@@ -126,4 +127,3 @@ namespace datalog {
     };
 };
 
-#endif /* REL_CONTEXT_H_ */

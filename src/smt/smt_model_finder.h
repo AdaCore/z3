@@ -43,13 +43,15 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_MODEL_FINDER_H_
-#define SMT_MODEL_FINDER_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/func_decl_dependencies.h"
+#include "model/model_macro_solver.h"
 #include "smt/proto_model/proto_model.h"
 #include "tactic/tactic_exception.h"
+
+class model_instantiation_set;
 
 namespace smt {
     class context;
@@ -60,17 +62,14 @@ namespace smt {
         class auf_solver;
         class simple_macro_solver;
         class hint_solver;
-        class non_auf_macro_solver;
+        class non_auf_macro_solver;  
         class instantiation_set;
     };
         
-    class model_finder {
+    class model_finder : public quantifier2macro_infos {
         typedef mf::quantifier_analyzer        quantifier_analyzer;
         typedef mf::quantifier_info            quantifier_info;
         typedef mf::auf_solver                 auf_solver;
-        typedef mf::simple_macro_solver        simple_macro_solver;
-        typedef mf::hint_solver                hint_solver;
-        typedef mf::non_auf_macro_solver       non_auf_macro_solver;
         typedef mf::instantiation_set          instantiation_set;
 
         ast_manager &                          m;
@@ -80,9 +79,6 @@ namespace smt {
         obj_map<quantifier, quantifier_info *> m_q2info;
         ptr_vector<quantifier>                 m_quantifiers;
         func_decl_dependencies                 m_dependencies;
-        scoped_ptr<simple_macro_solver>        m_sm_solver;
-        scoped_ptr<hint_solver>                m_hint_solver;
-        scoped_ptr<non_auf_macro_solver>       m_nm_solver;
         
         struct scope {
             unsigned                           m_quantifiers_lim;
@@ -93,20 +89,20 @@ namespace smt {
         expr_ref_vector                        m_new_constraints; // new constraints for fresh constants created by the model finder
 
         void restore_quantifiers(unsigned old_size);
-        quantifier_info * get_quantifier_info(quantifier * q) const;
+        quantifier_info * get_quantifier_info(quantifier * q);
         void collect_relevant_quantifiers(ptr_vector<quantifier> & qs) const;
         void cleanup_quantifier_infos(ptr_vector<quantifier> const & qs);
         void process_simple_macros(ptr_vector<quantifier> & qs, ptr_vector<quantifier> & residue, proto_model * m);
         void process_hint_macros(ptr_vector<quantifier> & qs, ptr_vector<quantifier> & residue, proto_model * m);
         void process_non_auf_macros(ptr_vector<quantifier> & qs, ptr_vector<quantifier> & residue, proto_model * m);
         void process_auf(ptr_vector<quantifier> const & qs, proto_model * m);
-        instantiation_set const * get_uvar_inst_set(quantifier * q, unsigned i) const;
+        instantiation_set const * get_uvar_inst_set(quantifier * q, unsigned i);
         void checkpoint();
 
 
     public:
         model_finder(ast_manager & m);
-        ~model_finder();
+        ~model_finder() override;
         void set_context(context * ctx);
         
         void register_quantifier(quantifier * q);
@@ -116,14 +112,16 @@ namespace smt {
         void init_search_eh();
         void fix_model(proto_model * m);
 
-        quantifier * get_flat_quantifier(quantifier * q) const;
-        expr * get_inv(quantifier * q, unsigned i, expr * val, unsigned & generation) const;
+        quantifier * get_flat_quantifier(quantifier * q);
+        expr * get_inv(quantifier * q, unsigned i, expr * val, unsigned & generation);
         bool restrict_sks_to_inst_set(context * aux_ctx, quantifier * q, expr_ref_vector const & sks);
 
         void restart_eh();
 
         void checkpoint(char const* component);
+
+        quantifier_macro_info* operator()(quantifier* q) override;
+
     };
 };
 
-#endif

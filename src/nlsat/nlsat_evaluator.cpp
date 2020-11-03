@@ -43,7 +43,7 @@ namespace nlsat {
             svector<section>   m_sections;
             unsigned_vector    m_sorted_sections; // refs to m_sections
             unsigned_vector    m_poly_sections;   // refs to m_sections
-            svector<int>       m_poly_signs;
+            svector<sign>  m_poly_signs;
             struct poly_info {
                 unsigned       m_num_roots;
                 unsigned       m_first_section;   // idx in m_poly_sections;
@@ -149,18 +149,18 @@ namespace nlsat {
                \brief Add polynomial with the given roots and signs.
             */
             unsigned_vector p_section_ids;
-            void add(anum_vector & roots, svector<int> & signs) {
+            void add(anum_vector & roots, svector<sign> & signs) {
                 p_section_ids.reset();
                 if (!roots.empty())
                     merge(roots, p_section_ids);
                 unsigned first_sign    = m_poly_signs.size();
                 unsigned first_section = m_poly_sections.size();
-                unsigned num_signs = signs.size();
+                unsigned num_poly_signs = signs.size();
                 // Must normalize signs since we use arithmetic operations such as *
                 // during evaluation.
                 // Without normalization, overflows may happen, and wrong results may be produced.
-                for (unsigned i = 0; i < num_signs; i++)
-                    m_poly_signs.push_back(normalize_sign(signs[i]));
+                for (unsigned i = 0; i < num_poly_signs; i++)
+                    m_poly_signs.push_back(signs[i]);
                 m_poly_sections.append(p_section_ids);
                 m_info.push_back(poly_info(roots.size(), first_section, first_sign));
                 SASSERT(check_invariant());
@@ -169,10 +169,10 @@ namespace nlsat {
             /**
                \brief Add constant polynomial 
             */
-            void add_const(int sign) {
+            void add_const(sign sign) {
                 unsigned first_sign    = m_poly_signs.size();
                 unsigned first_section = m_poly_sections.size();
-                m_poly_signs.push_back(normalize_sign(sign));
+                m_poly_signs.push_back(sign);
                 m_info.push_back(poly_info(0, first_section, first_sign));
             }
 
@@ -226,12 +226,12 @@ namespace nlsat {
             }
             
             // Return the sign idx of pinfo
-            int sign(poly_info const & pinfo, unsigned i) const {
+            ::sign get_sign(poly_info const & pinfo, unsigned i) const {
                 return m_poly_signs[pinfo.m_first_sign + i];
             }
             
 #define LINEAR_SEARCH_THRESHOLD 8
-            int sign_at(unsigned info_id, unsigned c) const {
+            ::sign sign_at(unsigned info_id, unsigned c) const {
                 poly_info const & pinfo  = m_info[info_id];
                 unsigned num_roots = pinfo.m_num_roots;
                 if (num_roots < LINEAR_SEARCH_THRESHOLD) {
@@ -239,23 +239,23 @@ namespace nlsat {
                     for (; i < num_roots; i++) {
                         unsigned section_cell_id = cell_id(pinfo, i);
                         if (section_cell_id == c)
-                            return 0;
+                            return sign_zero;
                         else if (section_cell_id > c)
                             break;
                     }
-                    return sign(pinfo, i);
+                    return get_sign(pinfo, i);
                 }
                 else {
                     if (num_roots == 0)
-                        return sign(pinfo, 0);
+                        return get_sign(pinfo, 0);
                     unsigned root_1_cell_id = cell_id(pinfo, 0);
                     unsigned root_n_cell_id = cell_id(pinfo, num_roots - 1);
                     if (c < root_1_cell_id)
-                        return sign(pinfo, 0);
+                        return get_sign(pinfo, 0);
                     else if (c == root_1_cell_id || c == root_n_cell_id)
-                        return 0;
+                        return sign_zero;
                     else if (c > root_n_cell_id)
-                        return sign(pinfo, num_roots);
+                        return get_sign(pinfo, num_roots);
                     int low  = 0;
                     int high = num_roots-1;
                     while (true) {
@@ -265,14 +265,14 @@ namespace nlsat {
                         if (high == low + 1) {
                             SASSERT(cell_id(pinfo, low) < c);
                             SASSERT(c < cell_id(pinfo, low+1));
-                            return sign(pinfo, low+1);
+                            return get_sign(pinfo, low+1);
                         }
                         SASSERT(high > low + 1);
                         int mid   = low + ((high - low)/2);
                         SASSERT(low < mid && mid < high);
                         unsigned mid_cell_id = cell_id(pinfo, mid);
                         if (mid_cell_id == c) {
-                            return 0;
+                            return sign_zero;
                         }
                         if (c < mid_cell_id) {
                             high = mid;
@@ -319,7 +319,7 @@ namespace nlsat {
                     for (unsigned j = 0; j < num_cells(); j++) {
                         if (j > 0)
                             out << " ";
-                        int s = sign_at(i, j);
+                        auto s = sign_at(i, j);
                         if (s < 0) out << "-";
                         else if (s == 0) out << "0";
                         else out << "+";
@@ -381,11 +381,10 @@ namespace nlsat {
            
            \pre All variables of p are assigned in the current interpretation.
         */
-        int eval_sign(poly * p) {
+        ::sign eval_sign(poly * p) {
             // TODO: check if it is useful to cache results
             SASSERT(m_assignment.is_assigned(max_var(p)));
-            int r = m_am.eval_sign_at(polynomial_ref(p, m_pm), m_assignment);
-            return r > 0 ? +1 : (r < 0 ? -1 : 0);
+            return m_am.eval_sign_at(polynomial_ref(p, m_pm), m_assignment);
         }
         
         bool satisfied(int sign, atom::kind k) {
@@ -424,7 +423,7 @@ namespace nlsat {
             scoped_anum_vector & roots = m_tmp_values;
             roots.reset();
             m_am.isolate_roots(polynomial_ref(a->p(), m_pm), undef_var_assignment(m_assignment, a->x()), roots);
-            TRACE("nlsat",
+            TRACE("nlsat_evaluator",
                   m_solver.display(tout << (neg?"!":""), *a); tout << "\n";
                   if (roots.empty()) {
                       tout << "No roots\n";
@@ -450,7 +449,7 @@ namespace nlsat {
             return a->is_ineq_atom() ? eval_ineq(to_ineq_atom(a), neg) : eval_root(to_root_atom(a), neg);
         }
 
-        svector<int> m_add_signs_tmp;
+        svector<sign> m_add_signs_tmp;
         void add(poly * p, var x, sign_table & t) {
             SASSERT(m_pm.max_var(p) <= x);
             if (m_pm.max_var(p) < x) {
@@ -459,7 +458,7 @@ namespace nlsat {
             else {
                 // isolate roots of p
                 scoped_anum_vector & roots = m_add_roots_tmp;
-                svector<int>       & signs = m_add_signs_tmp;
+                svector<sign> & signs = m_add_signs_tmp;
                 roots.reset();
                 signs.reset();
                 TRACE("nlsat_evaluator", tout << "x: " << x << " max_var(p): " << m_pm.max_var(p) << "\n";);
@@ -471,18 +470,18 @@ namespace nlsat {
         }
 
         // Evaluate the sign of p1^e1*...*pn^en (of atom a) in cell c of table t.
-        int sign_at(ineq_atom * a, sign_table const & t, unsigned c) const {
-            int sign = 1;
+        sign sign_at(ineq_atom * a, sign_table const & t, unsigned c) const {
+            auto sign = sign_pos;
             unsigned num_ps = a->size();
             for (unsigned i = 0; i < num_ps; i++) {
-                int curr_sign = t.sign_at(i, c);
+                ::sign curr_sign = t.sign_at(i, c);
                 TRACE("nlsat_evaluator_bug", tout << "sign of i: " << i << " at cell " << c << "\n"; 
                       m_pm.display(tout, a->p(i)); 
                       tout << "\nsign: " << curr_sign << "\n";);
                 if (a->is_even(i) && curr_sign < 0)
-                    curr_sign = 1;
+                    curr_sign = sign_pos;
                 sign = sign * curr_sign;
-                if (sign == 0)
+                if (is_zero(sign)) 
                     break;
             }
             return sign;
@@ -491,6 +490,7 @@ namespace nlsat {
         interval_set_ref infeasible_intervals(ineq_atom * a, bool neg, clause const* cls) {
             sign_table & table = m_sign_table_tmp;
             table.reset();
+            TRACE("nsat_evaluator", m_solver.display(tout, *a) << "\n";);
             unsigned num_ps = a->size();
             var x = a->max_var();
             for (unsigned i = 0; i < num_ps; i++) {

@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_JUSTIFICATION_H_
-#define SMT_JUSTIFICATION_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "smt/smt_types.h"
@@ -27,6 +26,7 @@ Revision History:
 namespace smt {
     
     class conflict_resolution;
+    class context;
 
     typedef ptr_vector<justification> justification_vector;
 
@@ -181,7 +181,6 @@ namespace smt {
         enode *         m_node2;
     public:
         eq_propagation_justification(enode * n1, enode * n2):m_node1(n1), m_node2(n2) {
-            SASSERT(n1 != n2);
         }
 
         void get_antecedents(conflict_resolution & cr) override;
@@ -411,5 +410,4 @@ namespace smt {
       
 };
 
-#endif /* SMT_JUSTIFICATION_H_ */
 

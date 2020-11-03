@@ -164,6 +164,7 @@ namespace opt {
     }
 
     void context::pop(unsigned n) {
+        n = std::min(n, m_scoped_state.num_scopes());
         for (unsigned i = 0; i < n; ++i) {
             m_scoped_state.pop();
         }
@@ -217,7 +218,7 @@ namespace opt {
             break;
         case O_MAXIMIZE:
             result = o.m_term;
-            if (m_arith.is_arith_expr(result)) {
+            if (m_arith.is_int_real(result)) {
                 result = m_arith.mk_uminus(result);
             }
             else if (m_bv.is_bv(result)) {
@@ -304,7 +305,10 @@ namespace opt {
             s.get_model(m_model);
             s.get_labels(m_labels);
             model_updated(m_model.get());
-        }
+            if (!m_model) {
+                is_sat = l_undef;
+            }
+        }        
         if (is_sat != l_true) {
             TRACE("opt", tout << m_hard_constraints << " " << asms << "\n";);            
             if (!asms.empty()) {
@@ -363,6 +367,7 @@ namespace opt {
     void context::fix_model(model_ref& mdl) {
         if (mdl && !m_model_fixed.contains(mdl.get())) {
             TRACE("opt", m_fm->display(tout << "fix-model\n");
+                  tout << *mdl << "\n";
                   if (m_model_converter) m_model_converter->display(tout););
             (*m_fm)(mdl);
             apply(m_model_converter, mdl);
@@ -373,16 +378,16 @@ namespace opt {
     void context::set_model(model_ref& m) { 
         m_model = m; 
         opt_params optp(m_params);
-        if (optp.dump_models()) {
+        if (optp.dump_models() && m) {
             model_ref md = m->copy();
             fix_model(md);
-            std::cout << *md << "\n";
         }
     }
 
 
     void context::get_model_core(model_ref& mdl) {
         mdl = m_model;
+        CTRACE("opt", mdl, tout << *mdl;);
         fix_model(mdl);
         if (mdl) mdl->set_model_completion(true);
         CTRACE("opt", mdl, tout << *mdl;);
@@ -479,6 +484,7 @@ namespace opt {
     lbool context::execute_box() {
         if (m_box_index < m_box_models.size()) {
             m_model = m_box_models[m_box_index];
+            CTRACE("opt", m_model, tout << *m_model << "\n";);
             ++m_box_index;           
             return l_true;
         }
@@ -502,12 +508,15 @@ namespace opt {
                 m_box_models.push_back(m_model.get());
             }
             else {
-                m_box_models.push_back(m_optsmt.get_model(j));
+                model* mdl = m_optsmt.get_model(j);
+                if (!mdl) mdl = m_model.get();
+                m_box_models.push_back(mdl);
                 ++j;
             }
         }
         if (r == l_true && !m_box_models.empty()) {
             m_model = m_box_models[0];
+            CTRACE("opt", m_model, tout << *m_model << "\n";);
         }
         return r;
     }
@@ -615,7 +624,7 @@ namespace opt {
 
 
     std::string context::reason_unknown() const { 
-        if (m.canceled()) {
+        if (!m.inc()) {
             return Z3_CANCELED_MSG;
         }
         if (m_solver.get()) {
@@ -657,9 +666,8 @@ namespace opt {
         opt_params p(m_params);        
         if (p.optsmt_engine() == symbol("symba") ||
             p.optsmt_engine() == symbol("farkas")) {
-            std::stringstream strm;
-            strm << AS_OPTINF;
-            gparams::set("smt.arith.solver", strm.str().c_str());
+            auto str = std::to_string((unsigned)(arith_solver_id::AS_OPTINF));
+            gparams::set("smt.arith.solver", str.c_str());
         }
     }
 
@@ -685,7 +693,7 @@ namespace opt {
         expr_ref_vector fmls(m);
         get_solver().get_assertions(fmls);
         m_sat_solver->assert_expr(fmls);
-        m_solver = m_sat_solver.get();        
+        m_solver = m_sat_solver.get();
     }
 
     void context::enable_sls(bool force) {
@@ -708,7 +716,7 @@ namespace opt {
             if (fid != m.get_basic_family_id() &&
                 fid != pb.get_family_id() &&
                 fid != bv.get_family_id() &&
-                !is_uninterp_const(n)) {
+                (!is_uninterp_const(n) || (!m.is_bool(n) && !bv.is_bv(n)))) {
                 throw found();
             }
         }        
@@ -784,6 +792,7 @@ namespace opt {
 
     void context::normalize(expr_ref_vector const& asms) {
         expr_ref_vector fmls(m);
+        m_model_converter = nullptr;
         to_fmls(fmls);
         simplify_fmls(fmls, asms);
         from_fmls(fmls);
@@ -811,7 +820,7 @@ namespace opt {
                      mk_simplify_tactic(m));   
         opt_params optp(m_params);
         tactic_ref tac1, tac2, tac3, tac4;
-        if (optp.elim_01()) {
+        if (optp.elim_01() && m_logic.is_null()) {
             tac1 = mk_dt2bv_tactic(m);
             tac2 = mk_lia2card_tactic(m);
             tac3 = mk_eq2bv_tactic(m);
@@ -829,6 +838,7 @@ namespace opt {
         SASSERT(result.size() == 1);
         goal* r = result[0];
         m_model_converter = r->mc();
+        CTRACE("opt", r->mc(), r->mc()->display(tout););
         fmls.reset();
         expr_ref tmp(m);
         for (unsigned i = 0; i < r->size(); ++i) {
@@ -940,8 +950,8 @@ namespace opt {
                   tout << "offset: " << offset << "\n";
                   );
             std::ostringstream out;
-            out << orig_term << ":" << index;
-            id = symbol(out.str().c_str());
+            out << orig_term << ':' << index;
+            id = symbol(out.str());
             return true;
         }
         if (is_max && get_pb_sum(term, terms, weights, offset)) {
@@ -963,8 +973,8 @@ namespace opt {
             }
             neg = true;
             std::ostringstream out;
-            out << orig_term << ":" << index;
-            id = symbol(out.str().c_str());
+            out << orig_term << ':' << index;
+            id = symbol(out.str());
             return true;
         }
         if ((is_max || is_min) && m_bv.is_bv(term)) {
@@ -982,9 +992,9 @@ namespace opt {
             }
             neg = is_max;
             std::ostringstream out;
-            out << orig_term << ":" << index;
-            id = symbol(out.str().c_str());
-            return true;            
+            out << orig_term << ':' << index;
+            id = symbol(out.str());
+            return true;
         }
         return false;
     }
@@ -1244,7 +1254,7 @@ namespace opt {
             case O_MAXSMT: {
                 maxsmt& ms = *m_maxsmts.find(obj.m_id);
                 for (unsigned j = 0; j < obj.m_terms.size(); ++j) {
-                    ms.add(obj.m_terms[j].get(), obj.m_weights[j]);        
+                    ms.add(obj.m_terms.get(j), obj.m_weights[j]);        
                 }
                 break;
             }
@@ -1463,7 +1473,9 @@ namespace opt {
 
     void context::clear_state() {
         m_pareto = nullptr;
+        m_pareto1 = false;
         m_box_index = UINT_MAX;
+        m_box_models.reset();
         m_model.reset();
         m_model_fixed.reset();
         m_core.reset();
@@ -1654,7 +1666,8 @@ namespace opt {
             case O_MINIMIZE:
             case O_MAXIMIZE: {
                 inf_eps n = m_optsmt.get_lower(obj.m_index);
-                if (m_optsmt.objective_is_model_valid(obj.m_index) && 
+                if (false && // theory_lra doesn't produce infinitesimals
+                    m_optsmt.objective_is_model_valid(obj.m_index) && 
                     n.get_infinity().is_zero() &&
                     n.get_infinitesimal().is_zero() &&
                     is_numeral((*m_model)(obj.m_term), r1)) {

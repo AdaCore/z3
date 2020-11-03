@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef POLYNOMIAL_H_
-#define POLYNOMIAL_H_
+#pragma once
 
 #include "util/mpz.h"
 #include "util/rational.h"
@@ -30,6 +29,7 @@ Notes:
 #include "util/mpbqi.h"
 #include "util/rlimit.h"
 #include "util/lbool.h"
+#include "util/sign.h"
 
 class small_object_allocator;
 
@@ -278,6 +278,12 @@ namespace polynomial {
         */
         static unsigned id(polynomial const * p);
         
+
+        /**
+           \brief Normalize coefficients by dividing by their gcd
+        */
+        void gcd_simplify(polynomial* p);
+
         /**
            \brief Return true if \c m is the unit monomial.
         */
@@ -644,7 +650,7 @@ namespace polynomial {
         /**
            \brief Return true if m2 divides m1, and store the result in r.
         */
-        bool div(monomial const * m1, monomial const * m2, monomial * & r);
+        bool div(monomial const * m1, monomial const * m2, monomial_ref & r);
 
         /**
            \brief Newton interpolation algorithm for multivariate polynomials.
@@ -1408,4 +1414,3 @@ inline void factor(polynomial_ref const & p, polynomial::factors & r, polynomial
 
 std::ostream & operator<<(std::ostream & out, polynomial_ref_vector const & seq);
 
-#endif

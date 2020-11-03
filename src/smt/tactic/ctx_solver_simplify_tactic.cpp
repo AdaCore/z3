@@ -15,6 +15,16 @@ Author:
 
 Notes:
 
+Implement the inference rule
+
+     n = V |- F[n] = F[x]
+     --------------------
+         F[x] = F[V]
+
+where n is an uninterpreted variable (fresh for F[x])
+and V is a value (true or false) and x is a subterm 
+(different from V).
+
 --*/
 
 #include "smt/tactic/ctx_solver_simplify_tactic.h"
@@ -40,7 +50,7 @@ public:
         m(m), m_params(p), m_solver(m, m_front_p),  
         m_arith(m), m_mk_app(m), m_fn(m), m_num_steps(0) {
         sort* i_sort = m_arith.mk_int();
-        m_fn = m.mk_func_decl(symbol(0xbeef101), i_sort, m.mk_bool_sort());
+        m_fn = m.mk_func_decl(symbol(0xbeef101u), i_sort, m.mk_bool_sort());
     }
 
     tactic * translate(ast_manager & m) override {
@@ -48,10 +58,8 @@ public:
     }
 
     ~ctx_solver_simplify_tactic() override {
-        obj_map<sort, func_decl*>::iterator it = m_fns.begin(), end = m_fns.end();
-        for (; it != end; ++it) {
-            m.dec_ref(it->m_value);
-        }
+        for (auto & kv : m_fns)
+            m.dec_ref(kv.m_value);       
         m_fns.reset();
     }
 
@@ -85,7 +93,9 @@ protected:
 
 
     void reduce(goal& g) {
-        SASSERT(g.is_well_sorted());
+        if (m.proofs_enabled())
+            return;
+        TRACE("ctx_solver_simplify_tactic", g.display(tout););
         expr_ref fml(m);
         tactic_report report("ctx-solver-simplify", g);
         if (g.inconsistent())
@@ -96,15 +106,18 @@ protected:
         m_solver.push();
         reduce(fml);
         m_solver.pop(1);
+        if (!m.inc())
+            return;
         SASSERT(m_solver.get_scope_level() == 0);
         TRACE("ctx_solver_simplify_tactic",
-              for (unsigned i = 0; i < fmls.size(); ++i) {
-                  tout << mk_pp(fmls[i], m) << "\n";
+              for (expr* f : fmls) {
+                  tout << mk_pp(f, m) << "\n";
               }
               tout << "=>\n";
-              tout << mk_pp(fml, m) << "\n";);
+              tout << fml << "\n";);
         DEBUG_CODE(
         {
+            // enable_trace("after_search");
             m_solver.push();
             expr_ref fml1(m);
             fml1 = mk_and(m, fmls.size(), fmls.c_ptr());
@@ -114,9 +127,14 @@ protected:
             lbool is_sat = m_solver.check();
             TRACE("ctx_solver_simplify_tactic", tout << "is non-equivalence sat?: " << is_sat << "\n";);
             if (is_sat == l_true) {
+                model_ref mdl;
+                m_solver.get_model(mdl);
                 TRACE("ctx_solver_simplify_tactic", 
                       tout << "result is not equivalent to input\n";
-                      tout << mk_pp(fml1, m) << "\n";);
+                      tout << mk_pp(fml1, m) << "\n";
+                      tout << "evaluates to: " << (*mdl)(fml1) << "\n";
+                      m_solver.display(tout) << "\n";
+                      );
                 UNREACHABLE();
             }
             m_solver.pop(1);
@@ -124,7 +142,6 @@ protected:
         g.reset();
         g.assert_expr(fml, nullptr, nullptr);
         IF_VERBOSE(TACTIC_VERBOSITY_LVL, verbose_stream() << "(ctx-solver-simplify :num-steps " << m_num_steps << ")\n";);
-        SASSERT(g.is_well_sorted());        
     }
 
     struct expr_pos {
@@ -165,7 +182,7 @@ protected:
         names.push_back(n);
         m_solver.push();
 
-        while (!todo.empty() && !m.canceled()) {            
+        while (!todo.empty() && m.inc()) {            
             expr_ref res(m);
             args.reset();
             expr* e    = todo.back().m_expr;
@@ -177,9 +194,14 @@ protected:
             if (cache.contains(e)) {
                 goto done;
             }
+            if (m.is_true(e) || m.is_false(e)) {
+                res = e;
+                goto done;
+            }
             if (m.is_bool(e) && simplify_bool(n, res)) {
-                TRACE("ctx_solver_simplify_tactic", 
-                      tout << "simplified: " << mk_pp(e, m) << " |-> " << mk_pp(res, m) << "\n";);
+                TRACE("ctx_solver_simplify_tactic",
+                    m_solver.display(tout) << "\n";
+                      tout << "simplified: " << mk_pp(n, m) << "\n" << mk_pp(e, m) << " |-> " << mk_pp(res, m) << "\n";);
                 goto done;
             }
             if (!is_app(e)) {
@@ -207,10 +229,10 @@ protected:
                         args.push_back(arg);
                     }
                 }
-                else if (!n2) {
+                else if (!n2 && !m.is_value(arg)) {
                     n2 = mk_fresh(id, m.get_sort(arg));
                     trail.push_back(n2);
-                    todo.push_back(expr_pos(self_pos, child_id++, i, arg));
+                    todo.push_back(expr_pos(self_pos, ++child_id, i, arg));
                     names.push_back(n2);
                     args.push_back(n2);
                 }
@@ -237,7 +259,7 @@ protected:
             names.pop_back();
             m_solver.pop(1);
         }
-        if (!m.canceled()) {
+        if (m.inc()) {
             VERIFY(cache.find(fml, path_r));
             result = path_r.m_expr;
         }
@@ -277,7 +299,7 @@ protected:
             m.inc_ref(fn);
             m_fns.insert(s, fn);
         }
-        return expr_ref(m.mk_app(fn, m_arith.mk_numeral(rational(id++), true)), m);
+        return expr_ref(m.mk_app(fn, m_arith.mk_int(id++)), m);
     }
     
 };

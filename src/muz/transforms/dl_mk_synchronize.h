@@ -37,8 +37,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DL_MK_SYNCHRONIZE_H_
-#define DL_MK_SYNCHRONIZE_H_
+#pragma once
 
 #include"muz/base/dl_context.h"
 #include"muz/base/dl_rule_set.h"
@@ -109,9 +108,9 @@ namespace datalog {
 
         void add_rec_tail(vector< ptr_vector<app> > & recursive_calls,
                           app_ref_vector & new_tail,
-                          svector<bool> & new_tail_neg, unsigned & tail_idx);
+                          bool_vector & new_tail_neg, unsigned & tail_idx);
         void add_non_rec_tail(rule & r, app_ref_vector & new_tail,
-                              svector<bool> & new_tail_neg,
+                              bool_vector & new_tail_neg,
                               unsigned & tail_idx);
 
         rule_ref product_rule(rule_ref_vector const & rules);
@@ -131,4 +130,3 @@ namespace datalog {
 
 };
 
-#endif /* DL_MK_SYNCHRONIZE_H_ */

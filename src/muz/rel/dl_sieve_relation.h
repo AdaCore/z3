@@ -17,8 +17,7 @@ Revision History:
 
 --*/
 
-#ifndef DL_SIEVE_RELATION_H_
-#define DL_SIEVE_RELATION_H_
+#pragma once
 
 #include "muz/base/dl_context.h"
 #include "muz/rel/dl_relation_manager.h"
@@ -31,7 +30,7 @@ namespace datalog {
         friend class sieve_relation;
     public:
         struct rel_spec {
-            svector<bool> m_inner_cols;
+            bool_vector m_inner_cols;
             family_id m_inner_kind;
 
             /**
@@ -70,9 +69,9 @@ namespace datalog {
         family_id get_relation_kind(sieve_relation & r, const bool * inner_columns);
 
         void extract_inner_columns(const relation_signature & s, relation_plugin & inner, 
-            svector<bool> & inner_columns);
+            bool_vector & inner_columns);
         void extract_inner_signature(const relation_signature & s, relation_signature & inner_sig);
-        void collect_inner_signature(const relation_signature & s, const svector<bool> & inner_columns, 
+        void collect_inner_signature(const relation_signature & s, const bool_vector & inner_columns, 
             relation_signature & inner_sig);
     public:
         static symbol get_name() { return symbol("sieve_relation"); }
@@ -89,7 +88,7 @@ namespace datalog {
 
         family_id get_relation_kind(const relation_signature & sig, const bool * inner_columns, 
             family_id inner_kind);
-        family_id get_relation_kind(const relation_signature & sig, const svector<bool> & inner_columns, 
+        family_id get_relation_kind(const relation_signature & sig, const bool_vector & inner_columns, 
                 family_id inner_kind) {
             SASSERT(sig.size()==inner_columns.size());
             return get_relation_kind(sig, inner_columns.c_ptr(), inner_kind);
@@ -108,7 +107,7 @@ namespace datalog {
 
         sieve_relation * mk_from_inner(const relation_signature & s, const bool * inner_columns, 
             relation_base * inner_rel);
-        sieve_relation * mk_from_inner(const relation_signature & s, const svector<bool> & inner_columns, 
+        sieve_relation * mk_from_inner(const relation_signature & s, const bool_vector & inner_columns, 
                 relation_base * inner_rel) {
             SASSERT(inner_columns.size()==s.size());
             return mk_from_inner(s, inner_columns.c_ptr(), inner_rel);
@@ -148,7 +147,7 @@ namespace datalog {
         friend class sieve_relation_plugin::union_fn;
         friend class sieve_relation_plugin::filter_fn;
 
-        svector<bool> m_inner_cols;
+        bool_vector m_inner_cols;
 
         unsigned_vector m_sig2inner;
         unsigned_vector m_inner2sig;
@@ -193,5 +192,4 @@ namespace datalog {
 
 };
 
-#endif /* DL_SIEVE_RELATION_H_ */
 

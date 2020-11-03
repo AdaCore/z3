@@ -16,6 +16,7 @@ Author:
 Revision History:
 
 --*/
+#include <cstring>
 #include <sstream>
 #include <iomanip>
 #include "util/mpz.h"
@@ -46,18 +47,18 @@ Revision History:
 #define LEHMER_GCD
 #endif
 
-#ifdef _WINDOWS
+
+#if defined(_WINDOWS) && !defined(_M_ARM) && !defined(_M_ARM64)
 // This is needed for _tzcnt_u32 and friends.
 #include <immintrin.h>
+#define _trailing_zeros32(X) _tzcnt_u32(X)
 #endif
 
 #if defined(__GNUC__)
 #define _trailing_zeros32(X) __builtin_ctz(X)
-#else
-#define _trailing_zeros32(X) _tzcnt_u32(X)
 #endif
 
-#if defined(__LP64__) || defined(_WIN64)
+#if (defined(__LP64__) || defined(_WIN64)) && !defined(_M_ARM) && !defined(_M_ARM64)
  #if defined(__GNUC__)
  #define _trailing_zeros64(X) __builtin_ctzll(X)
  #else
@@ -69,6 +70,18 @@ inline uint64_t _trailing_zeros64(uint64_t x) {
     for (; 0 == (x & 1) && r < 64; ++r, x >>= 1);
     return r;
 }
+
+#if defined(_WINDOWS) && !defined(_M_ARM) && !defined(_M_ARM64)
+// _trailing_zeros32 already defined using intrinsics
+#elif defined(__GNUC__)
+// _trailing_zeros32 already defined using intrinsics
+#else
+inline uint32_t _trailing_zeros32(uint32_t x) {
+    uint32_t r = 0;
+    for (; 0 == (x & 1) && r < 32; ++r, x >>= 1);
+    return r;
+}
+#endif
 #endif
 
 
@@ -85,36 +98,10 @@ unsigned u_gcd(unsigned u, unsigned v) {
     if (u == v) return u << shift;
     do {
         v >>= _trailing_zeros32(v);        
-#if 1
         unsigned diff = u - v;
         unsigned mdiff = diff & (unsigned)((int)diff >> 31);
         u = v + mdiff; // min
         v = diff - 2 * mdiff;   // if v <= u: u - v, if v > u: v - u = u - v - 2 * (u - v)
-#endif
-#if 0
-        unsigned t = _bit_max(u, v);
-        u = _bit_min(u, v);
-        v = t;
-        v -= u;        
-#endif
-#if 0
-        unsigned t = std::max(u, v);
-        u = std::min(u,v);
-        v = t;
-        v -= u;        
-#endif
-#if 0
-        if (u > v) std::swap(u, v);
-        v -= u;        
-#endif
-#if 0
-        unsigned d1 = u - v;
-        unsigned d2 = v - u;
-        unsigned md21 = d2 & (unsigned)((int)d1 >> 31);
-        unsigned md12 = d1 & (unsigned)((int)d2 >> 31);
-        u = _bit_min(u, v);
-        v = md12 | md21;
-#endif
     }
     while (v != 0);
     return u << shift;
@@ -136,9 +123,11 @@ uint64_t u64_gcd(uint64_t u, uint64_t v) {
 }
 
 
+
 template<bool SYNCH>
 mpz_manager<SYNCH>::mpz_manager():
     m_allocator("mpz_manager") {
+
 #ifndef _MP_GMP
     if (sizeof(digit_t) == sizeof(uint64_t)) {
         // 64-bit machine
@@ -201,19 +190,36 @@ mpz_manager<SYNCH>::~mpz_manager() {
 template<bool SYNCH>
 mpz_cell * mpz_manager<SYNCH>::allocate(unsigned capacity) {
     SASSERT(capacity >= m_init_cell_capacity);
-    MPZ_BEGIN_CRITICAL();
-    mpz_cell * cell  = reinterpret_cast<mpz_cell *>(m_allocator.allocate(cell_size(capacity)));
-    MPZ_END_CRITICAL();
+    mpz_cell * cell;
+#ifdef SINGLE_THREAD
+    cell = reinterpret_cast<mpz_cell*>(m_allocator.allocate(cell_size(capacity)));
+#else
+    if (SYNCH) {
+        cell = reinterpret_cast<mpz_cell*>(memory::allocate(cell_size(capacity)));
+    }
+    else {
+        cell = reinterpret_cast<mpz_cell*>(m_allocator.allocate(cell_size(capacity)));
+    }
+#endif
     cell->m_capacity = capacity;
+
     return cell;
 }
 
 template<bool SYNCH>
 void mpz_manager<SYNCH>::deallocate(bool is_heap, mpz_cell * ptr) { 
     if (is_heap) {
-        MPZ_BEGIN_CRITICAL();
+
+#ifdef SINGLE_THREAD
         m_allocator.deallocate(cell_size(ptr->m_capacity), ptr); 
-        MPZ_END_CRITICAL();
+#else
+        if (SYNCH) {
+            memory::deallocate(ptr);
+        }
+        else {
+            m_allocator.deallocate(cell_size(ptr->m_capacity), ptr);        
+        }
+#endif
     }
 }
 
@@ -229,9 +235,10 @@ mpz_manager<SYNCH>::sign_cell::sign_cell(mpz_manager& m, mpz const& a):
 
 
 template<bool SYNCH>
-void mpz_manager<SYNCH>::del(mpz & a) { 
+void mpz_manager<SYNCH>::del(mpz_manager<SYNCH>* m, mpz & a) { 
     if (a.m_ptr) {
-        deallocate(a.m_owner == mpz_self, a.m_ptr); 
+        SASSERT(m);
+        m->deallocate(a.m_owner == mpz_self, a.m_ptr); 
         a.m_ptr = nullptr;
         a.m_kind = mpz_small;
         a.m_owner = mpz_self;
@@ -1524,12 +1531,12 @@ void mpz_manager<SYNCH>::big_set(mpz & target, mpz const & source) {
 template<bool SYNCH>
 int mpz_manager<SYNCH>::big_compare(mpz const & a, mpz const & b) {
 #ifndef _MP_GMP
-    sign_cell ca(*this, a), cb(*this, b);
 
-    if (ca.sign() > 0) {
+    if (sign(a) > 0) {
         // a is positive
-        if (cb.sign() > 0) {
+        if (sign(b) > 0) {
             // a & b are positive
+            sign_cell ca(*this, a), cb(*this, b);
             return m_mpn_manager.compare(ca.cell()->m_digits, ca.cell()->m_size,
                                          cb.cell()->m_digits, cb.cell()->m_size);
         }
@@ -1540,12 +1547,13 @@ int mpz_manager<SYNCH>::big_compare(mpz const & a, mpz const & b) {
     }
     else {
         // a is negative
-        if (cb.sign() > 0) {
+        if (sign(b) > 0) {
             // b is positive
             return -1; // a < b
         }
         else {
             // a & b are negative
+            sign_cell ca(*this, a), cb(*this, b);
             return m_mpn_manager.compare(cb.cell()->m_digits, cb.cell()->m_size,
                                          ca.cell()->m_digits, ca.cell()->m_size);
         }
@@ -1678,6 +1686,9 @@ double mpz_manager<SYNCH>::get_double(mpz const & a) const {
         else
             d *= static_cast<double>(UINT_MAX);   // 32-bit version
     }
+    if (!(r >= 0.0)) {
+        r = static_cast<double>(UINT64_MAX); // some large number
+    }
     return a.m_val < 0 ? -r : r;
 #else
     return mpz_get_d(*a.m_ptr);
@@ -1775,10 +1786,11 @@ void mpz_manager<SYNCH>::display_hex(std::ostream & out, mpz const & a, unsigned
     out.copyfmt(fmt);
 }
 
-void display_binary_data(std::ostream &out, unsigned val, unsigned numBits) {
-    SASSERT(numBits <= sizeof(unsigned)*8);
-    for (int shift = numBits-1; shift >= 0; --shift) {
-        if (val & (1 << shift)) {
+static void display_binary_data(std::ostream &out, uint64_t val, uint64_t numBits) {
+    for (uint64_t shift = numBits; shift-- > 64ull; ) out << "0";
+    if (numBits > 64) numBits = 64;
+    for (uint64_t shift = numBits; shift-- > 0; ) {
+        if (val & (1ull << shift)) {
             out << "1";
         } else {
             out << "0";
@@ -1788,9 +1800,9 @@ void display_binary_data(std::ostream &out, unsigned val, unsigned numBits) {
 
 template<bool SYNCH>
 void mpz_manager<SYNCH>::display_bin(std::ostream & out, mpz const & a, unsigned num_bits) const {
-    if (is_uint(a)) {
-        display_binary_data(out, get_uint(a), num_bits);
-    } 
+    if (is_small(a)) {
+        display_binary_data(out, get_uint64(a), num_bits);
+    }
     else {
 #ifndef _MP_GMP
         digit_t *ds = digits(a);
@@ -2030,8 +2042,9 @@ void mpz_manager<SYNCH>::machine_div2k(mpz & a, unsigned k) {
         return;
     if (is_small(a)) {
         if (k < 32) {
-            int twok = 1 << k;
-            a.m_val /= twok;
+            int64_t twok = 1ull << ((int64_t)k);
+            int64_t val = a.m_val;
+            a.m_val = (int)(val/twok);
         }
         else {
             a.m_val = 0;

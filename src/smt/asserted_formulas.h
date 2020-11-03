@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef ASSERTED_FORMULAS_H_
-#define ASSERTED_FORMULAS_H_
+#pragma once
 
 #include "util/statistics.h"
 #include "ast/static_features.h"
@@ -35,9 +34,9 @@ Revision History:
 #include "ast/macros/macro_finder.h"
 #include "ast/normal_forms/defined_names.h"
 #include "ast/normal_forms/pull_quant.h"
+#include "ast/normal_forms/elim_term_ite.h"
 #include "ast/pattern/pattern_inference.h"
 #include "smt/params/smt_params.h"
-#include "smt/elim_term_ite.h"
 
 
 class asserted_formulas {
@@ -105,7 +104,7 @@ class asserted_formulas {
     public:
         nnf_cnf_fn(asserted_formulas& af): simplify_fmls(af, "nnf-cnf") {}
         void operator()() override { af.nnf_cnf(); }
-        bool should_apply() const override { return af.m_smt_params.m_nnf_cnf || (af.m_smt_params.m_mbqi && af.has_quantifiers()); }
+        bool should_apply() const override { return af.m_smt_params.m_nnf_cnf || af.has_quantifiers(); }
         void simplify(justified_expr const& j, expr_ref& n, proof_ref& p) override { UNREACHABLE(); }
     };
 
@@ -160,10 +159,19 @@ class asserted_formulas {
         void pop(unsigned n) { m_elim.pop(n); }
     };
 
+    class flatten_clauses_fn : public simplify_fmls {
+    public:
+        flatten_clauses_fn(asserted_formulas& af): simplify_fmls(af, "flatten-clauses") {}
+        void operator()() override { af.flatten_clauses(); }
+        bool should_apply() const override { return true; }
+        void simplify(justified_expr const& j, expr_ref& n, proof_ref& p) override { UNREACHABLE(); }
+    };
+    void flatten_clauses();
+
 #define MK_SIMPLIFIERA(NAME, FUNCTOR, MSG, APP, ARG, REDUCE)            \
     class NAME : public simplify_fmls {                                 \
-        FUNCTOR m_functor;                                              \
     public:                                                             \
+        FUNCTOR m_functor;                                              \
         NAME(asserted_formulas& af):simplify_fmls(af, MSG), m_functor ARG {} \
         virtual void simplify(justified_expr const& j, expr_ref& n, proof_ref& p) { \
             m_functor(j.get_fml(), n, p);                               \
@@ -178,8 +186,8 @@ class asserted_formulas {
     MK_SIMPLIFIERF(cheap_quant_fourier_motzkin, elim_bounds_rw, "cheap-fourier-motzkin", af.m_smt_params.m_eliminate_bounds && af.has_quantifiers(), true);
     MK_SIMPLIFIERF(elim_bvs_from_quantifiers, bv_elim_rw, "eliminate-bit-vectors-from-quantifiers", af.m_smt_params.m_bb_quantifiers, true);
     MK_SIMPLIFIERF(apply_bit2int, bit2int, "propagate-bit-vector-over-integers", af.m_smt_params.m_simplify_bit2int, true);
-    MK_SIMPLIFIERA(lift_ite, push_app_ite_rw, "lift-ite", af.m_smt_params.m_lift_ite != LI_NONE, (af.m, af.m_smt_params.m_lift_ite == LI_CONSERVATIVE), true);
-    MK_SIMPLIFIERA(ng_lift_ite, ng_push_app_ite_rw, "lift-ite", af.m_smt_params.m_ng_lift_ite != LI_NONE, (af.m, af.m_smt_params.m_ng_lift_ite == LI_CONSERVATIVE), true);
+    MK_SIMPLIFIERF(lift_ite, push_app_ite_rw, "lift-ite", af.m_smt_params.m_lift_ite != LI_NONE, true);
+    MK_SIMPLIFIERF(ng_lift_ite, ng_push_app_ite_rw, "lift-ite", af.m_smt_params.m_ng_lift_ite != LI_NONE, true);
 
 
     reduce_asserted_formulas_fn m_reduce_asserted_formulas;
@@ -198,11 +206,16 @@ class asserted_formulas {
     propagate_values_fn         m_propagate_values;
     nnf_cnf_fn                  m_nnf_cnf;
     apply_quasi_macros_fn       m_apply_quasi_macros;
+    flatten_clauses_fn          m_flatten_clauses;
+    unsigned                    m_lazy_scopes;
+
+    void force_push();
+    void push_scope_core();
 
     bool invoke(simplify_fmls& s);
     void swap_asserted_formulas(vector<justified_expr>& new_fmls);
     void push_assertion(expr * e, proof * pr, vector<justified_expr>& result);
-    bool canceled() { return m.canceled(); }
+    bool canceled() { return !m.inc(); }
     bool check_well_sorted() const;
     unsigned get_total_size() const;
 
@@ -258,16 +271,16 @@ public:
     // Macros
     //
     // -----------------------------------
+    macro_manager& get_macro_manager() { return m_macro_manager; }
     unsigned get_num_macros() const { return m_macro_manager.get_num_macros(); }
     unsigned get_first_macro_last_level() const { return m_macro_manager.get_first_macro_last_level(); }
     func_decl * get_macro_func_decl(unsigned i) const { return m_macro_manager.get_macro_func_decl(i); }
     func_decl * get_macro_interpretation(unsigned i, expr_ref & interp) const { return m_macro_manager.get_macro_interpretation(i, interp); }
     quantifier * get_macro_quantifier(func_decl * f) const { return m_macro_manager.get_macro_quantifier(f); }
     // auxiliary function used to create a logic context based on a model.
-    void insert_macro(func_decl * f, quantifier * m, proof * pr) { m_macro_manager.insert(f, m, pr); }
-    void insert_macro(func_decl * f, quantifier * m, proof * pr, expr_dependency* dep) { m_macro_manager.insert(f, m, pr, dep); }
+    void insert_macro(func_decl * f, quantifier * m, proof * pr) { force_push(); m_macro_manager.insert(f, m, pr); }
+    void insert_macro(func_decl * f, quantifier * m, proof * pr, expr_dependency* dep) { force_push(); m_macro_manager.insert(f, m, pr, dep); }
 
 };
 
-#endif /* ASSERTED_FORMULAS_H_ */
 

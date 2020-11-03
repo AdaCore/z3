@@ -16,14 +16,13 @@ Author:
 Revision History:
 
 --*/
-#ifndef COST_EVALUATOR_H_
-#define COST_EVALUATOR_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "ast/arith_decl_plugin.h"
 
 class cost_evaluator {
-    ast_manager &   m_manager;
+    ast_manager &   m;
     arith_util      m_util;
     unsigned        m_num_args;
     float const *   m_args;
@@ -39,5 +38,4 @@ public:
     float operator()(expr * f, unsigned num_args, float const * args);
 };
 
-#endif /* COST_EVALUATOR_H_ */
 

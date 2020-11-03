@@ -22,7 +22,6 @@ Notes:
 
 #include <cmath>
 #include "sat/sat_solver.h"
-#include "sat/sat_extension.h"
 #include "sat/sat_lookahead.h"
 #include "sat/sat_scc.h"
 #include "util/union_find.h"
@@ -234,9 +233,9 @@ namespace sat {
         for (bool newbies = false; ; newbies = true) {
             sum = init_candidates(level, newbies);
             if (!m_candidates.empty()) break;
-            if (is_sat()) {
+            if (is_sat() || newbies) {
                 return false;
-            }         
+            }                     
         }
         SASSERT(!m_candidates.empty());
         // cut number of candidates down to max_num_cand.
@@ -334,7 +333,7 @@ namespace sat {
                 }                
             }
         }
-        if (m_candidates.empty() && (m_select_lookahead_vars.empty() || newbies)) {
+        if (m_candidates.empty() && (m_select_lookahead_vars.empty() && newbies)) {
             for (bool_var x : m_freevars) {
                 SASSERT(is_undef(x));
                 if (newbies || active_prefix(x)) {
@@ -554,7 +553,7 @@ namespace sat {
                 }
             }
             unsigned len = n->size();
-            sum += pow(0.5, len) * to_add / len;            
+            sum += pow(0.5, static_cast<double>(len)) * to_add / len;
         }
         return sum;
     } 
@@ -576,7 +575,7 @@ namespace sat {
         unsigned sz = m_nary_count[(~l).index()];
         for (nary * n : m_nary[(~l).index()]) {
             if (sz-- == 0) break;
-            sum += pow(0.5, n->size());
+            sum += pow(0.5, static_cast<double>(n->size()));
         }
         return sum;
     }
@@ -635,9 +634,7 @@ namespace sat {
             if (sz-- == 0) break;
             tsum += h[b.m_u.index()] * h[b.m_v.index()];
         }
-        // std::cout << "sum: " << sum << " afactor " << afactor << " sqfactor " << sqfactor << " tsum " << tsum << "\n";
         sum = (double)(0.1 + afactor*sum + sqfactor*tsum);
-        // std::cout << "sum: " << sum << " max score " << m_config.m_max_score << "\n";
         return std::min(m_config.m_max_score, sum);
     }
 
@@ -1039,9 +1036,6 @@ namespace sat {
             }
         }
         
-        if (m_s.m_ext) {
-            // m_ext = m_s.m_ext->copy(this, learned);
-        }
         propagate();
         m_qhead = m_trail.size();
         m_init_freevars = m_freevars.size();
@@ -1314,7 +1308,7 @@ namespace sat {
                 }
             }
             break;
-        case lookahead2:
+        case lookahead_mode::lookahead2:
             // this could create a conflict from propagation, but we complete the loop.
             for (binary const& b : m_ternary[(~l).index()]) {
                 if (sz-- == 0) break;
@@ -1360,7 +1354,7 @@ namespace sat {
         watch_list::iterator it = wlist.begin(), it2 = it, end = wlist.end();
         for (; it != end && !inconsistent(); ++it) {
             SASSERT(it->get_kind() == watched::EXT_CONSTRAINT);
-            bool keep = m_s.m_ext->propagate(l, it->get_ext_constraint_idx());
+            bool keep = m_s.m_ext->propagated(l, it->get_ext_constraint_idx());
             if (m_search_mode == lookahead_mode::lookahead1 && !m_inconsistent) {
                 lookahead_literal_occs_fun literal_occs_fn(*this);
                 m_lookahead_reward += m_s.m_ext->get_reward(l, it->get_ext_constraint_idx(), literal_occs_fn);
@@ -1496,14 +1490,14 @@ namespace sat {
                             to_add += literal_occs(lit);
                         }                        
                     }
-                    m_lookahead_reward += pow(0.5, nonfixed) * to_add / nonfixed;                    
+                    m_lookahead_reward += pow(0.5, static_cast<double>(nonfixed)) * to_add / nonfixed;
                     break;
                 }
                 case heule_unit_reward:
-                    m_lookahead_reward += pow(0.5, nonfixed);
+                    m_lookahead_reward += pow(0.5, static_cast<double>(nonfixed));
                     break;
                 case march_cu_reward:
-                    m_lookahead_reward += nonfixed >= 2 ? 3.3 * pow(0.5, nonfixed - 2) : 0.0;
+                    m_lookahead_reward += nonfixed >= 2 ? 3.3 * pow(0.5, static_cast<double>(nonfixed - 2)) : 0.0;
                     break;
                 case ternary_reward:
                     UNREACHABLE();
@@ -1621,14 +1615,14 @@ namespace sat {
                     to_add += literal_occs(l);
                 } 
             }
-            m_lookahead_reward += pow(0.5, sz) * to_add / sz;
+            m_lookahead_reward += pow(0.5, static_cast<double>(sz)) * to_add / sz;
             break;
         }
         case heule_unit_reward:
-            m_lookahead_reward += pow(0.5, sz);
+            m_lookahead_reward += pow(0.5, static_cast<double>(sz));
             break;
         case march_cu_reward:
-            m_lookahead_reward += 3.3 * pow(0.5, sz - 2);
+            m_lookahead_reward += 3.3 * pow(0.5, static_cast<double>(sz - 2));
             break;
         case ternary_reward:
             m_lookahead_reward = (double)0.001;            
@@ -2084,7 +2078,7 @@ namespace sat {
         }
     }
 
-    bool lookahead::backtrack(literal_vector& trail, svector<bool> & is_decision) {
+    bool lookahead::backtrack(literal_vector& trail, bool_vector & is_decision) {
         m_cube_state.m_backtracks++;
         while (inconsistent()) {
             if (trail.empty()) return false;
@@ -2131,7 +2125,7 @@ namespace sat {
             }
         }
         for (nary * n : m_nary_clauses) {
-            h += 1.0 / pow(m_config.m_cube_psat_clause_base, n->size() - 1);
+            h += 1.0 / pow(m_config.m_cube_psat_clause_base, static_cast<double>(n->size() - 1));
         }
         h /= pow(m_freevars.size(), m_config.m_cube_psat_var_exp);
         IF_VERBOSE(10, verbose_stream() << "(sat-cube-psat :val " << h << ")\n";);
@@ -2195,7 +2189,7 @@ namespace sat {
             backtrack_level = UINT_MAX;
             depth = m_cube_state.m_cube.size();
             if (should_cutoff(depth)) {
-                double dec = (1.0 - pow(m_config.m_cube_fraction, depth));
+                double dec = (1.0 - pow(m_config.m_cube_fraction, static_cast<double>(depth)));
                 m_cube_state.m_freevars_threshold *= dec;
                 m_cube_state.m_psat_threshold *= 2.0 - dec;
                 set_conflict();
@@ -2224,9 +2218,10 @@ namespace sat {
                 for (auto v : m_freevars) if (in_reduced_clause(v)) vars.push_back(v);
                 m_model.reset();
                 init_model();
-                return l_true;
+                return m_freevars.empty() ? l_true : l_undef;
             }
             TRACE("sat", tout << "choose: " << lit << " cube: " << m_cube_state.m_cube << "\n";);
+            SASSERT(vars.empty() || vars.contains(lit.var()));
             ++m_stats.m_decisions;
             push(lit, c_fixed_truth);
             m_cube_state.m_cube.push_back(lit);
@@ -2504,7 +2499,7 @@ namespace sat {
                         uf.merge((~u).index(), (~v).index());
                         VERIFY(!m_s.was_eliminated(u.var()));
                         VERIFY(!m_s.was_eliminated(v.var()));
-                        m_s.mk_clause(~u, v, true);
+                        m_s.mk_clause(~u, v, sat::status::redundant());
                     }
                     else {
                         candidates[k] = candidates[j];
@@ -2512,7 +2507,6 @@ namespace sat {
                     }
                 }
             }
-            // std::cout << candidates.size() << " -> " << k << "\n";
             if (k == candidates.size()) break;
             candidates.shrink(k);
             if (k == 0) break;

@@ -27,32 +27,33 @@ Notes:
 #include "ast/func_decl_dependencies.h"
 #include "util/dec_ref_util.h"
 
-namespace smt {
+namespace {
 
     class smt_solver : public solver_na2as {
 
         struct cuber {
             smt_solver& m_solver;
             unsigned    m_round;
-            expr_ref    m_result;
+            expr_ref_vector  m_result;
+            unsigned    m_depth;
             cuber(smt_solver& s):
                 m_solver(s),
                 m_round(0),
-                m_result(s.get_manager()) {}
+                m_result(s.get_manager()),
+                m_depth(s.m_smt_params.m_cube_depth) {}
             expr_ref cube() {
-                switch (m_round) {
-                case 0:
-                    m_result = m_solver.m_context.next_cube();
-                    break;
-                case 1:
-                    m_result = m_solver.get_manager().mk_not(m_result);
-                    break;
-                default:
-                    m_result = m_solver.get_manager().mk_false();
-                    break;
+                if (m_round == 0) {
+                    m_result = m_solver.m_context.cubes(m_depth);
+                }
+                expr_ref r(m_result.m());
+                if (m_round < m_result.size()) {
+                    r = m_result.get(m_round);
+                }
+                else {
+                    r = m_result.m().mk_false();
                 }
                 ++m_round;
-                return m_result;
+                return r;
             }
         };
 
@@ -88,24 +89,24 @@ namespace smt {
             smt_solver * result = alloc(smt_solver, m, p, m_logic);
             smt::kernel::copy(m_context, result->m_context);
 
-
             if (mc0()) 
                 result->set_model_converter(mc0()->translate(translator));
 
             for (auto & kv : m_name2assertion) { 
                 expr* val = translator(kv.m_value);
-                expr* t = translator(kv.m_key);
-                result->m_name2assertion.insert(t, val);
-                result->solver_na2as::assert_expr(val, t);
-                m.inc_ref(val);
+                expr* key = translator(kv.m_key);
+                result->assert_expr(val, key);
             }
 
             return result;
         }
 
         ~smt_solver() override {
-            dec_ref_values(get_manager(), m_name2assertion);
             dealloc(m_cuber);
+            for (auto& kv : m_name2assertion) {
+                get_manager().dec_ref(kv.m_key);
+                get_manager().dec_ref(kv.m_value);
+            }
         }
 
         void updt_params(params_ref const & p) override {
@@ -134,6 +135,10 @@ namespace smt {
 
         void collect_param_descrs(param_descrs & r) override {
             m_context.collect_param_descrs(r);
+            insert_timeout(r);
+            insert_rlimit(r);
+            insert_max_memory(r);
+            insert_ctrl_c(r);
         }
 
         void collect_statistics(statistics & st) const override {
@@ -159,6 +164,7 @@ namespace smt {
             }
             solver_na2as::assert_expr_core2(t, a);
             get_manager().inc_ref(t);
+            get_manager().inc_ref(a);
             m_name2assertion.insert(a, t);
         }
 
@@ -173,13 +179,12 @@ namespace smt {
                 SASSERT(n <= lvl);
                 unsigned new_lvl = lvl - n;
                 unsigned old_sz = m_scopes[new_lvl];
-                for (unsigned i = cur_sz; i > old_sz; ) {
-                    --i;
-                    expr * key = m_assumptions[i].get();
-                    SASSERT(m_name2assertion.contains(key));
+                for (unsigned i = cur_sz; i-- > old_sz; ) {
+                    expr * key = m_assumptions.get(i);
                     expr * value = m_name2assertion.find(key);
-                    m.dec_ref(value);
                     m_name2assertion.erase(key);
+                    m.dec_ref(value);
+                    m.dec_ref(key);
                 }
             }
             m_context.pop(n);
@@ -201,6 +206,34 @@ namespace smt {
 
         expr_ref_vector get_trail() override {
             return m_context.get_trail();
+        }
+
+        void user_propagate_init(
+            void*                ctx, 
+            solver::push_eh_t&   push_eh,
+            solver::pop_eh_t&    pop_eh,
+            solver::fresh_eh_t&  fresh_eh) override {
+            m_context.user_propagate_init(ctx, push_eh, pop_eh, fresh_eh);
+        }
+        
+        void user_propagate_register_fixed(solver::fixed_eh_t& fixed_eh) override {
+            m_context.user_propagate_register_fixed(fixed_eh);
+        }
+
+        void user_propagate_register_final(solver::final_eh_t& final_eh) override {
+            m_context.user_propagate_register_final(final_eh);
+        }
+        
+        void user_propagate_register_eq(solver::eq_eh_t& eq_eh) override {
+            m_context.user_propagate_register_eq(eq_eh);
+        }
+        
+        void user_propagate_register_diseq(solver::eq_eh_t& diseq_eh) override {
+            m_context.user_propagate_register_diseq(diseq_eh);
+        }
+
+        unsigned user_propagate_register(expr* e) override { 
+            return m_context.user_propagate_register(e);
         }
 
         struct scoped_minimize_core {
@@ -377,9 +410,11 @@ namespace smt {
 
                 for (expr* c : core) {
                     expr_ref name(c, m);
-                    SASSERT(m_name2assertion.contains(name));
-                    expr_ref assrtn(m_name2assertion.find(name), m);
-                    collect_pattern_fds(assrtn, pattern_fds);
+                    expr* f = nullptr;
+                    if (m_name2assertion.find(name, f)) {
+                        expr_ref assrtn(f, m);
+                        collect_pattern_fds(assrtn, pattern_fds);
+                    }
                 }
 
                 if (!pattern_fds.empty()) {
@@ -445,18 +480,20 @@ namespace smt {
             }
         }
     };
-};
-
-solver * mk_smt_solver(ast_manager & m, params_ref const & p, symbol const & logic) {
-    return alloc(smt::smt_solver, m, p, logic);
 }
 
+solver * mk_smt_solver(ast_manager & m, params_ref const & p, symbol const & logic) {
+    return alloc(smt_solver, m, p, logic);
+}
+
+namespace {
 class smt_solver_factory : public solver_factory {
 public:
     solver * operator()(ast_manager & m, params_ref const & p, bool proofs_enabled, bool models_enabled, bool unsat_core_enabled, symbol const & logic) override {
         return mk_smt_solver(m, p, logic);
     }
 };
+}
 
 solver_factory * mk_smt_solver_factory() {
     return alloc(smt_solver_factory);

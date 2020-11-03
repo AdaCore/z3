@@ -16,10 +16,10 @@ Author:
 Revision History:
 
 --*/
-#ifndef SAT_ELIM_EQS_H_
-#define SAT_ELIM_EQS_H_
+#pragma once
 
 #include "sat/sat_types.h"
+#include "util/union_find.h"
 
 namespace sat {
     class solver;
@@ -44,8 +44,8 @@ namespace sat {
         elim_eqs(solver & s);
         ~elim_eqs();
         void operator()(literal_vector const & roots, bool_var_vector const & to_elim);
+        void operator()(union_find<>& uf);
     };
 
 };
 
-#endif

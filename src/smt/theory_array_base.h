@@ -16,13 +16,12 @@ Author:
 Revision History:
 
 --*/
-#ifndef THEORY_ARRAY_BASE_H_
-#define THEORY_ARRAY_BASE_H_
+#pragma once
 
 #include "smt/smt_theory.h"
 #include "smt/theory_array_bapa.h"
 #include "ast/array_decl_plugin.h"
-#include "smt/proto_model/array_factory.h"
+#include "model/array_factory.h"
 
 namespace smt {
 
@@ -30,7 +29,11 @@ namespace smt {
         friend class theory_array_bapa;
     protected:
         bool m_found_unsupported_op;
-
+        unsigned m_array_weak_head;
+        svector<theory_var> m_array_weak_trail;
+        bool has_propagate_up_trail() const { return m_array_weak_head < m_array_weak_trail.size(); }
+        void add_weak_var(theory_var v);
+        virtual void set_prop_upward(theory_var v) {}
         void found_unsupported_op(expr * n);
         void found_unsupported_op(enode* n) { found_unsupported_op(n->get_owner()); }
         void found_unsupported_op(theory_var v) { found_unsupported_op(get_enode(v)->get_owner()); }
@@ -56,9 +59,10 @@ namespace smt {
         bool is_array_sort(enode const* n) const { return is_array_sort(n->get_owner()); }
         bool is_set_has_size(enode const* n) const { return is_set_has_size(n->get_owner()); }
         bool is_set_carde(enode const* n) const { return is_set_card(n->get_owner()); }
-
+        bool is_select_arg(enode* r);
 
         app * mk_select(unsigned num_args, expr * const * args);
+        app * mk_select(expr_ref_vector const& args) { return mk_select(args.size(), args.c_ptr()); }
         app * mk_store(unsigned num_args, expr * const * args);
         app * mk_default(expr* a);
 
@@ -203,11 +207,10 @@ namespace smt {
         model_value_proc * mk_value(enode * n, model_generator & m) override;
         bool include_func_interp(func_decl* f) override;
     public:
-        theory_array_base(ast_manager & m);
+        theory_array_base(context& ctx);
         ~theory_array_base() override { restore_sorts(0); }
     };
 
 };
 
-#endif /* THEORY_ARRAY_BASE_H_ */
 

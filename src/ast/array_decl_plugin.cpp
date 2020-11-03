@@ -129,7 +129,7 @@ func_decl * array_decl_plugin::mk_const(sort * s, unsigned arity, sort * const *
         m_manager->raise_exception("invalid const array definition, parameter is not an array sort");
         return nullptr;
     }
-    if (!m_manager->compatible_sorts(get_array_range(s), domain[0])) {
+    if (get_array_range(s) != domain[0]) {
         m_manager->raise_exception("invalid const array definition, sort mismatch between array range and argument");
         return nullptr;
     }
@@ -260,7 +260,6 @@ func_decl* array_decl_plugin::mk_select(unsigned arity, sort * const * domain) {
             strm << "domain sort " << sort_ref(domain[i+1], *m_manager) << " and parameter ";
             strm << parameter_pp(parameters[i], *m_manager) << " do not match";
             m_manager->raise_exception(strm.str());
-            UNREACHABLE();
             return nullptr;
         }
         new_domain.push_back(to_sort(parameters[i].get_ast()));
@@ -461,6 +460,7 @@ func_decl * array_decl_plugin::mk_set_has_size(unsigned arity, sort * const* dom
         m_manager->raise_exception("set-has-size takes two arguments");
         return nullptr;
     }    
+    m_manager->raise_exception("set-has-size is not supported");
     // domain[0] is a Boolean array,
     // domain[1] is Int
     arith_util arith(*m_manager);
@@ -587,8 +587,10 @@ void array_decl_plugin::get_op_names(svector<builtin_name>& op_names, symbol con
         op_names.push_back(builtin_name("subset",OP_SET_SUBSET));
         op_names.push_back(builtin_name("as-array", OP_AS_ARRAY));
         op_names.push_back(builtin_name("array-ext", OP_ARRAY_EXT));
+#if 0
         op_names.push_back(builtin_name("set-has-size", OP_SET_HAS_SIZE));
         op_names.push_back(builtin_name("card", OP_SET_CARD));
+#endif
     }
 }
 

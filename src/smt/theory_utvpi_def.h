@@ -47,8 +47,7 @@ Revision History:
 
 --*/
 
-#ifndef THEORY_UTVPI_DEF_H_
-#define THEORY_UTVPI_DEF_H_
+#pragma once
 #include "smt/theory_utvpi.h"
 #include "util/heap.h"
 #include "ast/ast_pp.h"
@@ -58,20 +57,23 @@ namespace smt {
 
 
     template<typename Ext>
-    theory_utvpi<Ext>::theory_utvpi(ast_manager& m):
-            theory(m.mk_family_id("arith")),
-            a(m),
-            m_arith_eq_adapter(*this, m_params, a),
-            m_zero(null_theory_var),
-            m_nc_functor(*this),
-            m_asserted_qhead(0),
-            m_agility(0.5),
-            m_lia(false),
-            m_lra(false),
-            m_non_utvpi_exprs(false),
-            m_test(m),
-            m_factory(nullptr) {
-    }            
+    theory_utvpi<Ext>::theory_utvpi(context& ctx):
+        theory(ctx, ctx.get_manager().mk_family_id("arith")),
+        a(ctx.get_manager()),
+        m_arith_eq_adapter(*this, a),
+        m_consistent(true),
+        m_izero(null_theory_var),
+        m_rzero(null_theory_var),
+        m_nc_functor(*this),
+        m_asserted_qhead(0),
+        m_agility(0.5),
+        m_lia(false),
+        m_lra(false),
+        m_non_utvpi_exprs(false),
+        m_test(ctx.get_manager()),
+        m_factory(nullptr),
+        m_var_value_table(DEFAULT_HASHTABLE_INITIAL_CAPACITY, var_value_hash(*this), var_value_eq(*this)) {
+        }            
 
     template<typename Ext>
     theory_utvpi<Ext>::~theory_utvpi() {
@@ -96,16 +98,15 @@ namespace smt {
     template<typename Ext>
     theory_var theory_utvpi<Ext>::mk_var(enode* n) {
         th_var v = theory::mk_var(n);
-        TRACE("utvpi", tout << v << " " << mk_pp(n->get_owner(), get_manager()) << "\n";);
+        TRACE("utvpi", tout << v << " " << mk_pp(n->get_owner(), m) << "\n";);
         m_graph.init_var(to_var(v));
         m_graph.init_var(neg(to_var(v)));
-        get_context().attach_th_var(n, this, v);
+        ctx.attach_th_var(n, this, v);
         return v;
     }
     
     template<typename Ext>
     theory_var theory_utvpi<Ext>::mk_var(expr* n) {
-        context & ctx = get_context();
         enode* e = nullptr;
         th_var v = null_theory_var;
         m_lia |= a.is_int(n);
@@ -133,7 +134,8 @@ namespace smt {
     template<typename Ext>
     void theory_utvpi<Ext>::reset_eh() {
         m_graph            .reset();
-        m_zero              = null_theory_var;
+        m_izero              = null_theory_var;
+        m_rzero              = null_theory_var;
         m_atoms            .reset();
         m_asserted_atoms   .reset();
         m_stats            .reset();
@@ -148,11 +150,9 @@ namespace smt {
 
     template<typename Ext>
     void theory_utvpi<Ext>::new_eq_or_diseq(bool is_eq, th_var v1, th_var v2, justification& eq_just) {
-        rational k;
+        rational k(0);
         th_var s = expand(true,  v1, k);
         th_var t = expand(false, v2, k);
-        context& ctx = get_context();
-        ast_manager& m = get_manager();
         
         if (s == t) {
             if (is_eq != k.is_zero()) {
@@ -166,26 +166,23 @@ namespace smt {
             // Create equality ast, internalize_atom
             // assign the corresponding equality literal.
             //
+            // t1 - s1 = k
+            //
                         
             app_ref eq(m), s2(m), t2(m);
             app* s1 = get_enode(s)->get_owner();
             app* t1 = get_enode(t)->get_owner();
             s2 = a.mk_sub(t1, s1);
             t2 = a.mk_numeral(k, m.get_sort(s2.get()));
-            // t1 - s1 = k
             eq = m.mk_eq(s2.get(), t2.get());
             
-            TRACE("utvpi", 
-                  tout << v1 << " .. " << v2 << "\n";
-                  tout << mk_pp(eq.get(), m) <<"\n";);
+            TRACE("utvpi", tout << v1 << " .. " << v2 << "\n" << eq << "\n";);
             
-            if (!internalize_atom(eq.get(), false)) {
-                UNREACHABLE();
-            }
+            VERIFY (internalize_atom(eq.get(), false));
             
             literal l(ctx.get_literal(eq.get()));
             if (!is_eq) {
-                l = ~l;
+                l.neg();
             }            
             ctx.assign(l, b_justification(&eq_just), false);
         }
@@ -193,6 +190,8 @@ namespace smt {
 
     template<typename Ext>
     void theory_utvpi<Ext>::inc_conflicts() {
+        ctx.push_trail(value_trail<context, bool>(m_consistent));
+        m_consistent = false;
         m_stats.m_num_conflicts++;   
         if (m_params.m_arith_adaptive) {
             double g = m_params.m_arith_adaptive_propagation_threshold;
@@ -204,23 +203,8 @@ namespace smt {
     void theory_utvpi<Ext>::set_conflict() {
         inc_conflicts();
         literal_vector const& lits = m_nc_functor.get_lits();
-        context & ctx = get_context();
-        IF_VERBOSE(2, 
-                   verbose_stream() << "conflict:\n";
-                   for (unsigned i = 0; i < lits.size(); ++i) {
-                       ast_manager& m = get_manager();
-                       expr_ref e(m);
-                       ctx.literal2expr(lits[i], e);
-                       verbose_stream() << mk_pp(e, m) << "\n";
-                   }
-                   verbose_stream() << "\n";);                   
-        TRACE("utvpi", 
-              tout << "conflict: ";
-              for (unsigned i = 0; i < lits.size(); ++i) {
-                  ctx.display_literal_info(tout, lits[i]);
-              }
-              tout << "\n";
-              );
+        IF_VERBOSE(20, ctx.display_literals_smt2(verbose_stream() << "conflict:\n", lits));
+        TRACE("utvpi", ctx.display_literals_smt2(tout << "conflict:\n", lits););
         
         if (m_params.m_arith_dump_lemmas) {
             symbol logic(m_lra ? (m_lia?"QF_LIRA":"QF_LRA") : "QF_LIA");
@@ -228,7 +212,7 @@ namespace smt {
         }
         
         vector<parameter> params;
-        if (get_manager().proofs_enabled()) {
+        if (m.proofs_enabled()) {
             params.push_back(parameter(symbol("farkas")));
             for (unsigned i = 0; i < m_nc_functor.get_coeffs().size(); ++i) {
                 params.push_back(parameter(rational(m_nc_functor.get_coeffs()[i])));
@@ -246,20 +230,24 @@ namespace smt {
 
     template<typename Ext>
     void theory_utvpi<Ext>::found_non_utvpi_expr(expr* n) {
-        if (!m_non_utvpi_exprs) {
-            std::stringstream msg;
-            msg << "found non utvpi logic expression:\n" << mk_pp(n, get_manager()) << "\n";
-            TRACE("utvpi", tout << msg.str(););
-            warning_msg("%s", msg.str().c_str());
-            get_context().push_trail(value_trail<context, bool>(m_non_utvpi_exprs));
-            m_non_utvpi_exprs = true;
+        if (m_non_utvpi_exprs) {
+            return;
         }
+        std::stringstream msg;
+        msg << "found non utvpi logic expression:\n" << mk_pp(n, m) << '\n';
+        auto str = msg.str();
+        TRACE("utvpi", tout << str;);
+        warning_msg("%s", str.c_str());
+        ctx.push_trail(value_trail<context, bool>(m_non_utvpi_exprs));
+        m_non_utvpi_exprs = true;        
     }
 
     template<typename Ext>
-    void theory_utvpi<Ext>::init(context* ctx) {
-        theory::init(ctx);
-        m_zero  = mk_var(ctx->mk_enode(a.mk_numeral(rational(0), true), false, false, true));
+    void theory_utvpi<Ext>::init_zero() {
+        if (m_izero == null_theory_var) {
+            m_izero  = mk_var(ctx.mk_enode(a.mk_numeral(rational(0), true), false, false, true));
+            m_rzero  = mk_var(ctx.mk_enode(a.mk_numeral(rational(0), false), false, false, true));
+        }
     }
 
     /**
@@ -273,8 +261,8 @@ namespace smt {
      */
     template<typename Ext>
     void theory_utvpi<Ext>::negate(coeffs& coeffs, rational& weight) {
-        for (unsigned i = 0; i < coeffs.size(); ++i) {
-            coeffs[i].second.neg();
+        for (auto& c : coeffs) {
+            c.second.neg();
         }
         weight.neg();
     }    
@@ -293,14 +281,13 @@ namespace smt {
     void theory_utvpi<Ext>::mk_coeffs(vector<std::pair<expr*,rational> > const& terms, coeffs& coeffs, rational& w) {
         coeffs.reset();
         w = m_test.get_weight();
-        for (unsigned i = 0; i < terms.size(); ++i) {
-            coeffs.push_back(std::make_pair(mk_var(terms[i].first), terms[i].second));
+        for (auto const& t : terms) {
+            coeffs.push_back(std::make_pair(mk_var(t.first), t.second));
         }
     }
 
     template<typename Ext>
     void theory_utvpi<Ext>::internalize_eq_eh(app * atom, bool_var v) {
-        context & ctx  = get_context();
         app * lhs      = to_app(atom->get_arg(0));
         app * rhs      = to_app(atom->get_arg(1));
         if (a.is_numeral(rhs)) {
@@ -318,7 +305,8 @@ namespace smt {
 
     template<typename Ext>
     bool theory_utvpi<Ext>::internalize_atom(app * n, bool) {
-        context & ctx = get_context();
+        if (!m_consistent)
+            return false;
         if (!a.is_le(n) && !a.is_ge(n) && !a.is_lt(n) && !a.is_gt(n)) {
             found_non_utvpi_expr(n);
             return false;
@@ -339,19 +327,26 @@ namespace smt {
         rational w;
         coeffs coeffs;
         mk_coeffs(m_test.get_linearization(), coeffs, w);
+
+        if (coeffs.empty()) {
+            found_non_utvpi_expr(n);
+            return false;
+        }
+
         bool_var bv = ctx.mk_bool_var(n);
         ctx.set_var_theory(bv, get_id());
         literal l(bv);
+        m_bool_var2atom.insert(bv, m_atoms.size());
+
         numeral w1 = mk_weight(a.is_real(e1), is_strict, w);
         edge_id pos = add_ineq(coeffs, w1, l);        
         negate(coeffs, w);
         numeral w2 = mk_weight(a.is_real(e1), !is_strict, w);
         edge_id neg = add_ineq(coeffs, w2, ~l);
-        m_bool_var2atom.insert(bv, m_atoms.size());
         m_atoms.push_back(atom(bv, pos, neg));
         
         TRACE("utvpi", 
-              tout << mk_pp(n, get_manager()) << "\n";
+              tout << mk_pp(n, m) << "\n";
               m_graph.display_edge(tout << "pos: ", pos); 
               m_graph.display_edge(tout << "neg: ", neg); 
               );
@@ -361,8 +356,10 @@ namespace smt {
 
     template<typename Ext>
     bool theory_utvpi<Ext>::internalize_term(app * term) {
-        bool result = null_theory_var != mk_term(term);
-        CTRACE("utvpi", !result, tout << "Did not internalize " << mk_pp(term, get_manager()) << "\n";);
+        if (!m_consistent)
+            return false;
+        bool result = !ctx.inconsistent() && null_theory_var != mk_term(term);
+        CTRACE("utvpi", !result, tout << "Did not internalize " << mk_pp(term, m) << "\n";);
         return result;
     }
 
@@ -370,8 +367,8 @@ namespace smt {
     void theory_utvpi<Ext>::assign_eh(bool_var v, bool is_true) {
         m_stats.m_num_assertions++;
         unsigned idx = m_bool_var2atom.find(v);
-        SASSERT(get_context().get_assignment(v) != l_undef);
-        SASSERT((get_context().get_assignment(v) == l_true) == is_true);    
+        SASSERT(ctx.get_assignment(v) != l_undef);
+        SASSERT((ctx.get_assignment(v) == l_true) == is_true);    
         m_atoms[idx].assign_eh(is_true);
         m_asserted_atoms.push_back(idx);   
     }
@@ -411,6 +408,9 @@ namespace smt {
         else if (!check_z_consistency()) {
             return FC_CONTINUE;
         }
+        else if (has_shared() && assume_eqs_core()) {
+            return FC_CONTINUE;
+        }
         else if (m_non_utvpi_exprs) {
             return FC_GIVEUP;
         }
@@ -418,6 +418,17 @@ namespace smt {
             return FC_DONE;
         }
     }
+
+    template<typename Ext>
+    bool theory_utvpi<Ext>::has_shared() {
+        auto sz = static_cast<theory_var>(get_num_vars());
+        for (theory_var v = 0; v < sz; ++v) {
+            if (is_relevant_and_shared(get_enode(v)))
+                return true;
+        }
+        return false;
+    }
+
 
     template<typename Ext>
     bool theory_utvpi<Ext>::check_z_consistency() {
@@ -449,7 +460,7 @@ namespace smt {
             m_nc_functor.reset();
             VERIFY(m_graph.find_shortest_zero_edge_path(v1, v2, UINT_MAX, m_nc_functor));
             VERIFY(m_graph.find_shortest_zero_edge_path(v2, v1, UINT_MAX, m_nc_functor));
-            IF_VERBOSE(1, verbose_stream() << "parity conflict " << mk_pp(e->get_owner(), get_manager()) << "\n";);
+            IF_VERBOSE(1, verbose_stream() << "parity conflict " << mk_pp(e->get_owner(), m) << "\n";);
             set_conflict();
                         
             return false;            
@@ -459,8 +470,8 @@ namespace smt {
 
     template<typename Ext>
     void theory_utvpi<Ext>::display(std::ostream& out) const {
-        for (unsigned i = 0; i < m_atoms.size(); ++i) {
-            m_atoms[i].display(*this, out); out << "\n";
+        for (auto const& a : m_atoms) {
+            a.display(*this, out); out << "\n";
         }
         m_graph.display(out);        
     }
@@ -488,21 +499,17 @@ namespace smt {
 
     template<typename Ext>
     void theory_utvpi<Ext>::propagate() {
-        bool consistent = true;
+        bool consistent = is_consistent() && !ctx.inconsistent();
         while (consistent && can_propagate()) {
             unsigned idx = m_asserted_atoms[m_asserted_qhead];
             m_asserted_qhead++;
-            consistent = propagate_atom(m_atoms[idx]);
+            consistent = propagate_atom(m_atoms[idx]);            
         }
     }
 
     template<typename Ext>
     bool theory_utvpi<Ext>::propagate_atom(atom const& a) {
-        context& ctx = get_context();
-        TRACE("utvpi", a.display(*this, tout); tout << "\n";);
-        if (ctx.inconsistent()) {
-            return false;
-        }
+        TRACE("utvpi", a.display(*this, tout); tout << "\n";);       
         int edge_id = a.get_asserted_edge();
         if (!enable_edge(edge_id)) {
             m_graph.traverse_neg_cycle2(m_params.m_arith_stronger_lemmas, m_nc_functor);
@@ -514,8 +521,7 @@ namespace smt {
     
     template<typename Ext>
     theory_var theory_utvpi<Ext>::mk_term(app* n) {
-        TRACE("utvpi", tout << mk_pp(n, get_manager()) << "\n";);
-        context& ctx = get_context();
+        TRACE("utvpi", tout << mk_pp(n, m) << "\n";);
         
         bool cl = m_test.linearize(n);
         if (!cl) {
@@ -529,15 +535,17 @@ namespace smt {
         if (coeffs.empty()) {
             return mk_num(n, w);
         }
-        if (coeffs.size() == 1 && coeffs[0].second.is_one()) {
+        if (coeffs.size() == 1 && coeffs[0].second.is_one() && ctx.e_internalized(n)) {
             return coeffs[0].first;
         }
         if (coeffs.size() == 2) {
             // do not create an alias.
+            found_non_utvpi_expr(n);
             return null_theory_var;
         }
-        for (unsigned i = 0; i < n->get_num_args(); ++i) {
-            mk_term(to_app(n->get_arg(i)));
+        for (expr* arg : *n) {
+            if (!ctx.e_internalized(arg))
+                ctx.internalize(arg, false);
         }
         th_var target = mk_var(ctx.mk_enode(n, false, false, true));
         coeffs.push_back(std::make_pair(target, rational(-1)));
@@ -551,9 +559,12 @@ namespace smt {
     template<typename Ext>
     theory_var theory_utvpi<Ext>::mk_num(app* n, rational const& r) {
         theory_var v = null_theory_var;
-        context& ctx = get_context();
         if (r.is_zero()) {            
-            v = m_zero;
+            v = get_zero(n);
+            if (!ctx.e_internalized(n)) {
+                found_non_utvpi_expr(n);
+                v = null_theory_var;
+            }
         }
         else if (ctx.e_internalized(n)) {
             enode* e = ctx.get_enode(n);
@@ -561,6 +572,10 @@ namespace smt {
             SASSERT(v != null_theory_var);
         }
         else {
+            for (expr* arg : *n) {
+                if (!ctx.e_internalized(arg))
+                    ctx.internalize(arg, false);
+            }
             v = mk_var(ctx.mk_enode(n, false, false, true));
             // v = k: v <= k k <= v
             coeffs coeffs;
@@ -574,7 +589,6 @@ namespace smt {
 
     template<typename Ext>
     theory_var theory_utvpi<Ext>::expand(bool pos, th_var v, rational & k) {
-        context& ctx = get_context();
         enode* e = get_enode(v);
         expr* x, *y;
         rational r;
@@ -612,6 +626,7 @@ namespace smt {
     template<typename Ext>
     edge_id theory_utvpi<Ext>::add_ineq(vector<std::pair<th_var, rational> > const& terms, numeral const& weight, literal l) {
 
+        SASSERT(!terms.empty());
         SASSERT(terms.size() <= 2);
         SASSERT(terms.size() < 1 || terms[0].second.is_one() || terms[0].second.is_minus_one());
         SASSERT(terms.size() < 2 || terms[1].second.is_one() || terms[1].second.is_minus_one());
@@ -627,12 +642,15 @@ namespace smt {
         if (terms.size() >= 2) {
             v2 = terms[1].first;
             pos2 = terms[1].second.is_one();
-            SASSERT(v1 != null_theory_var);
+            SASSERT(v2 != null_theory_var);
             SASSERT(pos2 || terms[1].second.is_minus_one());
         }            
-//        TRACE("utvpi", tout << (pos1?"$":"-$") << v1 << (pos2?" + $":" - $") << v2 << " + " << weight << " <= 0\n";);
+        TRACE("utvpi", tout << (pos1?"$":"-$") << v1;
+              if (terms.size() == 2) tout << (pos2?" + $":" - $") << v2;
+              tout << " + " << weight << " <= 0\n";);
         edge_id id = m_graph.get_num_edges();
         th_var w1 = to_var(v1), w2 = to_var(v2);
+
         if (terms.size() == 1 && pos1) {
             m_graph.add_edge(neg(w1), pos(w1), -weight-weight, std::make_pair(l,2));
             m_graph.add_edge(neg(w1), pos(w1), -weight-weight, std::make_pair(l,2));
@@ -662,12 +680,14 @@ namespace smt {
 
     template<typename Ext>
     bool theory_utvpi<Ext>::enable_edge(edge_id id) {
-        return (id == null_edge_id) || (m_graph.enable_edge(id) && m_graph.enable_edge(id+1));
+        return
+            (id == null_edge_id) ||
+            (m_graph.enable_edge(id) && m_graph.enable_edge(id + 1));
     }
 
     template<typename Ext>
-    bool theory_utvpi<Ext>::is_consistent() const {
-        return m_graph.is_feasible();
+    bool theory_utvpi<Ext>::is_consistent() const {        
+        return m_consistent;
     }
 
 
@@ -711,6 +731,7 @@ namespace smt {
      */
     template<typename Ext>
     void theory_utvpi<Ext>::enforce_parity() {
+        SASSERT(m_graph.is_feasible_dbg());
         unsigned_vector todo;        
         unsigned sz = get_num_vars();
         for (unsigned i = 0; i < sz; ++i) {
@@ -733,8 +754,8 @@ namespace smt {
 
             int_vector zero_v;
             m_graph.compute_zero_succ(v1, zero_v);
-            for (unsigned j = 0; j < zero_v.size(); ++j) {
-                if (zero_v[j] == v2) {
+            for (auto v0 : zero_v) {
+                if (v0 == v2) {
                     zero_v.reset();
                     m_graph.compute_zero_succ(v2, zero_v);
                     break;
@@ -742,22 +763,21 @@ namespace smt {
             }
 
             TRACE("utvpi", 
-                  tout << "Disparity: " << v1 << "\n";
-                  for (unsigned j = 0; j < zero_v.size(); ++j) {
-                      tout << "decrement: " << zero_v[j] << "\n";
-                  });
+                  tout << "Disparity: " << v1 << " - " << v2 << "\n";
+                  tout << "decrement: " << zero_v << "\n";
+                  display(tout);
+                  );
 
-            for (unsigned j = 0; j < zero_v.size(); ++j) {
-                int v = zero_v[j];
-                
+            for (auto v : zero_v) {                
                 m_graph.inc_assignment(v, numeral(-1));
                 th_var k = from_var(v);
                 if (!is_parity_ok(k)) {
                     todo.push_back(k);
                 }
-            }         
+            }    
+            TRACE("utvpi", display(tout););
+            SASSERT(m_graph.is_feasible_dbg());     
         }
-        SASSERT(m_graph.is_feasible());
         DEBUG_CODE(
             for (unsigned i = 0; i < sz; ++i) {
                 enode* e = get_enode(i);
@@ -766,6 +786,7 @@ namespace smt {
                     UNREACHABLE();
                 }            
             });
+        SASSERT(m_graph.is_feasible_dbg());
     }
     
 
@@ -774,18 +795,30 @@ namespace smt {
     void theory_utvpi<Ext>::init_model(model_generator & m) {            
         m_factory = alloc(arith_factory, get_manager());
         m.register_factory(m_factory);
+        init_model();
+    }
+
+    template<typename Ext>
+    void theory_utvpi<Ext>::init_model() {            
         enforce_parity();
-        m_graph.set_to_zero(to_var(m_zero), neg(to_var(m_zero)));
+        init_zero();
+        dl_var vs[4] = { to_var(m_izero), neg(to_var(m_izero)), to_var(m_rzero), neg(to_var(m_rzero)) };
+        m_graph.set_to_zero(4, vs);
         compute_delta();   
         DEBUG_CODE(model_validate(););
     }
 
+    template<typename Ext>
+    bool theory_utvpi<Ext>::assume_eqs_core() {
+        init_model();
+        return assume_eqs(m_var_value_table);
+    }
+
+
     template<typename Ext>    
     void theory_utvpi<Ext>::model_validate() {
-        context& ctx = get_context();
-        unsigned sz = m_atoms.size();
-        for (unsigned i = 0; i < sz; ++i) {
-            bool_var b = m_atoms[i].get_bool_var();
+        for (auto const& a : m_atoms) {
+            bool_var b = a.get_bool_var();
             if (!ctx.is_relevant(b)) {
                 continue;
             }
@@ -802,24 +835,17 @@ namespace smt {
             default:
                 break;
             }
+            (void)ok;
             CTRACE("utvpi", !ok, 
                    tout << "validation failed:\n";
                    tout << "Assignment: " << assign << "\n";
-                   m_atoms[i].display(*this, tout);
+                   tout << mk_pp(e, m) << "\n";
+                   a.display(*this, tout);
                    tout << "\n";
                    display(tout);
                    m_graph.display_agl(tout);
                    );
-            if (!ok) {
-                std::cout << "validation failed:\n";
-                std::cout << "Assignment: " << assign << "\n";
-                m_atoms[i].display(*this, std::cout);
-                std::cout << "\n";
-                display(std::cout);
-                m_graph.display_agl(std::cout);
-
-            }
-            // CTRACE("utvpi",  ok, tout << "validation success: " << mk_pp(e, get_manager()) << "\n";);
+            // CTRACE("utvpi",  ok, tout << "validation success: " << mk_pp(e, m) << "\n";);
             SASSERT(ok);
         }
     }
@@ -833,10 +859,10 @@ namespace smt {
         if (a.is_lt(e, e1, e2) || a.is_gt(e, e2, e1)) {
             return eval_num(e1) < eval_num(e2);
         }
-        if (get_manager().is_eq(e, e1, e2)) {
+        if (m.is_eq(e, e1, e2)) {
             return eval_num(e1) == eval_num(e2);
         }
-        TRACE("utvpi", tout << "expression not handled: " << mk_pp(e, get_manager()) << "\n";);
+        TRACE("utvpi", tout << "expression not handled: " << mk_pp(e, m) << "\n";);
         return false;
     }
 
@@ -852,16 +878,12 @@ namespace smt {
         }
         if (a.is_add(e)) {
             r.reset();
-            for (unsigned i = 0; i < to_app(e)->get_num_args(); ++i) {
-                r += eval_num(to_app(e)->get_arg(i));
-            }
+            for (expr* arg : *to_app(e)) r+= eval_num(arg);
             return r;
         }
         if (a.is_mul(e)) {
             r = rational(1);
-            for (unsigned i = 0; i < to_app(e)->get_num_args(); ++i) {
-                r *= eval_num(to_app(e)->get_arg(i));
-            }
+            for (expr* arg : *to_app(e)) r*= eval_num(arg);
             return r;
         }
         if (a.is_uminus(e, e1)) {
@@ -873,14 +895,14 @@ namespace smt {
         if (is_uninterp_const(e)) {
             return mk_value(mk_var(e), a.is_int(e));
         }
-        TRACE("utvpi", tout << "expression not handled: " << mk_pp(e, get_manager()) << "\n";);
+        TRACE("utvpi", tout << "expression not handled: " << mk_pp(e, m) << "\n";);
         UNREACHABLE();
         return rational(0);
     }
 
 
     template<typename Ext>    
-        rational theory_utvpi<Ext>::mk_value(th_var v, bool is_int) {
+    rational theory_utvpi<Ext>::mk_value(th_var v, bool is_int) {
         SASSERT(v != null_theory_var);
         numeral val1 = m_graph.get_assignment(to_var(v));
         numeral val2 = m_graph.get_assignment(neg(to_var(v)));
@@ -890,7 +912,7 @@ namespace smt {
         SASSERT(!is_int || num.is_int());
         TRACE("utvpi", 
               expr* n = get_enode(v)->get_owner();
-              tout << mk_pp(n, get_manager()) << " |-> (" << val1 << " - " << val2 << ")/2 = " << num << "\n";);
+              tout << mk_pp(n, m) << " |-> (" << val1 << " - " << val2 << ")/2 = " << num << "\n";);
 
         return num;
     }
@@ -900,7 +922,7 @@ namespace smt {
         theory_var v = n->get_th_var(get_id());
         bool is_int = a.is_int(n->get_owner());
         rational num = mk_value(v, is_int);
-        TRACE("utvpi", tout << mk_pp(n->get_owner(), get_manager()) << " |-> " << num << "\n";);
+        TRACE("utvpi", tout << mk_pp(n->get_owner(), m) << " |-> " << num << "\n";);
         return alloc(expr_wrapper_proc, m_factory->mk_num_value(num, is_int));
     }
 
@@ -910,7 +932,7 @@ namespace smt {
 
     template<typename Ext>
     void theory_utvpi<Ext>::compute_delta() {
-        m_delta = rational(1);
+        m_delta = rational(1,4);
         unsigned sz = m_graph.get_num_edges();
 
         for (unsigned i = 0; i < sz; ++i) {
@@ -934,7 +956,7 @@ namespace smt {
             if (eps_r.is_pos()) {
                 rational num_r = -b.get_rational();
                 SASSERT(num_r.is_pos());
-                rational new_delta = num_r/eps_r;
+                rational new_delta = num_r/(4*eps_r);
                 if (new_delta < m_delta) {
                     m_delta = new_delta;
                 }
@@ -944,11 +966,10 @@ namespace smt {
 
     template<typename Ext>
     theory* theory_utvpi<Ext>::mk_fresh(context* new_ctx) { 
-        return alloc(theory_utvpi<Ext>, new_ctx->get_manager()); 
+        return alloc(theory_utvpi<Ext>, *new_ctx); 
     }
 
 
 };
 
-#endif
 

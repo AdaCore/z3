@@ -168,7 +168,7 @@ struct ctx_simplify_tactic::imp {
         m(_m),
         m_simp(simp),
         m_allocator("context-simplifier"),
-        m_occs(true, true),
+        m_occs(m, true, true),
         m_mk_app(m, p) {
         updt_params(p);
         m_simp->set_occs(m_occs);
@@ -203,8 +203,7 @@ struct ctx_simplify_tactic::imp {
     void checkpoint() {
         if (memory::get_allocation_size() > m_max_memory)
             throw tactic_exception(TACTIC_MAX_MEMORY_MSG);
-        if (m.canceled())
-            throw tactic_exception(m.limit().get_cancel_msg());
+        tactic::checkpoint(m);
     }
 
     bool shared(expr * t) const {
@@ -569,18 +568,18 @@ struct ctx_simplify_tactic::imp {
     }
 
     void operator()(goal & g) {
-        SASSERT(g.is_well_sorted());
         m_occs.reset();
         m_occs(g);
         m_num_steps = 0;
+        unsigned sz = g.size();
         tactic_report report("ctx-simplify", g);
         if (g.proofs_enabled()) {
             expr_ref r(m);
-            unsigned sz = g.size();
             for (unsigned i = 0; !g.inconsistent() && i < sz; ++i) {
                 expr * t = g.form(i);
                 process(t, r);
-                proof* new_pr = m.mk_modus_ponens(g.pr(i), m.mk_rewrite(t, r));
+                proof_ref new_pr(m.mk_rewrite(t, r), m);
+                new_pr = m.mk_modus_ponens(g.pr(i), new_pr);
                 g.update(i, r, new_pr, g.dep(i));
             }
         }
@@ -588,7 +587,6 @@ struct ctx_simplify_tactic::imp {
             process_goal(g);
         }
         IF_VERBOSE(TACTIC_VERBOSITY_LVL, verbose_stream() << "(ctx-simplify :num-steps " << m_num_steps << ")\n";);
-        SASSERT(g.is_well_sorted());
     }
 
 };

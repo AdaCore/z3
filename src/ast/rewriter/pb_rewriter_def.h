@@ -16,8 +16,7 @@ Author:
 Notes:
 
 --*/
-#ifndef PB_REWRITER_DEF_H_
-#define PB_REWRITER_DEF_H_
+#pragma once
 
 #include "ast/rewriter/pb_rewriter.h"
 
@@ -164,6 +163,9 @@ lbool pb_rewriter_util<PBU>::normalize(typename PBU::args_t& args, typename PBU:
         }            
     }
 
+    if (is_eq && k.is_neg()) {
+        return l_false;
+    }
     if (is_eq) {
         TRACE("pb_verbose", display(tout << "post-normalize:", args, k, is_eq););
         return l_undef;
@@ -256,9 +258,7 @@ lbool pb_rewriter_util<PBU>::normalize(typename PBU::args_t& args, typename PBU:
         typename PBU::numeral n0 = k/max;
         typename PBU::numeral n1 = floor(n0);
         typename PBU::numeral n2 = ceil(k/min) - PBU::numeral::one();
-        if (n1 == n2 && !n0.is_int()) {
-            IF_VERBOSE(3, display(verbose_stream() << "set cardinality\n", args, k, is_eq););
-            
+        if (n1 == n2 && !n0.is_int()) {            
             for (unsigned i = 0; i < args.size(); ++i) {
                 args[i].second = PBU::numeral::one();
             }
@@ -295,4 +295,3 @@ void pb_rewriter_util<PBU>::prune(typename PBU::args_t& args, typename PBU::nume
     }    
 }
 
-#endif

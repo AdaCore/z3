@@ -17,8 +17,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_DECL_COLLECTOR_H_
-#define SMT_DECL_COLLECTOR_H_
+#pragma once
 
 #include "util/top_sort.h"
 #include "ast/ast.h"
@@ -29,6 +28,10 @@ class decl_collector {
     ptr_vector<sort>      m_sorts;
     ptr_vector<func_decl> m_decls;
     ast_mark              m_visited;
+    ast_ref_vector        m_trail;
+    unsigned_vector       m_trail_lim;
+    unsigned_vector       m_sorts_lim;
+    unsigned_vector       m_decls_lim;
     family_id             m_basic_fid;
     family_id             m_dt_fid;
     datatype_util         m_dt_util;
@@ -47,12 +50,16 @@ public:
     decl_collector(ast_manager & m);
     ast_manager & m() { return m_manager; }
 
+    void reset() { m_sorts.reset(); m_decls.reset(); m_visited.reset(); m_trail.reset(); }
     void visit_func(func_decl* n);
     void visit(ast * n);
     void visit(unsigned n, expr* const* es);
     void visit(expr_ref_vector const& es);
 
-    void order_deps();
+    void push();
+    void pop(unsigned n);
+
+    void order_deps(unsigned n);
 
     unsigned get_num_sorts() const { return m_sorts.size(); }
     unsigned get_num_decls() const { return m_decls.size(); }
@@ -61,4 +68,3 @@ public:
     ptr_vector<func_decl> const& get_func_decls() const { return m_decls; }
 };
 
-#endif

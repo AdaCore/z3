@@ -25,14 +25,14 @@ Revision History:
 
 --*/
 
-#ifndef HILBERT_BASIS_H_
-#define HILBERT_BASIS_H_
+#pragma once
 
 #include "util/rational.h"
 #include "util/lbool.h"
 #include "util/statistics.h"
 #include "util/checked_int64.h"
 #include "util/rlimit.h"
+#include <cstring>
 
 typedef vector<rational> rational_vector;
 
@@ -88,7 +88,7 @@ class hilbert_basis {
 
     reslimit&          m_limit;
     vector<num_vector> m_ineqs;      // set of asserted inequalities
-    svector<bool>      m_iseq;       // inequalities that are equalities
+    bool_vector      m_iseq;       // inequalities that are equalities
     num_vector         m_store;      // store of vectors
     svector<offset_t>  m_basis;      // vector of current basis
     svector<offset_t>  m_free_list;  // free list of unused storage
@@ -198,6 +198,3 @@ public:
     void reset_statistics();     
 
 };
-
-
-#endif 

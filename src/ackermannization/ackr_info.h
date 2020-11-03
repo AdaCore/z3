@@ -13,8 +13,7 @@ Mikolas Janota
 
 Revision History:
 --*/
-#ifndef ACKR_INFO_H_
-#define ACKR_INFO_H_
+#pragma once
 
 #include "util/ref.h"
 #include "util/obj_hashtable.h"
@@ -36,7 +35,7 @@ class ackr_info {
     public:
         ackr_info(ast_manager& m) : 
             m(m),
-            m_er(mk_default_expr_replacer(m)),
+            m_er(mk_default_expr_replacer(m, false)),
             m_subst(m),
             m_ref_count(0),
             m_sealed(false)
@@ -119,4 +118,3 @@ class ackr_info {
 
 typedef ref<ackr_info> ackr_info_ref;
 
-#endif /* ACKR_INFO_H_ */

@@ -17,7 +17,7 @@ Notes:
 
 --*/
 #include "ast/rewriter/fpa_rewriter.h"
-#include "ast/rewriter/fpa_rewriter_params.hpp"
+#include "params/fpa_rewriter_params.hpp"
 #include "ast/ast_smt2_pp.h"
 
 fpa_rewriter::fpa_rewriter(ast_manager & m, params_ref const & p) :
@@ -773,7 +773,7 @@ br_status fpa_rewriter::mk_to_ieee_bv(func_decl * f, expr * arg, expr_ref & resu
         if (m_fm.is_nan(v)) {
             if (m_hi_fp_unspecified) {
                 expr * args[4] = { bu.mk_numeral(0, 1),
-                                   bu.mk_bv_neg(bu.mk_numeral(1, x.get_ebits())),
+                                   bu.mk_numeral(rational::minus_one(), x.get_ebits()),
                                    bu.mk_numeral(0, x.get_sbits() - 2),
                                    bu.mk_numeral(1, 1) };
                 result = bu.mk_concat(4, args);

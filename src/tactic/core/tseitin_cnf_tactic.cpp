@@ -786,8 +786,7 @@ class tseitin_cnf_tactic : public tactic {
         
         
         void checkpoint() {
-            if (m.canceled())
-                throw tactic_exception(TACTIC_CANCELED_MSG);
+            tactic::checkpoint(m);
             if (memory::get_allocation_size() > m_max_memory)
                 throw tactic_exception(TACTIC_MAX_MEMORY_MSG);
         }
@@ -830,7 +829,6 @@ class tseitin_cnf_tactic : public tactic {
 
         void operator()(goal_ref const & g, 
                         goal_ref_buffer & result) {
-            SASSERT(g->is_well_sorted());
             tactic_report report("tseitin-cnf", *g);
             fail_if_proof_generation("tseitin-cnf", g);
             m_produce_models      = g->models_enabled();
@@ -874,8 +872,6 @@ class tseitin_cnf_tactic : public tactic {
                 g->add(m_mc.get());
             g->inc_depth();
             result.push_back(g.get());
-            TRACE("tseitin_cnf", g->display(tout););
-            SASSERT(g->is_well_sorted());
         }
     };
     

@@ -24,8 +24,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef SMT_CLAUSE_PROOF_H_
-#define SMT_CLAUSE_PROOF_H_
+#pragma once
 
 #include "smt/smt_theory.h"
 #include "smt/smt_clause.h"
@@ -67,11 +66,10 @@ namespace smt {
         void add(clause& c);
         void add(unsigned n, literal const* lits, clause_kind k, justification* j);
         void del(clause& c);
-        proof_ref get_proof();
+        proof_ref get_proof(bool inconsistent);
     };
 
     std::ostream& operator<<(std::ostream& out, clause_proof::status st);
 };
 
-#endif /* SMT_CLAUSE_PROOF_H_ */
 

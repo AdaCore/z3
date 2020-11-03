@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef CANCEL_EH_H_
-#define CANCEL_EH_H_
+#pragma once
 
 #include "util/event_handler.h"
 
@@ -39,6 +38,6 @@ public:
         }
     }
     bool canceled() const { return m_canceled; }
+    void reset() { m_canceled = false; }
 };
 
-#endif

@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef DL_RULE_SET_H_
-#define DL_RULE_SET_H_
+#pragma once
 
 #include "util/obj_hashtable.h"
 #include "muz/base/dl_rule.h"
@@ -63,7 +62,7 @@ namespace datalog {
 
         void populate(const rule_set & rules);
         void populate(unsigned n, rule * const * rules);
-        void restrict(const item_set & allowed);
+        void restrict_dependencies(const item_set & allowed);
         void remove(func_decl * itm);
         void remove(const item_set & to_remove);
 
@@ -254,6 +253,7 @@ namespace datalog {
 
         void set_output_predicate(func_decl * pred) { m_refs.push_back(pred); m_output_preds.insert(pred); }
         bool is_output_predicate(func_decl * pred) const { return m_output_preds.contains(pred); }
+        void inherit_output_predicate(rule_set const& src, func_decl* pred) { if (src.is_output_predicate(pred) && !is_output_predicate(pred)) set_output_predicate(pred); }
         const func_decl_set & get_output_predicates() const { return m_output_preds; }
         func_decl* get_output_predicate() const { SASSERT(m_output_preds.size() == 1); return *m_output_preds.begin(); }
 
@@ -283,4 +283,3 @@ namespace datalog {
 
 };
 
-#endif /* DL_RULE_SET_H_ */

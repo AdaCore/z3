@@ -21,6 +21,7 @@ Revision History:
 #include "util/buffer.h"
 #include "util/z3_exception.h"
 #include "util/common_msgs.h"
+#include <memory>
 
 namespace subpaving {
 
@@ -81,7 +82,8 @@ public:
     // Return the next variable to branch.
     var operator()(typename context_t<C>::node * n) override {
         typename context_t<C>::numeral_manager & nm = this->ctx()->nm();
-        SASSERT(this->ctx()->num_vars() > 0);
+        if (this->ctx()->num_vars() == 0)
+            return null_var;
         var x = this->ctx()->splitting_var(n);
         if (x == null_var)
             x = 0;
@@ -362,7 +364,7 @@ template<typename C>
 context_t<C>::monomial::monomial(unsigned sz, power const * pws):
     definition(constraint::MONOMIAL),
     m_size(sz) {
-    memcpy(m_powers, pws, sz*sizeof(power));
+    std::uninitialized_copy(pws, pws + sz, m_powers);
     std::sort(m_powers, m_powers+sz, typename power::lt_proc());
     DEBUG_CODE({
             for (unsigned i = 0; i < sz; i ++) {
@@ -823,7 +825,7 @@ void context_t<C>::add_clause_core(unsigned sz, ineq * const * atoms, bool lemma
     if (watch) {
         for (unsigned i = 0; i < sz; i++) {
             var x = c->m_atoms[i]->x();
-            if (i == 0 || x != c->m_atoms[i-1]->x())
+            if (x != null_var && (i == 0 || x != c->m_atoms[i-1]->x()))
                 m_wlist[x].push_back(watched(c));
         }
     }
@@ -1618,12 +1620,21 @@ void context_t<C>::propagate_monomial_downward(var x, node * n, unsigned j) {
             im().power(y, m->degree(i), yk);
             if (first)
                 im().set(d, yk);
-            else
+            else {
                 im().mul(d, yk, r);
+                im().set(d, r);
+                first = false;
+            }
+        }       
+        if (im().contains_zero(d)) {
+            im().reset_lower(r);
+            im().reset_upper(r);
         }
-        interval & aux  = m_i_tmp2;
-        aux.set_constant(n, x);
-        im().div(aux, d, r);
+        else {
+            interval& aux = m_i_tmp2;
+            aux.set_constant(n, x);
+            im().div(aux, d, r);
+        }
     }
     else {
         SASSERT(sz == 1);
@@ -1632,11 +1643,11 @@ void context_t<C>::propagate_monomial_downward(var x, node * n, unsigned j) {
         aux.set_constant(n, x);
         im().set(r, aux);
     }
-    unsigned d = m->degree(j);
-    if (d > 1) {
-        if (d % 2 == 0 && im().lower_is_neg(r))
+    unsigned deg = m->degree(j);
+    if (deg > 1) {
+        if (deg % 2 == 0 && im().lower_is_neg(r))
             return; // If d is even, we can't take the nth-root when lower(r) is negative.
-        im().xn_eq_y(r, d, m_nth_root_prec, r);
+        im().xn_eq_y(r, deg, m_nth_root_prec, r);
     }
     var y = m->x(j);
     // r contains the new bounds for y
@@ -1737,9 +1748,8 @@ void context_t<C>::propagate(node * n, bound * b) {
 
 template<typename C>
 void context_t<C>::propagate(node * n) {
-    while (m_qhead < m_queue.size()) {
-        if (inconsistent(n))
-            break;
+    unsigned num_nodes = num_vars();
+    while (!inconsistent(n) && m_qhead < m_queue.size() && 2*m_qhead < num_nodes) {
         checkpoint();
         bound * b = m_queue[m_qhead];
         SASSERT(is_bound_of(b, n));
@@ -1776,6 +1786,8 @@ void context_t<C>::assert_units(node * n) {
         ineq * a = UNTAG(ineq*, *it);
         bool axiom = GET_TAG(*it) != 0;
         TRACE("subpaving_init", tout << "asserting: "; display(tout, a); tout << ", axiom: " << axiom << "\n";);
+        if (a->x() == null_var)
+            continue;
         propagate_bound(a->x(), a->value(), a->is_lower(), a->is_open(), n, justification(axiom));
         if (inconsistent(n))
             break;

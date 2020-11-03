@@ -19,8 +19,7 @@ Revision History:
 
 --*/
 
-#ifndef FARKAS_UTIL_H_
-#define FARKAS_UTIL_H_
+#pragma once
 
 #include "ast/arith_decl_plugin.h"
 
@@ -67,8 +66,9 @@ namespace smt {
 
         /** 
             \brief add a multiple of constraint c to the current state 
+            Fail if the constraint cannot be classified.
          */
-        void add(rational const & coef, app * c);
+        bool add(rational const & coef, app * c);
 
         /**
            \brief Extract the complement of premises multiplied by Farkas coefficients.
@@ -93,4 +93,3 @@ namespace smt {
     };
 }
 
-#endif

@@ -30,12 +30,8 @@ if [ -n "${Z3_CMAKE_GENERATOR}" ]; then
   BUILD_OPTS+=("--build-arg" "Z3_CMAKE_GENERATOR=${Z3_CMAKE_GENERATOR}")
 fi
 
-if [ -n "${USE_OPENMP}" ]; then
-  BUILD_OPTS+=("--build-arg" "USE_OPENMP=${USE_OPENMP}")
-fi
-
-if [ -n "${USE_LIBGMP}" ]; then
-  BUILD_OPTS+=("--build-arg" "USE_LIBGMP=${USE_LIBGMP}")
+if [ -n "${Z3_USE_LIBGMP}" ]; then
+  BUILD_OPTS+=("--build-arg" "Z3_USE_LIBGMP=${Z3_USE_LIBGMP}")
 fi
 
 if [ -n "${BUILD_DOCS}" ]; then
@@ -145,10 +141,6 @@ if [ -n "${Z3_WARNINGS_AS_ERRORS}" ]; then
 fi
 
 case ${LINUX_BASE} in
-  ubuntu_14.04)
-    BASE_DOCKER_FILE="${DOCKER_FILE_DIR}/z3_base_ubuntu_14.04.Dockerfile"
-    BASE_DOCKER_IMAGE_NAME="z3_base_ubuntu:14.04"
-    ;;
   ubuntu_16.04)
     BASE_DOCKER_FILE="${DOCKER_FILE_DIR}/z3_base_ubuntu_16.04.Dockerfile"
     BASE_DOCKER_IMAGE_NAME="z3_base_ubuntu:16.04"

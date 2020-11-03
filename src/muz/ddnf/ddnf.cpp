@@ -135,7 +135,7 @@ namespace datalog {
         ddnf_node::hash        m_hash;
         ddnf_node::eq          m_eq;
         ddnf_nodes             m_nodes;
-        svector<bool>          m_marked;
+        bool_vector          m_marked;
         stats                  m_stats;
     public:
         ddnf_mgr(unsigned n): m_noderefs(*this), m_internalized(false), m_tbv(n),
@@ -338,7 +338,7 @@ namespace datalog {
             }
             ptr_vector<ddnf_node> todo;
             todo.push_back(m_root);
-            svector<bool> done(m_noderefs.size(), false);
+            bool_vector done(m_noderefs.size(), false);
             while (!todo.empty()) {
                 ddnf_node& n = *todo.back();
                 if (done[n.get_id()]) {
@@ -453,10 +453,8 @@ namespace datalog {
         }
 
         void display(std::ostream& out) const {
-            u_map<ddnf_mgr*>::iterator it = m_mgrs.begin(), end = m_mgrs.end();
-            for (; it != end; ++it) {
-                it->m_value->display(out);
-            }
+            for (auto const& kv : m_mgrs)
+                kv.m_value->display(out);
         }
 
     private:
@@ -558,13 +556,9 @@ namespace datalog {
             m_todo.reset();
             m_cache.reset();
             m_expr2tbv.reset();
-            datalog::rule_set::iterator it  = rules.begin();
-            datalog::rule_set::iterator end = rules.end();
-            for (; it != end; ++it) {
-                if (!pre_process_rule(**it)) {
+            for (auto* r : rules) 
+                if (!pre_process_rule(*r)) 
                     return false;
-                }
-            }
             return true;
         }
 

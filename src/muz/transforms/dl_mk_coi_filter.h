@@ -17,8 +17,7 @@ Author:
 
 --*/
 
-#ifndef DL_MK_COI_FILTER_H_
-#define DL_MK_COI_FILTER_H_
+#pragma once
 
 #include "muz/base/dl_rule_transformer.h"
 #include "muz/base/dl_context.h"
@@ -32,7 +31,7 @@ namespace datalog {
         ast_manager & m;
         context & m_context;
         vector<app*> m_new_tail;
-        svector<bool> m_new_tail_neg;
+        bool_vector m_new_tail_neg;
         rule_set * bottom_up(rule_set const & source);
         rule_set * top_down(rule_set const & source);
 
@@ -46,4 +45,3 @@ namespace datalog {
     };
 }
 
-#endif

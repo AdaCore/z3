@@ -16,8 +16,7 @@ Author:
 Revision History:
 
 --*/
-#ifndef PDECL_H_
-#define PDECL_H_
+#pragma once
 
 #include "ast/ast.h"
 #include "util/obj_hashtable.h"
@@ -72,7 +71,7 @@ protected:
     virtual sort * find(sort * const * s) const;
 public:
     virtual bool is_sort_wrapper() const { return false; }
-    virtual sort * instantiate(pdecl_manager & m, sort * const * s) { return nullptr; }
+    virtual sort * instantiate(pdecl_manager & m, unsigned n, sort * const * s) { return nullptr; }
     // we use hash-consing for psorts.
     virtual char const * hcons_kind() const { UNREACHABLE(); return nullptr; }
     virtual unsigned hcons_hash() const { UNREACHABLE(); return 0; }
@@ -194,7 +193,7 @@ class paccessor_decl : public pdecl {
     size_t obj_size() const override { return sizeof(paccessor_decl); }
     bool has_missing_refs(symbol & missing) const;
     bool fix_missing_refs(dictionary<int> const & symbol2idx, symbol & missing);
-    accessor_decl * instantiate_decl(pdecl_manager & m, sort * const * s);
+    accessor_decl * instantiate_decl(pdecl_manager & m, unsigned n, sort * const * s);
     symbol const & get_name() const { return m_name; }
     ptype const & get_type() const { return m_type; }
     ~paccessor_decl() override {}
@@ -217,7 +216,7 @@ class pconstructor_decl : public pdecl {
     bool fix_missing_refs(dictionary<int> const & symbol2idx, symbol & missing);
     symbol const & get_name() const { return m_name; }
     symbol const & get_recognizer_name() const { return m_recogniser_name; }
-    constructor_decl * instantiate_decl(pdecl_manager & m, sort * const * s);
+    constructor_decl * instantiate_decl(pdecl_manager & m, unsigned n, sort * const * s);
     ~pconstructor_decl() override {}
 public:
     void display(std::ostream & out) const override { pdecl::display(out); }
@@ -234,7 +233,7 @@ class pdatatype_decl : public psort_decl {
     void finalize(pdecl_manager & m) override;
     size_t obj_size() const override { return sizeof(pdatatype_decl); }
     bool fix_missing_refs(dictionary<int> const & symbol2idx, symbol & missing);
-    datatype_decl * instantiate_decl(pdecl_manager & m, sort * const * s);
+    datatype_decl * instantiate_decl(pdecl_manager & m, unsigned n, sort * const * s);
     ~pdatatype_decl() override {}
 public:
     sort * instantiate(pdecl_manager & m, unsigned n, sort * const * s) override;
@@ -287,6 +286,9 @@ class pdecl_manager {
     struct indexed_sort_info;
 
     obj_map<sort, sort_info *>   m_sort2info; // for pretty printing sorts
+    obj_hashtable<sort>          m_notified;
+    ptr_vector<sort>             m_notified_trail;
+    unsigned_vector              m_notified_lim;
 
     void init_list();
     void del_decl_core(pdecl * p);
@@ -316,6 +318,9 @@ public:
     bool fix_missing_refs(pdatatypes_decl * s, symbol & missing) { return s->fix_missing_refs(missing); }
     sort * instantiate_datatype(psort_decl* p, symbol const& name, unsigned n, sort * const* s);
     sort * instantiate(psort * s, unsigned num, sort * const * args);
+    void notify_datatype(sort *r, psort_decl* p, unsigned n, sort* const* s);
+    void push();
+    void pop(unsigned n);
 
     void lazy_dec_ref(pdecl * p) { p->dec_ref(); if (p->get_ref_count() == 0) m_to_delete.push_back(p); }
     template<typename T>
@@ -354,4 +359,3 @@ typedef ref_buffer<pconstructor_decl, pdecl_manager> pconstructor_decl_ref_buffe
 typedef ref_buffer<pdatatype_decl, pdecl_manager>    pdatatype_decl_ref_buffer;
 typedef ref_buffer<pdatatypes_decl, pdecl_manager>   pdatatypes_decl_ref_buffer;
 
-#endif
