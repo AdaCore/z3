@@ -18,6 +18,7 @@ Notes:
 
 --*/
 #include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
 #include "ast/for_each_expr.h"
 #include "ast/ast_util.h"
 #include "ast/occurs.h"
@@ -31,9 +32,10 @@ Notes:
 generic_model_converter::~generic_model_converter() {
 }
 
+
 void generic_model_converter::add(func_decl * d, expr* e) {
     VERIFY(e);
-    VERIFY(d->get_range() == m.get_sort(e));
+    VERIFY(d->get_range() == e->get_sort());
     m_first_idx.insert_if_not_there(d, m_entries.size());
     m_entries.push_back(entry(d, e, m, ADD));
 }
@@ -104,14 +106,25 @@ void generic_model_converter::display(std::ostream & out) {
     }
 }
 
-model_converter * generic_model_converter::translate(ast_translation & translator) {
+generic_model_converter * generic_model_converter::copy(ast_translation & translator) {
     ast_manager& to = translator.to();
     generic_model_converter * res = alloc(generic_model_converter, to, m_orig.c_str());
     for (entry const& e : m_entries) {
-        res->m_entries.push_back(entry(translator(e.m_f.get()), translator(e.m_def.get()), to, e.m_instruction));
+        func_decl_ref d(translator(e.m_f.get()), to);
+        switch (e.m_instruction) {
+        case instruction::HIDE: 
+            res->hide(d);
+            break;        
+        case instruction::ADD: {
+            expr_ref def(translator(e.m_def.get()), to);            
+            res->add(d, def);
+            break;
+        }
+        }
     }
     return res;
 }
+
 
 void generic_model_converter::set_env(ast_pp_util* visitor) { 
     if (!visitor) {
@@ -166,9 +179,9 @@ void generic_model_converter::operator()(expr_ref& fml) {
                 args.push_back(m.mk_var(i, sorts.back()));
             }
             // TBD: check if order is correct with respect to quantifier binding ordering
-            expr_ref lhs(m.mk_app(e.m_f, arity, args.c_ptr()), m);
+            expr_ref lhs(m.mk_app(e.m_f, arity, args.data()), m);
             expr_ref body(m.mk_eq(lhs, e.m_def), m);
-            fmls.push_back(m.mk_forall(arity, sorts.c_ptr(), names.c_ptr(), body));
+            fmls.push_back(m.mk_forall(arity, sorts.data(), names.data(), body));
         }
         if (m_first_idx[e.m_f] == i) {
             m_first_idx.remove(e.m_f);

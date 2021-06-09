@@ -102,6 +102,9 @@ namespace bv {
             unsigned   m_is_true:1;
             zero_one_bit(theory_var v = euf::null_theory_var, unsigned idx = UINT_MAX, bool is_true = false):
                 m_owner(v), m_idx(idx), m_is_true(is_true) {}
+            std::ostream& display(std::ostream& out) const {
+                return out << "v" << m_owner << " @ " << m_idx << " " << (m_is_true?"T":"F");
+            }
         };
 
         typedef svector<zero_one_bit> zero_one_bits;
@@ -124,9 +127,9 @@ namespace bv {
             eq_occurs* m_first;
         public:
             eq_occurs_it(eq_occurs* c) : m_first(c) {}
-            eq_occurs operator*() { return *m_first; }
+            eq_occurs const& operator*() { return *m_first; }
             eq_occurs_it& operator++() { m_first = m_first->m_next; return *this; }
-            eq_occurs_it operator++(int) { eq_occurs_it tmp = *this; ++* this; return tmp; }
+            eq_occurs_it operator++(int) { eq_occurs_it tmp = *this; ++*this; return tmp; }
             bool operator==(eq_occurs_it const& other) const { return m_first == other.m_first; }
             bool operator!=(eq_occurs_it const& other) const { return !(*this == other); }
         };
@@ -157,16 +160,16 @@ namespace bv {
         };
 
         struct atom {
+            bool_var      m_bv;
             eq_occurs*    m_eqs;
             var_pos_occ * m_occs;
             svector<std::pair<atom*, eq_occurs*>> m_bit2occ;
             literal    m_var { sat::null_literal };
             literal    m_def { sat::null_literal };
-            atom() :m_eqs(nullptr), m_occs(nullptr) {}
+            atom(bool_var b) :m_bv(b), m_eqs(nullptr), m_occs(nullptr) {}
             ~atom() { m_bit2occ.clear(); }
             var_pos_it begin() const { return var_pos_it(m_occs); }
             var_pos_it end() const { return var_pos_it(nullptr); }
-            bool is_fresh() const { return !m_occs && !m_eqs; }
             eqs_iterator eqs() const { return eqs_iterator(m_eqs); }  
         };
 
@@ -175,6 +178,7 @@ namespace bv {
             atom* m_atom{ nullptr };
             explicit propagation_item(atom* a) : m_atom(a) {}
             explicit propagation_item(var_pos const& vp) : m_vp(vp) {}            
+            bool operator==(propagation_item const& other) const { if (m_atom) return m_atom == other.m_atom; return false; }
         };
 
 
@@ -203,6 +207,7 @@ namespace bv {
         svector<propagation_item>  m_prop_queue;
         unsigned_vector            m_prop_queue_lim;
         unsigned                   m_prop_queue_head { 0 };
+        sat::literal               m_true { sat::null_literal };
 
         // internalize
         void insert_bv2a(bool_var bv, atom * a) { m_bool_var2atom.setx(bv, a, 0); }
@@ -234,9 +239,9 @@ namespace bv {
         bool internalize_circuit(app* a);
         void internalize_unary(app* n, std::function<void(unsigned, expr* const*, expr_ref_vector&)>& fn);
         void internalize_binary(app* n, std::function<void(unsigned, expr* const*, expr* const*, expr_ref_vector&)>& fn);
-        void internalize_ac_binary(app* n, std::function<void(unsigned, expr* const*, expr* const*, expr_ref_vector&)>& fn);
         void internalize_par_unary(app* n, std::function<void(unsigned, expr* const*, unsigned p, expr_ref_vector&)>& fn);
         void internalize_novfl(app* n, std::function<void(unsigned, expr* const*, expr* const*, expr_ref&)>& fn);
+        void internalize_interp(app* n, std::function<expr*(expr*, expr*)>& ibin, std::function<expr*(expr*)>& un);
         void internalize_num(app * n);       
         void internalize_concat(app * n);        
         void internalize_bv2int(app* n);
@@ -246,8 +251,8 @@ namespace bv {
         void internalize_carry(app* n);
         void internalize_sub(app* n);
         void internalize_extract(app* n);
+        void internalize_repeat(app* n);
         void internalize_bit2bool(app* n);
-        void internalize_udiv(app* n);
         void internalize_udiv_i(app* n);
         template<bool Signed, bool Reverse, bool Negated>
         void internalize_le(app* n);
@@ -264,13 +269,12 @@ namespace bv {
 
         obj_map<expr, internalize_mode> m_delay_internalize;
         bool m_cheap_axioms{ true };
-        bool should_bit_blast(expr * n);
+        bool should_bit_blast(app * n);
         bool check_delay_internalized(expr* e);
         bool check_mul(app* e);
         bool check_mul_invertibility(app* n, expr_ref_vector const& arg_values, expr* value);
         bool check_mul_zero(app* n, expr_ref_vector const& arg_values, expr* value1, expr* value2);
         bool check_mul_one(app* n, expr_ref_vector const& arg_values, expr* value1, expr* value2);
-        bool check_mul_low_bits(app* n, expr_ref_vector const& arg_values, expr* value1, expr* value2);
         bool check_umul_no_overflow(app* n, expr_ref_vector const& arg_values, expr* value);
         bool check_bv_eval(euf::enode* n);
         bool check_bool_eval(euf::enode* n);
@@ -294,12 +298,15 @@ namespace bv {
         bool propagate_bits(var_pos entry);
         bool propagate_eq_occurs(eq_occurs const& occ);
         numeral const& power2(unsigned i) const;
+        sat::literal mk_true();
 
 
         // invariants
         bool check_zero_one_bits(theory_var v);
         void check_missing_propagation() const;
         void validate_atoms() const;
+        
+        std::ostream& display(std::ostream& out, atom const& a) const;
        
     public:
         solver(euf::solver& ctx, theory_id id);
@@ -332,7 +339,7 @@ namespace bv {
         void init_use_list(sat::ext_use_list& ul) override;
         bool is_blocked(literal l, sat::ext_constraint_idx) override;
         bool check_model(sat::model const& m) const override;
-        unsigned max_var(unsigned w) const override;
+        void finalize_model(model& mdl) override;
 
         void new_eq_eh(euf::th_eq const& eq) override;
         void new_diseq_eh(euf::th_eq const& ne) override;
@@ -355,16 +362,19 @@ namespace bv {
         void merge_eh(theory_var, theory_var, theory_var v1, theory_var v2);
         void after_merge_eh(theory_var r1, theory_var r2, theory_var v1, theory_var v2) { SASSERT(check_zero_one_bits(r1)); }
         void unmerge_eh(theory_var v1, theory_var v2);
-        trail_stack<euf::solver>& get_trail_stack();
+        trail_stack& get_trail_stack();
 
         // diagnostics
         std::ostream& display(std::ostream& out, theory_var v) const;        
         typedef std::pair<solver const*, theory_var> pp_var;
         pp_var pp(theory_var v) const { return pp_var(this, v); }
 
+        friend std::ostream& operator<<(std::ostream& out, solver::zero_one_bit const& zo) { return zo.display(out); }
+
     };
 
     inline std::ostream& operator<<(std::ostream& out, solver::pp_var const& p) { return p.first->display(out, p.second); }
+
 
 
 }

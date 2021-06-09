@@ -45,18 +45,17 @@ namespace smt {
     
     void theory_bv::mk_bits(theory_var v) {
         enode * n             = get_enode(v);
-        app * owner           = n->get_owner();
+        app * owner           = n->get_expr();
         unsigned bv_size      = get_bv_size(n);
         bool is_relevant      = ctx.is_relevant(n);
         literal_vector & bits = m_bits[v];
-        TRACE("bv", tout << "v" << v << "\n";);
         bits.reset();
         m_bits_expr.reset();
 
         for (unsigned i = 0; i < bv_size; i++) {
             m_bits_expr.push_back(mk_bit2bool(owner, i));
         }
-        ctx.internalize(m_bits_expr.c_ptr(), bv_size, true);
+        ctx.internalize(m_bits_expr.data(), bv_size, true);
 
         for (unsigned i = 0; i < bv_size; i++) {
             bool_var b = ctx.get_bool_var(m_bits_expr[i]);
@@ -65,13 +64,20 @@ namespace smt {
                 ctx.mark_as_relevant(b);
             }
         }
+
+        TRACE("bv", tout << "v" << v << " #" << owner->get_id() << "\n";
+              for (unsigned i = 0; i < bv_size; i++) 
+                  tout << mk_bounded_pp(m_bits_expr[i], m) << "\n";
+              );
+
     }
 
-    class mk_atom_trail : public trail<theory_bv> {
+    class mk_atom_trail : public trail {
+        theory_bv& th;
         bool_var m_var;
     public:
-        mk_atom_trail(bool_var v):m_var(v) {}
-        void undo(theory_bv & th) override {
+        mk_atom_trail(theory_bv& th, bool_var v):th(th), m_var(v) {}
+        void undo() override {
             theory_bv::atom * a = th.get_bv2a(m_var);
             a->~atom();
             th.erase_bv2a(m_var);
@@ -118,7 +124,7 @@ namespace smt {
             ctx.set_var_theory(bv, get_id());
             bit_atom * a     = new (get_region()) bit_atom();
             insert_bv2a(bv, a);
-            m_trail_stack.push(mk_atom_trail(bv));
+            m_trail_stack.push(mk_atom_trail(*this, bv));
             unsigned idx     = n->get_decl()->get_parameter(0).get_int();
             SASSERT(a->m_occs == 0);
             a->m_occs = new (get_region()) var_pos_occ(v_arg, idx);
@@ -174,7 +180,7 @@ namespace smt {
             return n->get_arg(idx);
         }
         else {
-            app * arg     = to_app(n->get_owner()->get_arg(idx));
+            app * arg     = to_app(n->get_expr()->get_arg(idx));
             SASSERT(ctx.e_internalized(arg));
             return ctx.get_enode(arg);
         }
@@ -207,30 +213,35 @@ namespace smt {
         get_bits(ctx.get_enode(arg), r);
     }
     
-    class add_var_pos_trail : public trail<theory_bv> {
+    class add_var_pos_trail : public trail {
         theory_bv::bit_atom * m_atom;
     public:
         add_var_pos_trail(theory_bv::bit_atom * a):m_atom(a) {}
-        void undo(theory_bv & th) override {
+        void undo() override {
             SASSERT(m_atom->m_occs);
             m_atom->m_occs = m_atom->m_occs->m_next;
         }
     };
 
+    void theory_bv::add_new_diseq_axiom(theory_var v1, theory_var v2, unsigned idx) {
+        if (!params().m_bv_eq_axioms)
+            return;
+        m_prop_diseqs.push_back(bv_diseq(v1, v2, idx));
+        ctx.push_trail(push_back_vector<svector<bv_diseq>>(m_prop_diseqs));
+    }
+
     /**
        \brief v1[idx] = ~v2[idx], then v1 /= v2 is a theory axiom.
     */
-    void theory_bv::mk_new_diseq_axiom(theory_var v1, theory_var v2, unsigned idx) {
-        if (!params().m_bv_eq_axioms)
-            return;
+    void theory_bv::assert_new_diseq_axiom(theory_var v1, theory_var v2, unsigned idx) {
         SASSERT(m_bits[v1][idx] == ~m_bits[v2][idx]);
         TRACE("bv_diseq_axiom", tout << "found new diseq axiom\n"; display_var(tout, v1); display_var(tout, v2););
         // found new disequality
         m_stats.m_num_diseq_static++;
         app * e1       = get_expr(v1);
         app * e2       = get_expr(v2);
-        literal l       = ~(mk_eq(e1, e2, true));
-        expr * eq       = ctx.bool_var2expr(l.var());
+        expr_ref eq(m.mk_eq(e1, e2), m);
+        literal l       = ~mk_literal(eq);
         std::function<expr*(void)> logfn = [&]() {
             return m.mk_implies(m.mk_eq(mk_bit2bool(e1, idx), m.mk_not(mk_bit2bool(e2, idx))), m.mk_not(eq));
         };
@@ -260,7 +271,7 @@ namespace smt {
             theory_var v2   = occs->m_var;
             unsigned   idx2 = occs->m_idx;
             if (idx == idx2 && m_bits[v2][idx2] == l && get_bv_size(v2) == get_bv_size(v)) 
-                mk_new_diseq_axiom(v, v2, idx);
+                add_new_diseq_axiom(v, v2, idx);
             occs = occs->m_next;
         }
     }
@@ -277,6 +288,7 @@ namespace smt {
         }
         else {
             theory_id th_id       = ctx.get_var_theory(l.var());
+            TRACE("init_bits", tout << l << " " << th_id << "\n";);
             if (th_id == get_id()) {
                 atom * a     = get_bv2a(l.var());
                 SASSERT(a && a->is_bit());
@@ -291,7 +303,7 @@ namespace smt {
                 SASSERT(ctx.get_var_theory(l.var()) == get_id());
                 bit_atom * b = new (get_region()) bit_atom();
                 insert_bv2a(l.var(), b);
-                m_trail_stack.push(mk_atom_trail(l.var()));
+                m_trail_stack.push(mk_atom_trail(*this, l.var()));
                 SASSERT(b->m_occs == 0);
                 b->m_occs = new (get_region()) var_pos_occ(v, idx);
             }
@@ -313,12 +325,12 @@ namespace smt {
         SASSERT(get_bv_size(n) == sz);
         m_bits[v].reset();
 
-        ctx.internalize(bits.c_ptr(), sz, true);
+        ctx.internalize(bits.data(), sz, true);
 
         for (unsigned i = 0; i < sz; i++) {
             expr * bit          = bits.get(i);
             literal l           = ctx.get_literal(bit);
-            TRACE("init_bits", tout << "bit " << i << " of #" << n->get_owner_id() << "\n" << mk_ll_pp(bit, m) << "\n";);
+            TRACE("init_bits", tout << "bit " << i << " of #" << n->get_owner_id() << "\n" << mk_bounded_pp(bit, m) << "\n";);
             add_bit(v, l);
         }
         find_wpos(v);
@@ -406,9 +418,9 @@ namespace smt {
             }
             if (!visited)
                 return nullptr;
-            expr * fact     = ctx.mk_eq_atom(m_th.get_enode(m_var1)->get_owner(), m_th.get_enode(m_var2)->get_owner());
+            expr * fact     = ctx.mk_eq_atom(m_th.get_enode(m_var1)->get_expr(), m_th.get_enode(m_var2)->get_expr());
             ast_manager & m = ctx.get_manager();
-            return m.mk_th_lemma(get_from_theory(), fact, prs.size(), prs.c_ptr());
+            return m.mk_th_lemma(get_from_theory(), fact, prs.size(), prs.data());
         }
 
         theory_id get_from_theory() const override {
@@ -432,8 +444,8 @@ namespace smt {
             return;
         }
         ++m_stats.m_num_eq_dynamic;
-        app* o1 = get_enode(v1)->get_owner();
-        app* o2 = get_enode(v2)->get_owner();
+        app* o1 = get_enode(v1)->get_expr();
+        app* o2 = get_enode(v2)->get_expr();
         literal oeq = mk_eq(o1, o2, true);
         unsigned sz = get_bv_size(v1);
         TRACE("bv", 
@@ -459,7 +471,7 @@ namespace smt {
             eqs.push_back(~eq);
         }
         eqs.push_back(oeq);
-        ctx.mk_th_axiom(get_id(), eqs.size(), eqs.c_ptr());
+        ctx.mk_th_axiom(get_id(), eqs.size(), eqs.data());
     }
 
     void theory_bv::fixed_var_eh(theory_var v) {
@@ -467,7 +479,7 @@ namespace smt {
         VERIFY(get_fixed_value(v, val));
         enode* n = get_enode(v);
         if (ctx.watches_fixed(n)) {
-            expr_ref num(m_util.mk_numeral(val, m.get_sort(n->get_owner())), m);
+            expr_ref num(m_util.mk_numeral(val, n->get_expr()->get_sort()), m);
             literal_vector& lits = m_tmp_literals;
             lits.reset();
             for (literal b : m_bits[v]) {
@@ -591,9 +603,9 @@ namespace smt {
         SASSERT(ctx.e_internalized(n));
         SASSERT(m_util.is_bv2int(n));
         TRACE("bv2int_bug", tout << "bv2int:\n" << mk_pp(n, m) << "\n";);
-        sort * int_sort = m.get_sort(n);
+        sort * int_sort = n->get_sort();
         app * k = to_app(n->get_arg(0));
-        SASSERT(m_util.is_bv_sort(m.get_sort(k)));
+        SASSERT(m_util.is_bv_sort(k->get_sort()));
         expr_ref_vector k_bits(m);
         enode * k_enode = mk_enode(k);
         get_bits(k_enode, k_bits);
@@ -622,7 +634,7 @@ namespace smt {
             args.push_back(m.mk_ite(b, n, zero));
             num *= numeral(2);
         }
-        expr_ref sum(m_autil.mk_add(sz, args.c_ptr()), m);
+        expr_ref sum(m_autil.mk_add(sz, args.data()), m);
         th_rewriter rw(m);
         rw(sum);
         literal l(mk_eq(n, sum, false));
@@ -692,9 +704,9 @@ namespace smt {
         for (unsigned i = 0; i < sz; ++i) {
             numeral div = power(numeral(2), i);
             mod = numeral(2);
-            rhs = m_autil.mk_idiv(e, m_autil.mk_numeral(div,true));
+            rhs = (i == 0) ? e : m_autil.mk_idiv(e, m_autil.mk_numeral(div, true));
             rhs = m_autil.mk_mod(rhs, m_autil.mk_numeral(mod, true));
-            rhs = m.mk_eq(rhs, m_autil.mk_numeral(rational(1), true));
+            rhs = ctx.mk_eq_atom(rhs, m_autil.mk_int(1));
             lhs = n_bits.get(i);
             TRACE("bv", tout << mk_pp(lhs, m) << " == " << mk_pp(rhs, m) << "\n";);
             l = literal(mk_eq(lhs, rhs, false));
@@ -715,7 +727,7 @@ namespace smt {
         enode * e       = mk_enode(n);                                  \
         expr_ref_vector arg1_bits(m), bits(m);                          \
         get_arg_bits(e, 0, arg1_bits);                                  \
-        m_bb.BLAST_OP(arg1_bits.size(), arg1_bits.c_ptr(), bits);       \
+        m_bb.BLAST_OP(arg1_bits.size(), arg1_bits.data(), bits);       \
         init_bits(e, bits);                                             \
     }
 
@@ -729,7 +741,7 @@ namespace smt {
         get_arg_bits(e, 0, arg1_bits);                                                  \
         get_arg_bits(e, 1, arg2_bits);                                                  \
         SASSERT(arg1_bits.size() == arg2_bits.size());                                  \
-        m_bb.BLAST_OP(arg1_bits.size(), arg1_bits.c_ptr(), arg2_bits.c_ptr(), bits);    \
+        m_bb.BLAST_OP(arg1_bits.size(), arg1_bits.data(), arg2_bits.data(), bits);    \
         init_bits(e, bits);                                                             \
     }
 
@@ -752,7 +764,7 @@ namespace smt {
             get_arg_bits(e, i, arg_bits);                                                       \
             SASSERT(arg_bits.size() == bits.size());                                            \
             new_bits.reset();                                                                   \
-            m_bb.BLAST_OP(arg_bits.size(), arg_bits.c_ptr(), bits.c_ptr(), new_bits);           \
+            m_bb.BLAST_OP(arg_bits.size(), arg_bits.data(), bits.data(), new_bits);           \
             bits.swap(new_bits);                                                                \
         }                                                                                       \
         init_bits(e, bits);                                                                     \
@@ -769,7 +781,7 @@ namespace smt {
         get_arg_bits(e, 1, arg2_bits);                                                  
         SASSERT(arg1_bits.size() == arg2_bits.size());                                  
         expr_ref carry(m);
-        m_bb.mk_subtracter(arg1_bits.size(), arg1_bits.c_ptr(), arg2_bits.c_ptr(), bits, carry);    
+        m_bb.mk_subtracter(arg1_bits.size(), arg1_bits.data(), arg2_bits.data(), bits, carry);    
         init_bits(e, bits);                                                                
     }
 
@@ -806,7 +818,7 @@ namespace smt {
         expr_ref_vector arg1_bits(m), bits(m);                                  \
         get_arg_bits(e, 0, arg1_bits);                                          \
         unsigned param  = n->get_decl()->get_parameter(0).get_int();            \
-        m_bb.BLAST_OP(arg1_bits.size(), arg1_bits.c_ptr(), param, bits);        \
+        m_bb.BLAST_OP(arg1_bits.size(), arg1_bits.data(), param, bits);        \
         init_bits(e, bits);                                                     \
     }
     
@@ -927,7 +939,7 @@ namespace smt {
         get_arg_bits(n, 0, arg1_bits);                                                                          \
         get_arg_bits(n, 1, arg2_bits);                                                                          \
         expr_ref out(m);                                                                                        \
-        m_bb.OP(arg1_bits.size(), arg1_bits.c_ptr(), arg2_bits.c_ptr(), out);                                   \
+        m_bb.OP(arg1_bits.size(), arg1_bits.data(), arg2_bits.data(), out);                                   \
         expr_ref s_out(m);                                                                                      \
         simplify_bit(out, s_out);                                                                               \
         ctx.internalize(s_out, true);                                                                           \
@@ -936,7 +948,7 @@ namespace smt {
         ctx.set_var_theory(l.var(), get_id());                                                                  \
         le_atom * a     = new (get_region()) le_atom(l, def); /* abuse le_atom */                               \
         insert_bv2a(l.var(), a);                                                                                \
-        m_trail_stack.push(mk_atom_trail(l.var()));                                                             \
+        m_trail_stack.push(mk_atom_trail(*this, l.var()));                                                             \
         /* smul_no_overflow and umul_no_overflow are using the le_atom (THIS IS A BIG HACK)... */               \
         /* the connection between the l and def was never realized when                        */               \
         /* relevancy() is true and m_bv_lazy_le is false (the default configuration).          */               \
@@ -961,9 +973,9 @@ namespace smt {
         get_arg_bits(n, 1, arg2_bits);                                                  
         expr_ref le(m);
         if (Signed)
-            m_bb.mk_sle(arg1_bits.size(), arg1_bits.c_ptr(), arg2_bits.c_ptr(), le);
+            m_bb.mk_sle(arg1_bits.size(), arg1_bits.data(), arg2_bits.data(), le);
         else
-            m_bb.mk_ule(arg1_bits.size(), arg1_bits.c_ptr(), arg2_bits.c_ptr(), le);
+            m_bb.mk_ule(arg1_bits.size(), arg1_bits.data(), arg2_bits.data(), le);
         expr_ref s_le(m);
         simplify_bit(le, s_le);
         ctx.internalize(s_le, true);
@@ -972,7 +984,7 @@ namespace smt {
         ctx.set_var_theory(l.var(), get_id());
         le_atom * a     = new (get_region()) le_atom(l, def);
         insert_bv2a(l.var(), a);
-        m_trail_stack.push(mk_atom_trail(l.var()));
+        m_trail_stack.push(mk_atom_trail(*this, l.var()));
         if (!ctx.relevancy() || !params().m_bv_lazy_le) {
             ctx.mk_th_axiom(get_id(),  l, ~def);
             ctx.mk_th_axiom(get_id(), ~l,  def);
@@ -1075,11 +1087,11 @@ namespace smt {
         unsigned num_args = n->get_num_args();
         for (unsigned i = 0; i <= num_args; i++) {
             expr* arg = (i == num_args)?n:n->get_arg(i);
-            sort* s = m.get_sort(arg);
+            sort* s = arg->get_sort();
             if (m_util.is_bv_sort(s) && m_util.get_bv_size(arg) > params().m_bv_blast_max_size) {                
                 if (!m_approximates_large_bvs) {
                     TRACE("bv", tout << "found large size bit-vector:\n" << mk_pp(n, m) << "\n";);
-                    ctx.push_trail(value_trail<context, bool>(m_approximates_large_bvs));
+                    ctx.push_trail(value_trail<bool>(m_approximates_large_bvs));
                     m_approximates_large_bvs = true;
                 }
                 return true;
@@ -1089,16 +1101,16 @@ namespace smt {
     }
 
     void theory_bv::apply_sort_cnstr(enode * n, sort * s) {
-        if (!is_attached_to_var(n) && !approximate_term(n->get_owner())) {
+        if (!is_attached_to_var(n) && !approximate_term(n->get_expr())) {
             mk_bits(mk_var(n));
             if (ctx.is_relevant(n)) {
-                relevant_eh(n->get_owner());
+                relevant_eh(n->get_expr());
             }
         }
     }
     
     void theory_bv::new_eq_eh(theory_var v1, theory_var v2) {
-        TRACE("bv_eq", tout << "new_eq: " << mk_pp(get_enode(v1)->get_owner(), m) << " = " << mk_pp(get_enode(v2)->get_owner(), m) << "\n";);
+        TRACE("bv_eq", tout << "new_eq: " << mk_pp(get_enode(v1)->get_expr(), m) << " = " << mk_pp(get_enode(v2)->get_expr(), m) << "\n";);
         TRACE("bv", tout << "new_eq_eh v" << v1 << " = v" << v2 << " @ " << ctx.get_scope_level() << 
               " relevant1: " << ctx.is_relevant(get_enode(v1)) << 
               " relevant2: " << ctx.is_relevant(get_enode(v2)) << "\n";);
@@ -1159,13 +1171,12 @@ namespace smt {
                 m_diseq_watch[watch_var].push_back(std::make_pair(v1, v2));
                 m_diseq_watch_trail.push_back(watch_var);
                 return;
-                //m_replay_diseq.push_back(std::make_pair(v1, v2));            
             }
         }
 
         literal_vector & lits = m_tmp_literals;
         lits.reset();
-        literal eq = mk_eq(get_enode(v1)->get_owner(), get_enode(v2)->get_owner(), true);
+        literal eq = mk_eq(get_enode(v1)->get_expr(), get_enode(v2)->get_expr(), true);
         lits.push_back(eq);
         it1 = bits1.begin();
         it2 = bits2.begin();
@@ -1179,19 +1190,19 @@ namespace smt {
             lits.push_back(arg);
         }
         TRACE("bv", 
-              tout << mk_pp(get_enode(v1)->get_owner(), m) << " = " << mk_pp(get_enode(v2)->get_owner(), m) << " " 
+              tout << mk_pp(get_enode(v1)->get_expr(), m) << " = " << mk_pp(get_enode(v2)->get_expr(), m) << " " 
               << ctx.get_scope_level() 
               << "\n";
               ctx.display_literals_smt2(tout, lits););
 
         m_stats.m_num_diseq_dynamic++;
         scoped_trace_stream st(*this, lits);
-        ctx.mk_th_axiom(get_id(), lits.size(), lits.c_ptr());
+        ctx.mk_th_axiom(get_id(), lits.size(), lits.data());
     }
 
     void theory_bv::assign_eh(bool_var v, bool is_true) {
         atom * a      = get_bv2a(v);
-        TRACE("bv", tout << "assert: p" << v << " #" << ctx.bool_var2expr(v)->get_id() << " is_true: " << is_true << "\n";);
+        TRACE("bv", tout << "assert: p" << v << " #" << ctx.bool_var2expr(v)->get_id() << " is_true: " << is_true << " " << ctx.inconsistent() << "\n";);
         if (a->is_bit()) {
             m_prop_queue.reset();
             bit_atom * b = static_cast<bit_atom*>(a);
@@ -1238,11 +1249,15 @@ namespace smt {
             while (v2 != v) {
                 literal_vector & bits2   = m_bits[v2];
                 literal bit2             = bits2[idx];
-                SASSERT(bit != ~bit2);
                 lbool   val2             = ctx.get_assignment(bit2);
                 TRACE("bv_bit_prop", tout << "propagating #" << get_enode(v2)->get_owner_id() << "[" << idx << "] = " << val2 << "\n";);
                 TRACE("bv", tout << bit << " -> " << bit2 << " " << val << " -> " << val2 << " " << ctx.get_scope_level() << "\n";);
-                
+
+                if (bit == ~bit2) {
+                    add_new_diseq_axiom(v, v2, idx);
+                    return;
+                }
+
                 if (val != val2) {
                     literal consequent = bit2;
                     if (val == l_false) {
@@ -1298,7 +1313,7 @@ namespace smt {
                 ctx.mark_as_relevant(lits[2]);
                 {
                     scoped_trace_stream _sts(*this, lits);
-                    ctx.mk_th_axiom(get_id(), lits.size(), lits.c_ptr());
+                    ctx.mk_th_axiom(get_id(), lits.size(), lits.data());
                 }
             }
      
@@ -1327,7 +1342,8 @@ namespace smt {
     }
 
     void theory_bv::relevant_eh(app * n) {
-        TRACE("bv", tout << "relevant: " << ctx.e_internalized(n) << ": " << mk_pp(n, m) << "\n";);
+        TRACE("arith", tout << "relevant: #" << n->get_id() << " " << ctx.e_internalized(n) << ": " << mk_pp(n, m) << "\n";);
+        TRACE("bv", tout << "relevant: #" << n->get_id() << " " << ctx.e_internalized(n) << ": " << mk_pp(n, m) << "\n";);
         if (m.is_bool(n)) {
             bool_var v = ctx.get_bool_var(n);
             atom * a   = get_bv2a(v);
@@ -1353,6 +1369,8 @@ namespace smt {
             theory_var v = e->get_th_var(get_id());
             if (v != null_theory_var) {
                 literal_vector & bits        = m_bits[v];
+                TRACE("bv", tout << "mark bits relevant: " << bits.size() << ": " << bits << "\n";);
+                SASSERT(!is_bv(v) || bits.size() == get_bv_size(v));
                 for (literal lit : bits) {
                     ctx.mark_as_relevant(lit);
                 }
@@ -1425,7 +1443,7 @@ namespace smt {
         m_util(ctx.get_manager()),
         m_autil(ctx.get_manager()),
         m_bb(ctx.get_manager(), ctx.get_fparams()),
-        m_trail_stack(*this),
+        m_trail_stack(),
         m_find(*this),
         m_approximates_large_bvs(false) {
         memset(m_eq_activity, 0, sizeof(m_eq_activity));
@@ -1470,12 +1488,18 @@ namespace smt {
             for (unsigned idx = 0; idx < sz; idx++) {
                 literal bit1  = m_bits[v1][idx];
                 literal bit2  = m_bits[v2][idx];
-                CTRACE("bv_bug", bit1 == ~bit2, display_var(tout, v1); display_var(tout, v2); tout << "idx: " << idx << "\n";);
-                SASSERT(bit1 != ~bit2);
+                if (bit1 == ~bit2) {
+                    add_new_diseq_axiom(v1, v2, idx);
+                    return;
+                }
                 lbool val1    = ctx.get_assignment(bit1);
                 lbool val2    = ctx.get_assignment(bit2);
                 TRACE("bv", tout << "merge v" << v1 << " " << bit1 << ":= " << val1 << " " << bit2 << ":= " << val2 << "\n";);
-                if (val1 == val2)
+                if (val1 == l_undef && !ctx.is_relevant(bit1))
+                    ctx.mark_as_relevant(bit1);
+                if (val2 == l_undef && !ctx.is_relevant(bit2))
+                    ctx.mark_as_relevant(bit2);
+                if (val1 == val2) 
                     continue;
                 changed = true;
                 if (val1 != l_undef && val2 != l_undef) {
@@ -1537,7 +1561,7 @@ namespace smt {
                 // conflict was detected ... v1 and v2 have complementary bits
                 SASSERT(m_bits[v1][zo.m_idx] == ~(m_bits[v2][zo.m_idx]));
                 SASSERT(m_bits[v1].size() == m_bits[v2].size());
-                mk_new_diseq_axiom(v1, v2, zo.m_idx);
+                add_new_diseq_axiom(v1, v2, zo.m_idx);
                 reset_merge_aux();
                 return false;
             }
@@ -1553,13 +1577,12 @@ namespace smt {
     }
 
     void theory_bv::propagate() {
-        unsigned sz = m_replay_diseq.size();
-        if (sz > 0) {
-            for (unsigned i = 0; i < sz; ++i) {
-                auto const& p = m_replay_diseq[i];
-                expand_diseq(p.first, p.second);
-            }
-            m_replay_diseq.reset();
+        if (!can_propagate())
+            return;
+        ctx.push_trail(value_trail<unsigned>(m_prop_diseqs_qhead));
+        for (; m_prop_diseqs_qhead < m_prop_diseqs.size() && !ctx.inconsistent(); ++m_prop_diseqs_qhead) {
+            auto p = m_prop_diseqs[m_prop_diseqs_qhead];
+            assert_new_diseq_axiom(p.v1, p.v2, p.idx);
         }
     }
 
@@ -1600,7 +1623,7 @@ namespace smt {
             ast_manager & m = cr.get_manager();
             expr_ref fact(m);
             ctx.literal2expr(m_consequent, fact);
-            return m.mk_th_lemma(get_from_theory(), fact, prs.size(), prs.c_ptr());
+            return m.mk_th_lemma(get_from_theory(), fact, prs.size(), prs.data());
         }
 
         theory_id get_from_theory() const override {

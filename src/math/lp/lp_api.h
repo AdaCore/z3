@@ -66,7 +66,7 @@ namespace lp_api {
         lp::constraint_index get_constraint(bool b) const { return m_constraints[b]; }
 
         inf_rational get_value(bool is_true) const {
-            if (is_true) 
+            if (is_true != get_lit().sign()) 
                 return inf_rational(m_value);                         // v >= value or v <= value
             if (m_is_int) {
                 SASSERT(m_value.is_int());
@@ -74,7 +74,7 @@ namespace lp_api {
                 return inf_rational(m_value + offset); // v <= value - 1 or v >= value + 1
             }
             else {
-                return inf_rational(m_value, m_bound_kind != lower_t);  // v <= value - epsilon or v >= value + epsilon                                                                        
+                return inf_rational(m_value, m_bound_kind != lower_t);  // v <= value - epsilon or v >= value + epsilon
             }
         }
 
@@ -104,6 +104,7 @@ namespace lp_api {
         unsigned m_bound_propagations1;
         unsigned m_bound_propagations2;
         unsigned m_assert_diseq;
+        unsigned m_assert_eq;
         unsigned m_gomory_cuts;
         unsigned m_assume_eqs;
         unsigned m_branch;
@@ -123,6 +124,7 @@ namespace lp_api {
             st.update("arith-bound-propagations-lp", m_bound_propagations1);
             st.update("arith-bound-propagations-cheap", m_bound_propagations2);
             st.update("arith-diseq", m_assert_diseq);
+            st.update("arith-eq",    m_assert_eq);
             st.update("arith-gomory-cuts", m_gomory_cuts);
             st.update("arith-assume-eqs", m_assume_eqs);
             st.update("arith-branch", m_branch);

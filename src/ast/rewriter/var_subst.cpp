@@ -25,7 +25,7 @@ Notes:
 
 expr_ref var_subst::operator()(expr * n, unsigned num_args, expr * const * args) {
     expr_ref result(m_reducer.m());
-    if (is_ground(n)) {
+    if (is_ground(n) || num_args == 0) {
         result = n;
         //application does not have free variables or nested quantifiers.
         //There is no need to print the bindings here?
@@ -79,7 +79,9 @@ expr_ref unused_vars_eliminator::operator()(quantifier* q) {
         result = q;
         return result;
     }
+    unsigned num_decls = q->get_num_decls();
     m_used.reset();
+    m_used.set_num_decls(num_decls);
     m_used.process(q->get_expr());
     unsigned num_patterns = q->get_num_patterns();
     for (unsigned i = 0; i < num_patterns; i++)
@@ -88,7 +90,7 @@ expr_ref unused_vars_eliminator::operator()(quantifier* q) {
     for (unsigned i = 0; i < num_no_patterns; i++)
         m_used.process(q->get_no_pattern(i));
 
-    unsigned num_decls = q->get_num_decls();
+    
     if (m_used.uses_all_vars(num_decls)) {
         q->set_no_unused_vars();
         result = q;
@@ -134,11 +136,11 @@ expr_ref unused_vars_eliminator::operator()(quantifier* q) {
     // (VAR 0) should be in the last position of var_mapping.
     // ...
     // (VAR (var_mapping.size() - 1)) should be in the first position.
-    std::reverse(var_mapping.c_ptr(), var_mapping.c_ptr() + var_mapping.size());
+    std::reverse(var_mapping.data(), var_mapping.data() + var_mapping.size());
 
     expr_ref  new_expr(m);
 
-    new_expr = m_subst(q->get_expr(), var_mapping.size(), var_mapping.c_ptr());
+    new_expr = m_subst(q->get_expr(), var_mapping.size(), var_mapping.data());
 
     if (num_removed == num_decls) {
         result = new_expr;
@@ -149,24 +151,24 @@ expr_ref unused_vars_eliminator::operator()(quantifier* q) {
     expr_ref_buffer new_no_patterns(m);
 
     for (unsigned i = 0; i < num_patterns; i++) {
-        new_patterns.push_back(m_subst(q->get_pattern(i), var_mapping.size(), var_mapping.c_ptr()));
+        new_patterns.push_back(m_subst(q->get_pattern(i), var_mapping.size(), var_mapping.data()));
     }
     for (unsigned i = 0; i < num_no_patterns; i++) {
-        new_no_patterns.push_back(m_subst(q->get_no_pattern(i), var_mapping.size(), var_mapping.c_ptr()));
+        new_no_patterns.push_back(m_subst(q->get_no_pattern(i), var_mapping.size(), var_mapping.data()));
     }
 
     result = m.mk_quantifier(q->get_kind(),
                              used_decl_sorts.size(),
-                             used_decl_sorts.c_ptr(),
-                             used_decl_names.c_ptr(),
+                             used_decl_sorts.data(),
+                             used_decl_names.data(),
                              new_expr,
                              q->get_weight(),
                              q->get_qid(),
                              q->get_skid(),
                              num_patterns,
-                             new_patterns.c_ptr(),
+                             new_patterns.data(),
                              num_no_patterns,
-                             new_no_patterns.c_ptr());
+                             new_no_patterns.data());
     to_quantifier(result)->set_no_unused_vars();
     SASSERT(is_well_sorted(m, result));
     return result;

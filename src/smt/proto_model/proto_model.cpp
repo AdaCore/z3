@@ -173,7 +173,7 @@ expr* proto_model::cleanup_expr(expr_ref_vector& trail, expr* fi_else, func_decl
                     TRACE("model_bug", tout << f->get_name() << "\n";);
                     found_aux_fs.insert(f);
                 }
-                new_t = m_rewrite.mk_app(f, args.size(), args.c_ptr());                
+                new_t = m_rewrite.mk_app(f, args.size(), args.data());                
                 if (t != new_t.get())
                     trail.push_back(new_t);
                 todo.pop_back();
@@ -220,7 +220,7 @@ void proto_model::cleanup() {
     }
     for (unsigned i = 0; i < m_const_decls.size(); ++i) {
         func_decl* d = m_const_decls[i];
-        expr* e = m_interp[d];
+        expr* e = m_interp[d].second;
         expr* r = cleanup_expr(trail, e, found_aux_fs);
         if (e != r) {
             register_decl(d, r);
@@ -326,7 +326,7 @@ expr * proto_model::get_fresh_value(sort * s) {
 }
 
 void proto_model::register_value(expr * n) {
-    sort * s = m.get_sort(n);
+    sort * s = n->get_sort();
     if (m.is_uninterp(s)) {
         m_user_sort_factory->register_value(n);
     }
@@ -385,7 +385,7 @@ model * proto_model::mk_model() {
     model * mdl = alloc(model, m);
 
     for (auto const& kv : m_interp) {
-        mdl->register_decl(kv.m_key, kv.m_value);
+        mdl->register_decl(kv.m_key, kv.m_value.second);
     }
 
     for (auto const& kv : m_finterp) {
@@ -400,7 +400,7 @@ model * proto_model::mk_model() {
         sort * s = get_uninterpreted_sort(i);
         TRACE("proto_model", tout << "copying uninterpreted sorts...\n" << mk_pp(s, m) << "\n";);
         ptr_vector<expr> const& buf = get_universe(s);
-        mdl->register_usort(s, buf.size(), buf.c_ptr());
+        mdl->register_usort(s, buf.size(), buf.data());
     }
 
     return mdl;

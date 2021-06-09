@@ -33,7 +33,7 @@ class smt_checker {
         m_fresh_exprs.reserve(i + 1);
         expr* r = m_fresh_exprs.get(i);
         if (!r) {
-            r = m.mk_fresh_const("sk", m.get_sort(e));
+            r = m.mk_fresh_const("sk", e->get_sort());
             m_fresh_exprs[i] = r;
         }
         return r;
@@ -49,7 +49,7 @@ class smt_checker {
             expr_ref_vector args(m);
             for (expr* arg : *to_app(e)) 
                 args.push_back(define(arg, depth - 1));
-            r = m.mk_app(to_app(e)->get_decl(), args.size(), args.c_ptr());
+            r = m.mk_app(to_app(e)->get_decl(), args.size(), args.data());
         }
         return r;
     }
@@ -71,11 +71,13 @@ class smt_checker {
 
     void add_units() {
         auto const& units = m_drat.units();
+#if 0
         for (unsigned i = m_units.size(); i < units.size(); ++i) {
             sat::literal lit = units[i];            
             m_lemma_solver->assert_expr(lit2expr(lit));
         }
-        m_units.append(units.size() - m_units.size(), units.c_ptr() + m_units.size());
+#endif
+        m_units.append(units.size() - m_units.size(), units.data() + m_units.size());
     }
 
     void check_assertion_redundant(sat::literal_vector const& input) {
@@ -109,24 +111,26 @@ class smt_checker {
         
         add_units();
         drup_units.reset();
-        if (m_drat.is_drup(lits.size(), lits.c_ptr(), drup_units)) {
+        if (m_drat.is_drup(lits.size(), lits.data(), drup_units)) {
             std::cout << "drup\n";
             return;
         }
-        m_lemma_solver->push();
-        for (auto lit : drup_units)
-            m_lemma_solver->assert_expr(lit2expr(lit));
-        lbool is_sat = m_lemma_solver->check_sat();
+        m_input_solver->push();
+//        for (auto lit : drup_units)
+//            m_input_solver->assert_expr(lit2expr(lit));
+        for (auto lit : lits)
+            m_input_solver->assert_expr(lit2expr(~lit));
+        lbool is_sat = m_input_solver->check_sat();
         if (is_sat != l_false) {
             std::cout << "did not verify: " << lits << "\n";
             for (sat::literal lit : lits) {
                 std::cout << lit2expr(lit) << "\n";
             }
             std::cout << "\n";
-            m_lemma_solver->display(std::cout);
+            m_input_solver->display(std::cout);
             exit(0);
         }
-        m_lemma_solver->pop(1);
+        m_input_solver->pop(1);
         std::cout << "smt\n";
         // check_assertion_redundant(lits);
     }
@@ -146,7 +150,7 @@ public:
             check_assertion_redundant(lits);
         else if (!st.is_sat() && !st.is_deleted()) 
             check_clause(lits);        
-        m_drat.add(lits, st);
+        // m_drat.add(lits, st);
     }    
 
     /**
@@ -171,7 +175,7 @@ public:
         params.reset();
         sorts.reset();
         for (expr* arg : args) 
-            sorts.push_back(m.get_sort(arg));
+            sorts.push_back(arg->get_sort());
         sort_ref rng(m);
         func_decl* f = nullptr;
         switch (sexpr->get_kind()) {
@@ -186,6 +190,28 @@ public:
                     auto val = sexpr->get_child(2)->get_numeral();
                     auto n   = sexpr->get_child(3)->get_numeral().get_unsigned();
                     result = bvu.mk_numeral(val, n);
+                    return;
+                }
+                if (name == "is" && sz == 3) {
+                    name = sexpr->get_child(2)->get_child(0)->get_symbol();
+                    f = ctx.find_func_decl(name, params.size(), params.data(), args.size(), sorts.data(), rng.get());
+                    if (!f)
+                        goto bail;
+                    datatype_util dtu(m);
+                    result = dtu.mk_is(f, args[0]);
+                    return;
+                }
+                if (name == "Real" && sz == 4) {
+                    arith_util au(m);
+                    rational r = sexpr->get_child(2)->get_numeral();
+                    // rational den = sexpr->get_child(3)->get_numeral();
+                    result = au.mk_numeral(r, false);
+                    return;
+                }
+                if (name == "Int" && sz == 4) {
+                    arith_util au(m);
+                    rational num = sexpr->get_child(2)->get_numeral();
+                    result = au.mk_numeral(num, true);
                     return;
                 }
                 for (unsigned i = 2; i < sz; ++i) {
@@ -212,7 +238,7 @@ public:
         default:
             goto bail;
         }
-        f = ctx.find_func_decl(name, params.size(), params.c_ptr(), args.size(), sorts.c_ptr(), rng.get());
+        f = ctx.find_func_decl(name, params.size(), params.data(), args.size(), sorts.data(), rng.get());
         if (!f) 
             goto bail;
         result = ctx.m().mk_app(f, args);
@@ -271,8 +297,10 @@ static void verify_smt(char const* drat_file, char const* smt_file) {
         switch (r.m_tag) {
         case dimacs::drat_record::tag_t::is_clause:
             checker.add(r.m_lits, r.m_status);
-            if (drat_checker.inconsistent()) 
-                std::cout << "inconsistent\n";            
+            if (drat_checker.inconsistent()) {
+                std::cout << "inconsistent\n";
+                return;
+            }            
             break;
         case dimacs::drat_record::tag_t::is_node: {
             expr_ref e(m);
@@ -300,7 +328,7 @@ static void verify_smt(char const* drat_file, char const* smt_file) {
                 sargs.push_back(sorts.get(n));
             psort_decl* pd = ctx.find_psort_decl(name);
             if (pd) 
-                srt = pd->instantiate(ctx.pm(), sargs.size(), sargs.c_ptr());
+                srt = pd->instantiate(ctx.pm(), sargs.size(), sargs.data());
             else 
                 srt = m.mk_uninterpreted_sort(name);
             sorts.reserve(r.m_node_id+1);

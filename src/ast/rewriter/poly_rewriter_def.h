@@ -85,19 +85,17 @@ expr * poly_rewriter<Config>::mk_mul_app(unsigned num_args, expr * const * args)
         return args[0];
     default: 
         if (use_power()) {
+            sort* s = args[0]->get_sort();
             rational k_prev;
             expr * prev = get_power_body(args[0], k_prev);
             rational k;
             ptr_buffer<expr> new_args;
-#define PUSH_POWER() {                                                                          \
-                if (k_prev.is_one()) {                                                          \
-                    new_args.push_back(prev);                                                   \
-                }                                                                               \
-                else {                                                                          \
-                    expr * pargs[2] = { prev, mk_numeral(k_prev) };                             \
-                    new_args.push_back(m().mk_app(get_fid(), power_decl_kind(), 2, pargs));     \
-                }                                                                               \
-            }
+            auto push_power = [&]() { 
+                if (k_prev.is_one())                                                           
+                    new_args.push_back(this->coerce(prev, s));
+                else  
+                    new_args.push_back(this->mk_power(prev, k_prev, s));
+            };
  
             for (unsigned i = 1; i < num_args; i++) {
                 expr * arg = get_power_body(args[i], k);
@@ -105,12 +103,12 @@ expr * poly_rewriter<Config>::mk_mul_app(unsigned num_args, expr * const * args)
                     k_prev += k;
                 }
                 else {
-                    PUSH_POWER();
+                    push_power();
                     prev   = arg;
                     k_prev = k;
                 }
             }
-            PUSH_POWER();
+            push_power();
             SASSERT(new_args.size() > 0);
             if (new_args.size() == 1) {
                 return new_args[0];
@@ -118,9 +116,9 @@ expr * poly_rewriter<Config>::mk_mul_app(unsigned num_args, expr * const * args)
             else {
                 numeral a;
                 if (new_args.size() > 2 && is_numeral(new_args.get(0), a)) {
-                    return mk_mul_app(a, mk_mul_app(new_args.size() - 1, new_args.c_ptr() + 1));
+                    return mk_mul_app(a, mk_mul_app(new_args.size() - 1, new_args.data() + 1));
                 }
-                return m().mk_app(get_fid(), mul_decl_kind(), new_args.size(), new_args.c_ptr());
+                return m().mk_app(get_fid(), mul_decl_kind(), new_args.size(), new_args.data());
             }
         }
         else {
@@ -187,7 +185,7 @@ br_status poly_rewriter<Config>::mk_flat_mul_core(unsigned num_args, expr * cons
                     flat_args.push_back(args[j]);
                 }
             }
-            br_status st = mk_nflat_mul_core(flat_args.size(), flat_args.c_ptr(), result);
+            br_status st = mk_nflat_mul_core(flat_args.size(), flat_args.data(), result);
             TRACE("poly_rewriter",
                   tout << "flat mul:\n";
                   for (unsigned i = 0; i < num_args; i++) tout << mk_bounded_pp(args[i], m()) << "\n";
@@ -196,7 +194,7 @@ br_status poly_rewriter<Config>::mk_flat_mul_core(unsigned num_args, expr * cons
                   tout << st << "\n";
                   );
             if (st == BR_FAILED) {
-                result = mk_mul_app(flat_args.size(), flat_args.c_ptr());
+                result = mk_mul_app(flat_args.size(), flat_args.data());
                 return BR_DONE;
             }
             return st;
@@ -292,7 +290,7 @@ br_status poly_rewriter<Config>::mk_nflat_mul_core(unsigned num_args, expr * con
             for (unsigned i = 0; i < num; i++) {
                 new_add_args.push_back(mk_mul_app(c, to_app(var)->get_arg(i)));
             }
-            result = mk_add_app(new_add_args.size(), new_add_args.c_ptr());
+            result = mk_add_app(new_add_args.size(), new_add_args.data());
             TRACE("mul_bug", tout << "result: " << mk_bounded_pp(result, m(),5) << "\n";);
             return BR_REWRITE2;
         }
@@ -305,7 +303,7 @@ br_status poly_rewriter<Config>::mk_nflat_mul_core(unsigned num_args, expr * con
                 m_args.push_back(args[i]);
             }
         }
-        result = mk_mul_app(c, mk_mul_app(m_args.size(), m_args.c_ptr()));
+        result = mk_mul_app(c, mk_mul_app(m_args.size(), m_args.data()));
         return BR_REWRITE2;
     }
 
@@ -346,9 +344,12 @@ br_status poly_rewriter<Config>::mk_nflat_mul_core(unsigned num_args, expr * con
                   tout << "\n";);
         }
         SASSERT(new_args.size() >= 2);
-        result = mk_mul_app(new_args.size(), new_args.c_ptr());
+        result = mk_mul_app(new_args.size(), new_args.data());
         result = mk_mul_app(c, result);
-        TRACE("poly_rewriter", tout << "mk_nflat_mul_core result:\n" << mk_ismt2_pp(result, m()) << "\n";);
+        TRACE("poly_rewriter", 
+              for (unsigned i = 0; i < num_args; ++i)
+                  tout << mk_ismt2_pp(args[i], m()) << " ";
+              tout << "\nmk_nflat_mul_core result:\n" << mk_ismt2_pp(result, m()) << "\n";);
         return BR_DONE;
     }
 
@@ -386,10 +387,10 @@ br_status poly_rewriter<Config>::mk_nflat_mul_core(unsigned num_args, expr * con
             expr * arg       = v[it[i]];
             m_args.push_back(arg);            
         }
-        sum.push_back(mk_mul_app(m_args.size(), m_args.c_ptr()));
+        sum.push_back(mk_mul_app(m_args.size(), m_args.data()));
     }
-    while (product_iterator_next(szs.size(), szs.c_ptr(), it.c_ptr()));
-    result = mk_add_app(sum.size(), sum.c_ptr());
+    while (product_iterator_next(szs.size(), szs.data(), it.data()));
+    result = mk_add_app(sum.size(), sum.data());
     return BR_REWRITE2;
 }
 
@@ -416,9 +417,9 @@ br_status poly_rewriter<Config>::mk_flat_add_core(unsigned num_args, expr * cons
                 flat_args.push_back(arg);
             }
         }
-        br_status st = mk_nflat_add_core(flat_args.size(), flat_args.c_ptr(), result);
+        br_status st = mk_nflat_add_core(flat_args.size(), flat_args.data(), result);
         if (st == BR_FAILED) {
-            result = mk_add_app(flat_args.size(), flat_args.c_ptr());
+            result = mk_add_app(flat_args.size(), flat_args.data());
             return BR_DONE;
         }
         return st;
@@ -442,12 +443,48 @@ inline expr * poly_rewriter<Config>::get_power_product(expr * t, numeral & a) {
 }
 
 template<typename Config>
-bool poly_rewriter<Config>::is_mul(expr * t, numeral & c, expr * & pp) {
+bool poly_rewriter<Config>::is_mul(expr * t, numeral & c, expr * & pp) const {
     if (!is_mul(t) || to_app(t)->get_num_args() != 2)
         return false;
     if (!is_numeral(to_app(t)->get_arg(0), c))
         return false;
     pp = to_app(t)->get_arg(1);
+    return true;
+}
+
+template<typename Config>
+bool poly_rewriter<Config>::gcd_test(expr* lhs, expr* rhs) const {
+    numeral g(0), offset(0), c;
+    expr* t = nullptr;
+    unsigned sz = 0; 
+    expr* const* args = get_monomials(lhs, sz);
+    auto test = [&](bool side, expr* e) {
+        if (is_numeral(e, c)) {
+            if (!c.is_int())
+                return false;
+            if (side)                
+                offset += c;
+            else
+                offset -= c;
+            return true;
+        }
+        else if (is_mul(e, c, t)) {
+            if (!c.is_int() || c.is_zero())
+                return false;
+            g = gcd(abs(c), g);
+            return !g.is_one();
+        }
+        return false;
+    };
+    for (unsigned i = 0; i < sz; ++i) 
+        if (!test(true, args[i]))
+            return true;        
+    args = get_monomials(rhs, sz);
+    for (unsigned i = 0; i < sz; ++i) 
+        if (!test(false, args[i]))
+            return true;
+    if (!offset.is_zero() && !g.is_zero() && !divides(g, offset))
+        return false;
     return true;
 }
 
@@ -579,11 +616,11 @@ br_status poly_rewriter<Config>::mk_nflat_add_core(unsigned num_args, expr * con
         if (m_sort_sums) {
             TRACE("rewriter_bug", tout << "new_args.size(): " << new_args.size() << "\n";);
             if (c.is_zero())
-                std::sort(new_args.c_ptr(), new_args.c_ptr() + new_args.size(), mon_lt(*this));
+                std::sort(new_args.data(), new_args.data() + new_args.size(), mon_lt(*this));
             else
-                std::sort(new_args.c_ptr() + 1, new_args.c_ptr() + new_args.size(), mon_lt(*this));
+                std::sort(new_args.data() + 1, new_args.data() + new_args.size(), mon_lt(*this));
         }
-        result = mk_add_app(new_args.size(), new_args.c_ptr());
+        result = mk_add_app(new_args.size(), new_args.data());
         TRACE("rewriter", tout << result << "\n";);
         if (hoist_multiplication(result)) {
             return BR_REWRITE_FULL;
@@ -612,11 +649,11 @@ br_status poly_rewriter<Config>::mk_nflat_add_core(unsigned num_args, expr * con
         }
         if (!ordered) {
             if (c.is_zero())
-                std::sort(new_args.c_ptr(), new_args.c_ptr() + new_args.size(), lt);
+                std::sort(new_args.data(), new_args.data() + new_args.size(), lt);
             else 
-                std::sort(new_args.c_ptr() + 1, new_args.c_ptr() + new_args.size(), lt);
+                std::sort(new_args.data() + 1, new_args.data() + new_args.size(), lt);
         }
-        result = mk_add_app(new_args.size(), new_args.c_ptr());        
+        result = mk_add_app(new_args.size(), new_args.data());        
         if (hoist_multiplication(result)) {
             return BR_REWRITE_FULL;
         }
@@ -631,7 +668,7 @@ br_status poly_rewriter<Config>::mk_nflat_add_core(unsigned num_args, expr * con
 template<typename Config>
 br_status poly_rewriter<Config>::mk_uminus(expr * arg, expr_ref & result) {
     numeral a;
-    set_curr_sort(m().get_sort(arg));
+    set_curr_sort(arg->get_sort());
     if (is_numeral(arg, a)) {
         a.neg();
         normalize(a);
@@ -651,7 +688,7 @@ br_status poly_rewriter<Config>::mk_sub(unsigned num_args, expr * const * args, 
         result = args[0];
         return BR_DONE;
     }
-    set_curr_sort(m().get_sort(args[0]));
+    set_curr_sort(args[0]->get_sort());
     expr_ref minus_one(mk_numeral(numeral(-1)), m());
     expr_ref_buffer new_args(m());
     new_args.push_back(args[0]);
@@ -660,7 +697,7 @@ br_status poly_rewriter<Config>::mk_sub(unsigned num_args, expr * const * args, 
         expr * aux_args[2] = { minus_one, args[i] };
         new_args.push_back(mk_mul_app(2, aux_args));
     }
-    result = mk_add_app(new_args.size(), new_args.c_ptr());
+    result = mk_add_app(new_args.size(), new_args.data());
     return BR_REWRITE2;
 }
 
@@ -671,7 +708,7 @@ br_status poly_rewriter<Config>::mk_sub(unsigned num_args, expr * const * args, 
 */
 template<typename Config>
 br_status poly_rewriter<Config>::cancel_monomials(expr * lhs, expr * rhs, bool move, expr_ref & lhs_result, expr_ref & rhs_result) {
-    set_curr_sort(m().get_sort(lhs));
+    set_curr_sort(lhs->get_sort());
     mon_lt lt(*this);
     unsigned lhs_sz;
     expr * const * lhs_monomials = get_monomials(lhs, lhs_sz);
@@ -841,8 +878,8 @@ br_status poly_rewriter<Config>::cancel_monomials(expr * lhs, expr * rhs, bool m
     const unsigned rhs_offset = insert_c_rhs ? 0 : 1;
     new_rhs_monomials[0] = insert_c_rhs ? mk_numeral(c) : nullptr;
     new_lhs_monomials[0] = insert_c_lhs ? mk_numeral(c) : nullptr;
-    lhs_result = mk_add_app(new_lhs_monomials.size() - lhs_offset, new_lhs_monomials.c_ptr() + lhs_offset);
-    rhs_result = mk_add_app(new_rhs_monomials.size() - rhs_offset, new_rhs_monomials.c_ptr() + rhs_offset);
+    lhs_result = mk_add_app(new_lhs_monomials.size() - lhs_offset, new_lhs_monomials.data() + lhs_offset);
+    rhs_result = mk_add_app(new_rhs_monomials.size() - rhs_offset, new_rhs_monomials.data() + rhs_offset);
     TRACE("le_bug", tout << lhs_result << " " << rhs_result << "\n";);
     return BR_DONE;
 }
@@ -884,7 +921,7 @@ bool poly_rewriter<Config>::hoist_multiplication(expr_ref& som) {
                 continue;
             }
             if (mul_map.find(e, j) && valid[j] && j != k) {
-                m_curr_sort = m().get_sort(adds[k]);
+                m_curr_sort = adds[k]->get_sort();
                 adds[j]  = merge_muls(adds[j], adds[k]);
                 adds[k]  = mk_numeral(rational(0)); 
                 valid[j] = false;
@@ -901,7 +938,7 @@ bool poly_rewriter<Config>::hoist_multiplication(expr_ref& som) {
         return false;
     }
     
-    som = mk_add_app(adds.size(), adds.c_ptr());
+    som = mk_add_app(adds.size(), adds.data());
     
        
     return true;
@@ -927,17 +964,17 @@ expr* poly_rewriter<Config>::merge_muls(expr* x, expr* y) {
             ++k;
         }
     }
-    m_curr_sort = m().get_sort(x);
+    m_curr_sort = x->get_sort();
     SASSERT(k > 0);
     SASSERT(m1.size() >= k); 
     SASSERT(m2.size() >= k);
-    expr* args[2] = { mk_mul_app(m1.size()-k, m1.c_ptr()+k), 
-                      mk_mul_app(m2.size()-k, m2.c_ptr()+k) };
+    expr* args[2] = { mk_mul_app(m1.size()-k, m1.data()+k), 
+                      mk_mul_app(m2.size()-k, m2.data()+k) };
     if (k == m1.size()) {
         m1.push_back(0);
     }
     m1[k] = mk_add_app(2, args);
-    return mk_mul_app(k+1, m1.c_ptr());
+    return mk_mul_app(k+1, m1.data());
 }
 
 template<typename Config>
@@ -962,7 +999,7 @@ bool poly_rewriter<Config>::hoist_ite(expr_ref& e) {
                 bs.push_back(apply_hoist(a, g, shared));
                 if (is_nontrivial_gcd(g)) {
                     bs.push_back(mk_numeral(g));
-                    bs[0] = mk_mul_app(2, bs.c_ptr());
+                    bs[0] = mk_mul_app(2, bs.data());
                     bs.pop_back();
                 }
                 else {
@@ -970,7 +1007,7 @@ bool poly_rewriter<Config>::hoist_ite(expr_ref& e) {
                         bs.push_back(s);
                     }
                 }
-                expr* a2 = mk_add_app(bs.size(), bs.c_ptr()); 
+                expr* a2 = mk_add_app(bs.size(), bs.data()); 
                 if (a != a2) {
                     adds[i] = a2;
                     pinned.push_back(a2);
@@ -980,7 +1017,7 @@ bool poly_rewriter<Config>::hoist_ite(expr_ref& e) {
         ++i;
     }
     if (!pinned.empty()) {
-        e = mk_add_app(adds.size(), adds.c_ptr());
+        e = mk_add_app(adds.size(), adds.data());
         return true;
     }
     return false;
@@ -1043,7 +1080,7 @@ expr* poly_rewriter<Config>::apply_hoist(expr* a, numeral const& g, obj_hashtabl
         }
     }
     adds.shrink(i);
-    return mk_add_app(adds.size(), adds.c_ptr());
+    return mk_add_app(adds.size(), adds.data());
 }
 
 
@@ -1102,6 +1139,6 @@ bool poly_rewriter<Config>::is_var_plus_ground(expr * n, bool & inv, var * & v, 
     if (v == nullptr)
         return false; // did not find variable
     SASSERT(!args.empty());
-    mk_add(args.size(), args.c_ptr(), t);
+    mk_add(args.size(), args.data(), t);
     return true;
 }

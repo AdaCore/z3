@@ -51,6 +51,8 @@ public:
     void reset();
     void cleanup();
 
+    obj_map<expr, expr*> const & sub() const { return m_subst; }
+
     std::ostream& display(std::ostream& out);
 };
 
@@ -61,7 +63,6 @@ class scoped_expr_substitution {
 public:
 
     scoped_expr_substitution(expr_substitution& s): m_subst(s), m_trail(s.m()) {}
-    ~scoped_expr_substitution() {}
 
     void insert(expr * s, expr * def, proof * def_pr = nullptr, expr_dependency * def_dep = nullptr) {
         if (!m_subst.contains(s)) {

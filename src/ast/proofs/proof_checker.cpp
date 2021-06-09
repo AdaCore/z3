@@ -104,8 +104,7 @@ bool proof_checker::check(proof* p, expr_ref_vector& side_conditions) {
         m_todo.pop_back();
         result = check1(curr.get(), side_conditions);
         if (!result) {
-            IF_VERBOSE(0, ast_ll_pp(verbose_stream() << "Proof check failed\n", m, curr.get()););
-            UNREACHABLE();
+            IF_VERBOSE(1, ast_ll_pp(verbose_stream() << "Proof check failed\n", m, curr.get()););
         }
     }
 
@@ -432,7 +431,7 @@ bool proof_checker::check1_basic(proof* p, expr_ref_vector& side_conditions) {
                 }
             }
             expr_ref rewrite_cond(m);
-            rewrite_cond = m.mk_or(rewrite_eq.size(), rewrite_eq.c_ptr());
+            rewrite_cond = m.mk_or(rewrite_eq.size(), rewrite_eq.data());
             side_conditions.push_back(rewrite_cond.get());
             return true;
         }
@@ -789,7 +788,7 @@ bool proof_checker::check1_basic(proof* p, expr_ref_vector& side_conditions) {
                     // SASSERT(to_quantifier(premise)->get_num_decls() == sub.size());
                     premise = to_quantifier(premise)->get_expr();
                 }
-                premise = vs(premise, sub.size(), sub.c_ptr());
+                premise = vs(premise, sub.size(), sub.data());
             }
             fmls.push_back(premise.get());
             TRACE("proof_checker",
@@ -820,7 +819,7 @@ bool proof_checker::check1_basic(proof* p, expr_ref_vector& side_conditions) {
             fmls[i] = premise1;
         }
         fmls[0] = premise0;
-        premise0 = m.mk_or(fmls.size(), fmls.c_ptr());
+        premise0 = m.mk_or(fmls.size(), fmls.data());
         if (is_forall(conclusion)) {
             quantifier* q = to_quantifier(conclusion);
             premise0 = m.mk_iff(premise0, q->get_expr());
@@ -862,7 +861,7 @@ void proof_checker::set_false(expr_ref& e, unsigned position, expr_ref& lit) {
         args.append(a->get_num_args(), a->get_args());
         lit = args[position].get();
         args[position] = m.mk_false();
-        e = m.mk_or(args.size(), args.c_ptr());
+        e = m.mk_or(args.size(), args.data());
     }
     else if (m.is_implies(e, body, head)) {
         expr* const* heads = &head;
@@ -881,14 +880,14 @@ void proof_checker::set_false(expr_ref& e, unsigned position, expr_ref& lit) {
             args.append(num_heads, heads);
             lit = args[position].get();
             args[position] = m.mk_false();
-            e = m.mk_implies(body, m.mk_or(args.size(), args.c_ptr()));
+            e = m.mk_implies(body, m.mk_or(args.size(), args.data()));
         }
         else {
             position -= num_heads;
             args.append(num_bodies, bodies);
             lit = m.mk_not(args[position].get());
             args[position] = m.mk_true();
-            e = m.mk_implies(m.mk_and(args.size(), args.c_ptr()), head);
+            e = m.mk_implies(m.mk_and(args.size(), args.data()), head);
         }
     }
     else if (position == 0) {
@@ -1113,7 +1112,7 @@ void proof_checker::get_hypotheses(proof* p, expr_ref_vector& ante) {
             }
         }
         if (all_found) {
-            h = mk_hyp(hyps.size(), hyps.c_ptr());
+            h = mk_hyp(hyps.size(), hyps.data());
             m_pinned.push_back(h);
             m_hypotheses.insert(p, h);
             stack.pop_back();
@@ -1242,7 +1241,7 @@ void proof_checker::dump_proof(proof const* pr) {
         SASSERT(m.has_fact(a));
         antecedents.push_back(m.get_fact(a));
     }
-    dump_proof(antecedents.size(), antecedents.c_ptr(), consequent);
+    dump_proof(antecedents.size(), antecedents.data(), consequent);
 }
 
 void proof_checker::dump_proof(unsigned num_antecedents, expr * const * antecedents, expr * consequent) {
@@ -1279,7 +1278,7 @@ bool proof_checker::check_arith_literal(bool is_pos, app* lit0, rational const& 
         return false;
     }
     SASSERT(lit->get_num_args() == 2);
-    sort* s = m.get_sort(lit->get_arg(0));
+    sort* s = lit->get_arg(0)->get_sort();
     bool is_int = a.is_int(s);
     if (!is_int && a.is_int_expr(lit->get_arg(0))) {
         is_int = true;
@@ -1393,7 +1392,7 @@ bool proof_checker::check_arith_proof(proof* p) {
         }
     }
 
-    unsigned num_parents     = m.get_num_parents(p);
+    unsigned num_parents = m.get_num_parents(p);
     for (unsigned i = 0; i < num_parents; i++) {
         proof * a = m.get_parent(p, i);
         SASSERT(m.has_fact(a));
@@ -1401,6 +1400,11 @@ bool proof_checker::check_arith_proof(proof* p) {
             return false;
         }
     }
+    TRACE("proof_checker", 
+          for (unsigned i = 0; i < num_parents; i++) 
+              tout << coeffs[i] << " * " << mk_bounded_pp(m.get_fact(m.get_parent(p, i)), m) << "\n";
+          tout << "fact:" << mk_bounded_pp(fact, m) << "\n";);
+    
     if (m.is_or(fact)) {
         app* disj = to_app(fact);
         unsigned num_args = disj->get_num_args();
@@ -1421,7 +1425,7 @@ bool proof_checker::check_arith_proof(proof* p) {
         return false;
     }
 
-    sort* s = m.get_sort(sum);
+    sort* s = sum->get_sort();
 
 
     if (is_strict) {
@@ -1435,7 +1439,7 @@ bool proof_checker::check_arith_proof(proof* p) {
     rw(sum);
 
     if (!m.is_false(sum)) {
-        IF_VERBOSE(0, verbose_stream() << "Arithmetic proof check failed: " << mk_pp(sum, m) << "\n";);
+        IF_VERBOSE(1, verbose_stream() << "Arithmetic proof check failed: " << mk_pp(sum, m) << "\n";);
         m_dump_lemmas = true;
         dump_proof(p);
         return false;

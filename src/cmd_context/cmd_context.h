@@ -35,19 +35,19 @@ Notes:
 #include "ast/rewriter/seq_rewriter.h"
 #include "tactic/generic_model_converter.h"
 #include "solver/solver.h"
+#include "solver/check_logic.h"
 #include "solver/progress_callback.h"
 #include "cmd_context/pdecl.h"
 #include "cmd_context/tactic_manager.h"
-#include "cmd_context/check_logic.h"
 #include "params/context_params.h"
 
 
 class func_decls {
-    func_decl * m_decls;
+    func_decl * m_decls { nullptr };
     bool signatures_collide(func_decl* f, func_decl* g) const;
     bool signatures_collide(unsigned n, sort*const* domain, sort* range, func_decl* g) const;
 public:
-    func_decls():m_decls(nullptr) {}
+    func_decls() {}
     func_decls(ast_manager & m, func_decl * f);
     void finalize(ast_manager & m);
     bool contains(func_decl * f) const;
@@ -58,10 +58,11 @@ public:
     bool clash(func_decl * f) const;
     bool empty() const { return m_decls == nullptr; }
     func_decl * first() const;
-    func_decl * find(unsigned arity, sort * const * domain, sort * range) const;
-    func_decl * find(ast_manager & m, unsigned num_args, expr * const * args, sort * range) const;
+    func_decl * find(ast_manager & m, unsigned arity, sort * const * domain, sort * range) const;
+    func_decl * find(ast_manager & m, unsigned arity, expr * const * args, sort * range) const;
     unsigned get_num_entries() const;
     func_decl * get_entry(unsigned inx);
+    bool check_signature(ast_manager& m, func_decl* f, unsigned arityh, sort * const* domain, sort * range, bool& coerced) const;
 };
 
 struct macro_decl {
@@ -84,6 +85,7 @@ public:
     bool empty() const { return !m_decls || m_decls->empty(); }
     expr* find(unsigned arity, sort *const* domain) const;
     void erase_last(ast_manager& m);
+    macro_decl const& last() const { return m_decls->back(); }
     vector<macro_decl>::iterator begin() const { return m_decls->begin(); }
     vector<macro_decl>::iterator end() const { return m_decls->end(); }
 };
@@ -92,9 +94,8 @@ public:
    \brief Generic wrapper.
 */
 class object_ref {
-    unsigned m_ref_count;
+    unsigned m_ref_count = 0;
 public:
-    object_ref():m_ref_count(0) {}
     virtual ~object_ref() {}
     virtual void finalize(cmd_context & ctx) = 0;
     void inc_ref(cmd_context & ctx) {
@@ -159,6 +160,18 @@ public:
     virtual void updt_params(params_ref const& p) = 0;
 };
 
+class ast_context_params : public context_params { 
+    ast_manager* m_manager { nullptr };
+public:
+    /**
+       \brief Create an AST manager using this configuration.
+    */
+    ast_manager * mk_ast_manager();
+
+    void set_foreign_manager(ast_manager* m) { m_manager = m; }
+    bool owns_manager() const { return m_manager != nullptr; }
+};
+
 class cmd_context : public progress_callback, public tactic_manager, public ast_printer_context {
 public:
     enum status {
@@ -178,8 +191,10 @@ public:
         ~scoped_watch() { m_ctx.m_watch.stop(); }
     };
 
+    
+
 protected:
-    context_params               m_params;
+    ast_context_params                  m_params;
     bool                         m_main_ctx;
     symbol                       m_logic;
     bool                         m_interactive_mode;
@@ -197,7 +212,8 @@ protected:
 
     static std::ostringstream    g_error_stream;
 
-    generic_model_converter_ref  m_mc0;
+    generic_model_converter* mc0() { return m_mcs.back(); }
+    sref_vector<generic_model_converter> m_mcs;
     ast_manager *                m_manager;
     bool                         m_own_manager;
     bool                         m_manager_initialized;
@@ -314,6 +330,7 @@ public:
     cmd_context(bool main_ctx = true, ast_manager * m = nullptr, symbol const & l = symbol::null);
     ~cmd_context() override;
     void set_cancel(bool f);
+    void register_plist();
     context_params  & params() { return m_params; }
     solver_factory &get_solver_factory() { return *m_solver_factory; }
     opt_wrapper*  get_opt();
@@ -368,7 +385,7 @@ public:
     check_sat_state cs_state() const;
     void complete_model(model_ref& mdl) const;
     void validate_model();
-    void analyze_failure(model_evaluator& ev, expr* e, bool expected_value);
+    void analyze_failure(expr_mark& seen, model_evaluator& ev, expr* e, bool expected_value);
     void display_detailed_analysis(std::ostream& out, model_evaluator& ev, expr* e);
     void display_model(model_ref& mdl);
 
@@ -388,6 +405,7 @@ public:
     void insert_aux_pdecl(pdecl * p);
     void model_add(symbol const & s, unsigned arity, sort *const* domain, expr * t);
     void model_del(func_decl* f);
+    void register_fun(symbol const& s, func_decl* f);
     void insert_rec_fun(func_decl* f, expr_ref_vector const& binding, svector<symbol> const& ids, expr* e);
     func_decl * find_func_decl(symbol const & s) const;
     func_decl * find_func_decl(symbol const & s, unsigned num_indices, unsigned const * indices,
@@ -400,6 +418,13 @@ public:
     void mk_const(symbol const & s, expr_ref & result) const;
     void mk_app(symbol const & s, unsigned num_args, expr * const * args, unsigned num_indices, parameter const * indices, sort * range,
                 expr_ref & r) const;
+    bool try_mk_macro_app(symbol const & s, unsigned num_args, expr * const * args, unsigned num_indices, parameter const * indices, sort * range,
+                expr_ref & r) const;
+    bool try_mk_builtin_app(symbol const & s, unsigned num_args, expr * const * args, unsigned num_indices, parameter const * indices, sort * range,
+                expr_ref & r) const;
+    bool try_mk_declared_app(symbol const & s, unsigned num_args, expr * const * args, 
+                             unsigned num_indices, parameter const * indices, sort * range,
+                             func_decls& fs, expr_ref & result) const;
     void erase_cmd(symbol const & s);
     void erase_func_decl(symbol const & s);
     void erase_func_decl(symbol const & s, func_decl * f);
@@ -449,7 +474,7 @@ public:
 
     dictionary<macro_decls> const & get_macros() const { return m_macros; }
 
-    model_converter* get_model_converter() { return m_mc0.get(); }
+    model_converter* get_model_converter() { return mc0(); }
 
     bool is_model_available(model_ref& md) const;
 

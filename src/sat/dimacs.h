@@ -63,7 +63,6 @@ namespace dimacs {
         unsigned        m_node_id{ 0 };
         std::string     m_name;
         unsigned_vector m_args;
-        drat_record() {}
     };
 
     struct drat_pp {
@@ -84,6 +83,7 @@ namespace dimacs {
 
         char const* parse_sexpr();
         char const* parse_identifier();
+        char const* parse_quoted_symbol();
         int read_theory_id();
         bool next();
 
@@ -110,6 +110,3 @@ namespace dimacs {
 
     };
 };
-
-
-

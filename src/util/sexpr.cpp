@@ -169,7 +169,7 @@ void sexpr::display_atom(std::ostream & out) const {
         }
         std::reverse(buf.begin(), buf.end());
         buf.push_back(0);
-        out << buf.c_ptr();
+        out << buf.data();
         break;
     }
     case sexpr::kind_t::STRING:
@@ -194,6 +194,8 @@ void sexpr::display(std::ostream & out) const {
         sexpr_composite const * n = todo.back().first;
         unsigned & idx = todo.back().second;
         unsigned num = n->get_num_children();
+        if (num == 0)
+            out << "(";
         while (idx < num) {
             sexpr const * child = n->get_child(idx);
             if (idx == 0)

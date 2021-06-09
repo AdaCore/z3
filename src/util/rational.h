@@ -308,6 +308,10 @@ public:
     bool is_even() const {
         return m().is_even(m_val);
     }
+
+    bool is_odd() const { 
+        return !is_even(); 
+    }
     
     friend inline rational floor(rational const & r) {
         rational f;
@@ -332,6 +336,8 @@ public:
     bool is_power_of_two(unsigned & shift) {
         return m().is_power_of_two(m_val, shift);
     }
+
+    bool mult_inverse(unsigned num_bits, rational & result);
 
     static rational const & zero() {
         return m_zero;
@@ -387,8 +393,11 @@ public:
     }
 
     friend inline std::ostream & operator<<(std::ostream & target, rational const & r) {
-        target << m().to_string(r.m_val);
-        return target;
+        return target << m().to_string(r.m_val);
+    }
+
+    friend inline bool divides(rational const& a, rational const& b) {
+        return m().divides(a.to_mpq(), b.to_mpq());
     }
 
     friend inline rational gcd(rational const & r1, rational const & r2);
@@ -456,6 +465,18 @@ public:
         return get_num_digits(rational(10));
     }
 
+    bool get_bit(unsigned index) const {
+        return m().get_bit(m_val, index);
+    }
+
+    unsigned trailing_zeros() const {
+        if (is_zero())
+            return 0;
+        unsigned k = 0;
+        for (; !get_bit(k); ++k); 
+        return k;
+    }
+
     static bool limit_denominator(rational &num, rational const& limit);
 };
 
@@ -479,11 +500,6 @@ inline bool operator<=(rational const & r1, rational const & r2) {
     return !operator>(r1, r2); 
 }
 
-inline bool operator<=(rational const & r1, int r2) { 
-    return r1 <= rational(r2);
-}
-
-
 inline bool operator>=(rational const & r1, rational const & r2) { 
     return !operator<(r1, r2); 
 }
@@ -496,8 +512,23 @@ inline bool operator>(int a, rational const & b) {
     return rational(a) > b;
 }
 
+inline bool operator>=(rational const& a, int b) {
+    return a >= rational(b);
+}
 
-inline bool operator!=(rational const & a, int b) {
+inline bool operator>=(int a, rational const& b) {
+    return rational(a) >= b;
+}
+
+inline bool operator<=(rational const& a, int b) {
+    return a <= rational(b);
+}
+
+inline bool operator<=(int a, rational const& b) {
+    return rational(a) <= b;
+}
+
+inline bool operator!=(rational const& a, int b) {
     return !(a == rational(b));
 }
 

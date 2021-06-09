@@ -34,12 +34,18 @@ namespace sat {
         bool_var_vector m_is_tracked;
         unsigned_vector m_ext2var;
         unsigned_vector m_var2ext;
+        lim_svector<unsigned> m_vars;
         void add_literal(literal lit);
 
         bool_var ext2var(bool_var v);
         bool_var var2ext(bool_var v);
         literal  ext2lit(literal lit);
         literal  lit2ext(literal lit);
+
+        void add_assumptions(solver const& s);
+
+        std::ostream& display(solver const& s, std::ostream& out) const;
+
     public:
         dual_solver(reslimit& l);
         void push();

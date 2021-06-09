@@ -70,8 +70,8 @@ namespace api {
     //
     // ------------------------
 
-    context::context(context_params * p, bool user_ref_count):
-        m_params(p != nullptr ? *p : context_params()),
+    context::context(ast_context_params * p, bool user_ref_count):
+        m_params(p != nullptr ? *p : ast_context_params()),
         m_user_ref_count(user_ref_count),
         m_manager(m_params.mk_ast_manager()),
         m_plugins(m()),
@@ -81,20 +81,16 @@ namespace api {
         m_fpa_util(m()),
         m_sutil(m()),
         m_recfun(m()),
-        m_last_result(m()),
         m_ast_trail(m()),
         m_pmanager(m_limit) {
 
         m_error_code = Z3_OK;
         m_print_mode = Z3_PRINT_SMTLIB_FULL;
-        m_searching  = false;
         
 
         m_interruptable = nullptr;
         m_error_handler = &default_error_handler;
 
-        m_basic_fid = m().get_basic_family_id();
-        m_arith_fid = m().mk_family_id("arith");
         m_bv_fid    = m().mk_family_id("bv");
         m_pb_fid    = m().mk_family_id("pb");
         m_array_fid = m().mk_family_id("array");
@@ -157,12 +153,6 @@ namespace api {
         }
     }
 
-    void context::check_searching() {
-        if (m_searching) { 
-            set_error_code(Z3_INVALID_USAGE, "cannot use function while searching"); // TBD: error code could be fixed.
-        } 
-    }
-
     char * context::mk_external_string(char const * str) {
         m_string_buffer = str?str:"";
         return const_cast<char *>(m_string_buffer.c_str());
@@ -182,7 +172,7 @@ namespace api {
     expr * context::mk_numeral_core(rational const & n, sort * s) {
         expr* e = nullptr;
         family_id fid  = s->get_family_id();
-        if (fid == m_arith_fid) {
+        if (fid == arith_family_id) {
             e = m_arith_util.mk_numeral(n, s);
         }
         else if (fid == m_bv_fid) {
@@ -195,6 +185,11 @@ namespace api {
                 invoke_error_handler(Z3_INVALID_ARG);
             }
             e = m_datalog_util.mk_numeral(n.get_uint64(), s);
+        }
+        else if (fid == m_fpa_fid) {
+            scoped_mpf tmp(fpautil().fm());
+            fpautil().fm().set(tmp, fpautil().get_ebits(s), fpautil().get_sbits(s), n.get_double());
+            e = fpautil().mk_value(tmp);
         }
         else {
             invoke_error_handler(Z3_INVALID_ARG);
@@ -221,12 +216,12 @@ namespace api {
     void context::save_ast_trail(ast * n) {
         SASSERT(m().contains(n));
         if (m_user_ref_count) {
-            // Corner case bug: n may be in m_last_result, and this is the only reference to n.
+            // Corner case bug: n may be in m_ast_trail, and this is the only reference to n.
             // When, we execute reset() it is deleted
-            // To avoid this bug, I bump the reference counter before resetting m_last_result
+            // To avoid this bug, I bump the reference counter before resetting m_ast_trail
             ast_ref node(n, m());
-            m_last_result.reset();
-            m_last_result.push_back(std::move(node));
+            m_ast_trail.reset();
+            m_ast_trail.push_back(std::move(node));
         }
         else {
             m_ast_trail.push_back(n);
@@ -234,15 +229,12 @@ namespace api {
     }
 
     void context::save_multiple_ast_trail(ast * n) {
-        if (m_user_ref_count)
-            m_last_result.push_back(n);
-        else
-            m_ast_trail.push_back(n);
+        m_ast_trail.push_back(n);
     }
 
     void context::reset_last_result() {
         if (m_user_ref_count)
-            m_last_result.reset();
+            m_ast_trail.reset();
         m_last_obj = nullptr;
     }
 
@@ -295,7 +287,7 @@ namespace api {
                 if (a->get_num_args() > 1) buffer << "\n";
                 for (unsigned i = 0; i < a->get_num_args(); ++i) {
                     buffer << mk_bounded_pp(a->get_arg(i), m(), 3) << " of sort ";
-                    buffer << mk_pp(m().get_sort(a->get_arg(i)), m()) << "\n";
+                    buffer << mk_pp(a->get_arg(i)->get_sort(), m()) << "\n";
                 }
                 auto str = buffer.str();
                 warning_msg("%s", str.c_str());
@@ -338,7 +330,7 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_mk_context(c);
         memory::initialize(UINT_MAX);
-        Z3_context r = reinterpret_cast<Z3_context>(alloc(api::context, reinterpret_cast<context_params*>(c), false));
+        Z3_context r = reinterpret_cast<Z3_context>(alloc(api::context, reinterpret_cast<ast_context_params*>(c), false));
         RETURN_Z3(r);
         Z3_CATCH_RETURN_NO_HANDLE(nullptr);
     }
@@ -347,7 +339,7 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_mk_context_rc(c);
         memory::initialize(UINT_MAX);
-        Z3_context r = reinterpret_cast<Z3_context>(alloc(api::context, reinterpret_cast<context_params*>(c), true));
+        Z3_context r = reinterpret_cast<Z3_context>(alloc(api::context, reinterpret_cast<ast_context_params*>(c), true));
         RETURN_Z3(r);
         Z3_CATCH_RETURN_NO_HANDLE(nullptr);
     }

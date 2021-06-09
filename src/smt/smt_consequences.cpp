@@ -194,7 +194,7 @@ namespace smt {
                     break;
                 }
             }
-            else if (e_internalized(k) && m.are_distinct(v, get_enode(k)->get_root()->get_owner())) {
+            else if (e_internalized(k) && m.are_distinct(v, get_enode(k)->get_root()->get_expr())) {
                 to_delete.push_back(k);
             }
             else if (get_assignment(mk_diseq(k, v)) == l_true) {
@@ -244,8 +244,8 @@ namespace smt {
 
                 literal lit = mk_diseq(k, v);
                 literals.push_back(lit);
-                mk_clause(literals.size(), literals.c_ptr(), nullptr);
-                TRACE("context", display_literals_verbose(tout, literals.size(), literals.c_ptr()););
+                mk_clause(literals.size(), literals.data(), nullptr);
+                TRACE("context", display_literals_verbose(tout, literals.size(), literals.data()););
             }
         }    
         for (expr* e : to_delete) {
@@ -282,18 +282,21 @@ namespace smt {
         m_var2val.reset();
         m_var2orig.reset();
         m_assumption2orig.reset();
+        bool pushed = false;
         struct scoped_level {
             context& c;
+            bool& pushed;
             unsigned lvl;
-            scoped_level(context& c):
-                c(c), lvl(c.get_scope_level()) {}
+            scoped_level(context& c, bool& pushed):
+                c(c), pushed(pushed), lvl(c.get_scope_level()) {}
             ~scoped_level() {
-                if (c.get_scope_level() > lvl)
-                    c.pop_scope(c.get_scope_level() - lvl);
+                if (c.get_scope_level() > lvl + pushed) 
+                    c.pop_scope(c.get_scope_level() - lvl - pushed);
+                if (pushed)
+                    c.pop(1);
             }
         };
-        scoped_level _lvl(*this);
-        bool pushed = false;
+        scoped_level _lvl(*this, pushed);
 
         for (expr* v : vars0) {
             if (is_uninterp_const(v)) {
@@ -302,7 +305,7 @@ namespace smt {
             }
             else {
                 if (!pushed) pushed = true, push();                
-                expr_ref c(m.mk_fresh_const("v", m.get_sort(v)), m);
+                expr_ref c(m.mk_fresh_const("v", v->get_sort()), m);
                 expr_ref eq(m.mk_eq(c, v), m);
                 assert_expr(eq);
                 vars.push_back(c);
@@ -315,7 +318,7 @@ namespace smt {
             }
             else {
                 if (!pushed) pushed = true, push();                
-                expr_ref c(m.mk_fresh_const("a", m.get_sort(a)), m);
+                expr_ref c(m.mk_fresh_const("a", a->get_sort()), m);
                 expr_ref eq(m.mk_eq(c, a), m);
                 assert_expr(eq);
                 assumptions.push_back(c);                
@@ -327,7 +330,8 @@ namespace smt {
             m_assumption2orig.insert(lit.var(), a);
         }
 
-        lbool is_sat = check(assumptions.size(), assumptions.c_ptr());
+        lbool is_sat = check(assumptions.size(), assumptions.data());
+
         if (is_sat != l_true) {
             TRACE("context", tout << is_sat << "\n";);
             return is_sat;
@@ -381,10 +385,10 @@ namespace smt {
                 expr* e = kv.m_key;
                 expr* val = kv.m_value;
                 literal lit = mk_diseq(e, val);
-                mark_as_relevant(lit);
                 if (get_assignment(lit) != l_undef) {
                     continue;
                 }
+                mark_as_relevant(lit);
                 ++num_vars;
                 push_scope();
                 assign(lit, b_justification::mk_axiom(), true);

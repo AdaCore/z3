@@ -57,7 +57,7 @@ class lia2card_tactic : public tactic {
 
         bool is_le(expr* x, expr* y, expr_ref& result) {
             if (is_pb(x, y, args, coeffs, coeff)) {
-                result = t.mk_le(coeffs.size(), coeffs.c_ptr(), args.c_ptr(), -coeff);
+                result = t.mk_le(coeffs.size(), coeffs.data(), args.data(), -coeff);
                 return true;
             }
             else {
@@ -77,7 +77,7 @@ class lia2card_tactic : public tactic {
                 result = m.mk_not(result);
             }
             else if (m.is_eq(f) && is_pb(es[0], es[1], args, coeffs, coeff)) {
-                result = t.mk_eq(coeffs.size(), coeffs.c_ptr(), args.c_ptr(), -coeff);
+                result = t.mk_eq(coeffs.size(), coeffs.data(), args.data(), -coeff);
             }
             else {
                 return BR_FAILED;
@@ -158,7 +158,7 @@ public:
             m_mc->hide(v);
             last_v = v;
         }
-        expr* r = a.mk_add(xs.size(), xs.c_ptr());
+        expr* r = a.mk_add(xs.size(), xs.data());
         m_mc->add(x->get_decl(), r);
         return expr_ref(r, m);
     }
@@ -192,7 +192,7 @@ public:
                 expr_ref b = mk_bounded(axioms, to_app(x), lo.get_unsigned(), hi.get_unsigned());
                 rep.insert(x, b);
                 m_bounds.insert(x, bound(lo.get_unsigned(), hi.get_unsigned(), b));
-                TRACE("pb", tout << "add bound " << mk_pp(x, m) << "\n";);
+                TRACE("pb", tout << "add bound " << lo << " " << hi << ": " << mk_pp(x, m) << "\n";);
             }
         }
         for (unsigned i = 0; !g->inconsistent() && i < g->size(); i++) {
@@ -329,7 +329,7 @@ public:
         if (!m.is_true(e)) {
             es.push_back(e);
         }
-        result = mk_and(m, es.size(), es.c_ptr());
+        result = mk_and(m, es.size(), es.data());
         if (!m.is_true(e)) {
             es.pop_back();
         }

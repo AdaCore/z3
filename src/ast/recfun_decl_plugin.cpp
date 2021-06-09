@@ -47,14 +47,16 @@ namespace recfun {
           m_def(d) {        
         parameter p(case_index);
         func_decl_info info(fid, OP_FUN_CASE_PRED, 1, &p);
-        m_pred = m.mk_func_decl(symbol(name.c_str()), arg_sorts.size(), arg_sorts.c_ptr(), m.mk_bool_sort(), info);
+        m_pred = m.mk_func_decl(symbol(name.c_str()), arg_sorts.size(), arg_sorts.data(), m.mk_bool_sort(), info);
     }
 
     def::def(ast_manager &m, family_id fid, symbol const & s,
              unsigned arity, sort* const * domain, sort* range, bool is_generated)
         :   m(m), m_name(s),
             m_domain(m, arity, domain), 
-            m_range(range, m), m_vars(m), m_cases(),
+            m_range(range, m), 
+            m_vars(m), 
+            m_cases(),
             m_decl(m), 
             m_rhs(m),
             m_fid(fid)
@@ -185,7 +187,9 @@ namespace recfun {
             conditions.push_back(choices->sign ? c : m.mk_not(c));
 
             // binding to add to the substitution
-            subst.insert(ite, choices->sign ? th : el);
+            expr_ref tgt(choices->sign ? th : el, m);
+            tgt = subst(tgt);
+            subst.insert(ite, tgt);
         }
     }
 
@@ -193,9 +197,10 @@ namespace recfun {
     void def::add_case(std::string & name, unsigned case_index, expr_ref_vector const& conditions, expr * rhs, bool is_imm) {
         case_def c(m, m_fid, this, name, case_index, get_domain(), conditions, rhs);
         c.set_is_immediate(is_imm);
-        TRACEFN("add_case " << name << " " << mk_pp(rhs, m)
-                << " :is_imm " << is_imm
-                << " :guards " << conditions);
+        TRACEFN("add_case " << name 
+                << "\n" << mk_pp(rhs, m)
+                << "\n:is_imm " << is_imm
+                << "\n:guards " << conditions);
         m_cases.push_back(c);
     }
 
@@ -250,7 +255,7 @@ namespace recfun {
 
                 while (! stack.empty()) {
                     expr * e = stack.back();
-                    stack.pop_back();
+                    stack.pop_back();                    
 
                     if (m.is_ite(e)) {
                         // need to do a case split on `e`, forking the search space
@@ -410,6 +415,16 @@ namespace recfun {
             m_defs.insert(d->get_decl(), d);
             return promise_def(&u(), d);
         }
+
+        void plugin::erase_def(func_decl* f) {
+            def* d = nullptr;
+            if (m_defs.find(f, d)) {
+                for (case_def & c : d->get_cases()) 
+                    m_case_defs.erase(c.get_decl());
+                m_defs.erase(f);
+                dealloc(d);
+            }
+        }
         
         void plugin::set_definition(replace& r, promise_def & d, unsigned n_vars, var * const * vars, expr * rhs) {
             u().set_definition(r, d, n_vars, vars, rhs);
@@ -490,9 +505,10 @@ namespace recfun {
                         max_score = kv.m_value;
                     }
                 }
-                if (max_score <= 4) {
+                if (max_score <= 4) 
                     break;
-                }
+
+
                 ptr_vector<sort> domain;
                 ptr_vector<expr> args;
                 for (unsigned i = 0; i < n; ++i) {
@@ -500,17 +516,52 @@ namespace recfun {
                     args.push_back(vars[i]);
                 }
                                 
-                symbol fresh_name(m().mk_fresh_id()); 
-                auto pd = mk_def(fresh_name, n, domain.c_ptr(), m().get_sort(max_expr));
+                symbol fresh_name("fold-rec-" + std::to_string(m().mk_fresh_id())); 
+                auto pd = mk_def(fresh_name, n, domain.data(), max_expr->get_sort());
                 func_decl* f = pd.get_def()->get_decl();
-                expr_ref new_body(m().mk_app(f, n, args.c_ptr()), m());
+                expr_ref new_body(m().mk_app(f, n, args.data()), m());
                 set_definition(subst, pd, n, vars, max_expr);
+                subst.reset();
                 subst.insert(max_expr, new_body);
                 result = subst(result);                
-                TRACEFN("substituted " << mk_pp(max_expr, m()) << " -> " << new_body << "\n" << result);
+                TRACEFN("substituted\n" << mk_pp(max_expr, m()) << "\n->\n" << new_body << "\n-result->\n" << result);
             }
             return result;
         }
 
     }
+
+    case_expansion::case_expansion(recfun::util& u, app * n) : 
+        m_lhs(n, u.m()), m_def(nullptr), m_args(u.m())  {
+        SASSERT(u.is_defined(n));
+        func_decl * d = n->get_decl();
+        m_def = &u.get_def(d);
+        m_args.append(n->get_num_args(), n->get_args());
+    }
+
+    case_expansion::case_expansion(case_expansion const & from)
+        : m_lhs(from.m_lhs),
+          m_def(from.m_def),
+          m_args(from.m_args) {}
+    case_expansion::case_expansion(case_expansion && from)
+        : m_lhs(from.m_lhs),
+          m_def(from.m_def),
+          m_args(std::move(from.m_args)) {}
+
+    std::ostream& case_expansion::display(std::ostream & out) const {
+        return out << "case_exp(" << m_lhs << ")";
+    }
+
+    std::ostream& body_expansion::display(std::ostream & out) const {
+        ast_manager& m = m_pred.m();
+        out << "body_exp(" << m_cdef->get_decl()->get_name();
+        for (auto* t : m_args) 
+            out << " " << mk_pp(t, m);
+        return out << ")";
+    }
+
+    
+
 }
+
+

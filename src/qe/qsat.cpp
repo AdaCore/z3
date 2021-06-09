@@ -396,12 +396,12 @@ namespace qe {
 
     void pred_abs::mk_concrete(expr_ref_vector& fmls, obj_map<expr,expr*> const& map) {
         obj_map<expr,expr*> cache;
-        expr_ref_vector trail(m);
+        expr_ref_vector trail(fmls);
         expr* p;
         app_ref r(m);
         ptr_vector<expr> args;
-        unsigned sz0 = todo.size();
-        todo.append(fmls.size(), (expr*const*)fmls.c_ptr());
+        unsigned sz0 = todo.size();        
+        todo.append(fmls.size(), (expr*const*)fmls.data());
         while (sz0 != todo.size()) {
             app* a = to_app(todo.back());
             if (cache.contains(a)) {
@@ -438,9 +438,8 @@ namespace qe {
                 todo.pop_back();
             }
         }
-        for (unsigned i = 0; i < fmls.size(); ++i) {
-            fmls[i] = to_app(cache.find(fmls[i].get()));
-        }        
+        for (unsigned i = 0; i < fmls.size(); ++i) 
+            fmls[i] = to_app(cache.find(fmls.get(i)));
     }
     
     void pred_abs::pred2lit(expr_ref_vector& fmls) {
@@ -795,7 +794,7 @@ namespace qe {
 
         void filter_vars(app_ref_vector const& vars) {
             for (app* v : vars) m_pred_abs.fmc()->hide(v);
-            for (app* v : vars) check_sort(m.get_sort(v));
+            for (app* v : vars) check_sort(v->get_sort());
         }        
 
         void initialize_levels() {
@@ -1084,7 +1083,7 @@ namespace qe {
                 return expr_ref(m);
             }
             reset();
-            fml = ::mk_exists(m, vars.size(), vars.c_ptr(), fml);
+            fml = ::mk_exists(m, vars.size(), vars.data(), fml);
             fml = ::push_not(fml);
             hoist(fml);
             if (!is_ground(fml)) {
@@ -1108,7 +1107,7 @@ namespace qe {
                 }
                 m_free_vars.shrink(j);
                 if (!m_free_vars.empty()) {
-                    fml = ::mk_exists(m, m_free_vars.size(), m_free_vars.c_ptr(), fml);
+                    fml = ::mk_exists(m, m_free_vars.size(), m_free_vars.data(), fml);
                 }
                 return fml;
             default:
@@ -1275,7 +1274,7 @@ namespace qe {
             expr_ref_vector defs(m);
             expr_ref fml(m);
             in->get_formulas(fmls);
-            fml = mk_and(m, fmls.size(), fmls.c_ptr());
+            fml = mk_and(m, fmls.size(), fmls.data());
             
             // for now:
             // fail if cores.  (TBD)

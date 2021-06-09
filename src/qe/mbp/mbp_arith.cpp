@@ -194,16 +194,18 @@ namespace mbp {
 
             else if (m.is_ite(t, t1, t2, t3)) {
                 val = eval(t1);
-                SASSERT(m.is_true(val) || m.is_false(val));
                 TRACE("qe", tout << mk_pp(t1, m) << " := " << val << "\n";);
                 if (m.is_true(val)) {
                     linearize(mbo, eval, mul, t2, c, fmls, ts, tids);
                     fmls.push_back(t1);
                 }
-                else {
+                else if (m.is_false(val)) {
                     expr_ref not_t1(mk_not(m, t1), m);
                     fmls.push_back(not_t1);
                     linearize(mbo, eval, mul, t3, c, fmls, ts, tids);
+                }
+                else {
+                    throw default_exception("mbp evaluation didn't produce a truth value");
                 }
             }
             else if (a.is_mod(t, t1, t2) && is_numeral(t2, mul1) && !mul1.is_zero()) {
@@ -343,7 +345,7 @@ namespace mbp {
             TRACE("qe", tout << "remaining vars: " << vars << "\n"; 
                   for (unsigned v : real_vars) tout << "v" << v << " " << mk_pp(index2expr[v], m) << "\n";
                   mbo.display(tout););
-            vector<opt::model_based_opt::def> defs = mbo.project(real_vars.size(), real_vars.c_ptr(), compute_def);
+            vector<opt::model_based_opt::def> defs = mbo.project(real_vars.size(), real_vars.data(), compute_def);
 
             vector<row> rows;
             mbo.get_live_rows(rows);
@@ -372,6 +374,8 @@ namespace mbp {
                     ts.push_back(var2expr(index2expr, v));                
                 if (!d.m_coeff.is_zero())
                     ts.push_back(a.mk_numeral(d.m_coeff, is_int));
+                if (ts.empty())
+                    ts.push_back(a.mk_numeral(rational(0), is_int));
                 t = mk_add(ts);
                 if (!d.m_div.is_one() && is_int) 
                     t = a.mk_idiv(t, a.mk_numeral(d.m_div, is_int));                

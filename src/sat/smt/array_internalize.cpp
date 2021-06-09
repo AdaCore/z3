@@ -86,6 +86,7 @@ namespace array {
     }
 
     void solver::internalize_ext(euf::enode* n) {
+        SASSERT(is_array(n->get_arg(0)));
         push_axiom(extensionality_axiom(n->get_arg(0), n->get_arg(1)));
     }
 
@@ -209,8 +210,8 @@ namespace array {
         for (unsigned i = 0; i < dimension; ++i) 
             result->push_back(a.mk_array_ext(s, i));
         m_sort2diff.insert(s, result);
-        ctx.push(insert_map<euf::solver, obj_map<sort, func_decl_ref_vector*>, sort*>(m_sort2diff, s));
-        ctx.push(new_obj_trail<euf::solver,func_decl_ref_vector>(result));
+        ctx.push(insert_map<obj_map<sort, func_decl_ref_vector*>, sort*>(m_sort2diff, s));
+        ctx.push(new_obj_trail<func_decl_ref_vector>(result));
         return *result;
     }
 

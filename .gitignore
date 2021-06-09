@@ -24,6 +24,7 @@ release/*
 build/*
 build-dist/*
 dist/*
+src/out/*
 doc/html/*
 # GTAGS generated files
 src/GPATH
@@ -81,3 +82,5 @@ doc/code
 .vs
 examples/**/obj
 CMakeSettings.json
+# Editor temp files
+*.swp
