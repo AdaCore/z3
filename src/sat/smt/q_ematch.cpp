@@ -8,7 +8,7 @@ Module Name:
 Abstract:
 
     E-matching quantifier instantiation plugin
-
+    
 Author:
 
     Nikolaj Bjorner (nbjorner) 2021-01-24
@@ -192,20 +192,26 @@ namespace q {
     }
 
     struct ematch::remove_binding : public trail {
+        euf::solver& ctx;
         clause& c;
         binding* b;
-        remove_binding(clause& c, binding* b): c(c), b(b) {}
-        void undo() override {
+        remove_binding(euf::solver& ctx, clause& c, binding* b): ctx(ctx), c(c), b(b) {}
+        void undo() override {            
+            SASSERT(binding::contains(c.m_bindings, b));
             binding::remove_from(c.m_bindings, b);
+            binding::detach(b);
         }        
     };
 
     struct ematch::insert_binding : public trail {
+        euf::solver& ctx;
         clause& c;
         binding* b;
-        insert_binding(clause& c, binding* b): c(c), b(b) {}
-        void undo() override {
+        insert_binding(euf::solver& ctx, clause& c, binding* b): ctx(ctx), c(c), b(b) {}
+        void undo() override {            
+            SASSERT(!c.m_bindings || c.m_bindings->invariant());
             binding::push_to_front(c.m_bindings, b);
+            SASSERT(!c.m_bindings || c.m_bindings->invariant());
         }
     };
 
@@ -213,6 +219,14 @@ namespace q {
         unsigned sz = sizeof(binding) + sizeof(euf::enode* const*)*n;
         void* mem = ctx.get_region().allocate(sz);
         return new (mem) binding(pat, max_generation, min_top, max_top);
+    }  
+
+    euf::enode* const* ematch::alloc_binding(clause& c, euf::enode* const* _binding) {
+        unsigned sz = sizeof(euf::enode* const*) * c.num_decls();
+        euf::enode** binding = (euf::enode**)ctx.get_region().allocate(sz);
+        for (unsigned i = 0; i < c.num_decls(); ++i)
+            binding[i] = _binding[i];
+        return binding;
     }
 
     void ematch::add_binding(clause& c, app* pat, euf::enode* const* _binding, unsigned max_generation, unsigned min_top, unsigned max_top) {
@@ -222,18 +236,19 @@ namespace q {
         for (unsigned i = 0; i < n; ++i)
             b->m_nodes[i] = _binding[i];        
         binding::push_to_front(c.m_bindings, b);
-        ctx.push(remove_binding(c, b));
+        ctx.push(remove_binding(ctx, c, b));
     }
 
     void ematch::on_binding(quantifier* q, app* pat, euf::enode* const* _binding, unsigned max_generation, unsigned min_gen, unsigned max_gen) {
         TRACE("q", tout << "on-binding " << mk_pp(q, m) << "\n";);
         unsigned idx = m_q2clauses[q];
         clause& c = *m_clauses[idx];
-        if (!propagate(_binding, max_generation, c)) 
+        bool new_propagation = false;
+        if (!propagate(false, _binding, max_generation, c, new_propagation)) 
             add_binding(c, pat, _binding, max_generation, min_gen, max_gen);
     }
 
-    bool ematch::propagate(euf::enode* const* binding, unsigned max_generation, clause& c) {
+    bool ematch::propagate(bool is_owned, euf::enode* const* binding, unsigned max_generation, clause& c, bool& propagated) {
         TRACE("q", c.display(ctx, tout) << "\n";);
         unsigned idx = UINT_MAX;
         lbool ev = m_eval(binding, c, idx);
@@ -251,6 +266,8 @@ namespace q {
         }
         if (ev == l_undef && max_generation > m_generation_propagation_threshold)
             return false;
+        if (!is_owned) 
+            binding = alloc_binding(c, binding);        
         auto j_idx = mk_justification(idx, c, binding);       
         if (ev == l_false) {
             ++m_stats.m_num_conflicts;
@@ -260,6 +277,7 @@ namespace q {
             ++m_stats.m_num_propagations;
             ctx.propagate(instantiate(c, binding, c[idx]), j_idx);
         }
+        propagated = true;
         return true;
     }
 
@@ -372,6 +390,7 @@ namespace q {
         clause* cl = alloc(clause, m, m_clauses.size());
         cl->m_literal = ctx.mk_literal(_q);
         quantifier_ref q(_q, m);
+        q = m_qs.flatten(q);
         if (is_exists(q)) {
             cl->m_literal.neg();
             expr_ref body(mk_not(m, q->get_expr()), m);
@@ -382,7 +401,12 @@ namespace q {
         for (expr* arg : ors) {
             bool sign = m.is_not(arg, arg);
             expr* l, *r;
-            if (!m.is_eq(arg, l, r) || is_ground(arg)) {
+            if (m.is_distinct(arg) && to_app(arg)->get_num_args() == 2) {
+                l = to_app(arg)->get_arg(0);
+                r = to_app(arg)->get_arg(1);
+                sign = !sign;
+            }
+            else if (!m.is_eq(arg, l, r) || is_ground(arg)) {
                 l = arg;
                 r = sign ? m.mk_false() : m.mk_true();
                 sign = false;
@@ -479,10 +503,8 @@ namespace q {
                 continue;
 
             do {
-                if (propagate(b->m_nodes, b->m_max_generation, c)) {
+                if (propagate(true, b->m_nodes, b->m_max_generation, c, propagated)) 
                     to_remove.push_back(b);
-                    propagated = true;
-                }
                 else if (flush) {
                     instantiate(*b, c);
                     to_remove.push_back(b);
@@ -492,8 +514,10 @@ namespace q {
             while (b != c.m_bindings);
 
             for (auto* b : to_remove) {
+                SASSERT(binding::contains(c.m_bindings, b));
                 binding::remove_from(c.m_bindings, b);
-                ctx.push(insert_binding(c, b));
+                binding::detach(b);
+                ctx.push(insert_binding(ctx, c, b));
             }
             to_remove.reset();
         }

@@ -689,7 +689,7 @@ namespace euf {
         if (ra->interpreted() && rb->interpreted()) {
             explain_eq(justifications, a, ra);
             explain_eq(justifications, b, rb);
-            return UINT_MAX;
+            return sat::null_bool_var;
         }
         expr_ref eq(m.mk_eq(a->get_expr(), b->get_expr()), m);
         m_tmp_eq->m_args[0] = a;
@@ -745,7 +745,7 @@ namespace euf {
             out << "] ";
         }
         if (n->value() != l_undef) 
-            out << "[v" << n->bool_var() << " := " << (n->value() == l_true ? "T":"F") << "] ";
+            out << "[b" << n->bool_var() << " := " << (n->value() == l_true ? "T":"F") << "] ";
         if (n->has_th_vars()) {
             out << "[t";
             for (auto v : enode_th_vars(n))

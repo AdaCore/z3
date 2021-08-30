@@ -42,7 +42,7 @@ namespace euf {
         if (n) {
             if (m.is_bool(e)) {
                 SASSERT(!s().was_eliminated(n->bool_var()));
-                SASSERT(n->bool_var() != UINT_MAX);
+                SASSERT(n->bool_var() != sat::null_bool_var);
                 return literal(n->bool_var(), sign);
             }
             TRACE("euf", tout << "non-bool\n";);
@@ -109,11 +109,13 @@ namespace euf {
         if (m.is_bool(e))
             attach_lit(literal(si.add_bool_var(e), false), e);
 
-        if (!m.is_bool(e) && e->get_sort()->get_family_id() != null_family_id) {
+        if (!m.is_bool(e) && !m.is_uninterp(e->get_sort())) {
             auto* e_ext = expr2solver(e);
             auto* s_ext = sort2solver(e->get_sort());
             if (s_ext && s_ext != e_ext)
                 s_ext->apply_sort_cnstr(n, e->get_sort());
+            else if (!s_ext && !e_ext && is_app(e)) 
+                unhandled_function(to_app(e)->get_decl());
         }
         expr* a = nullptr, * b = nullptr;                   
         if (m.is_eq(e, a, b) && a->get_sort()->get_family_id() != null_family_id) {
@@ -137,6 +139,10 @@ namespace euf {
             sat::literal lit2 = literal(v, false);
             s().mk_clause(~lit, lit2, sat::status::th(m_is_redundant, m.get_basic_family_id()));
             s().mk_clause(lit, ~lit2, sat::status::th(m_is_redundant, m.get_basic_family_id()));
+            if (relevancy_enabled()) {
+                add_aux(~lit, lit2);
+                add_aux(lit, ~lit2);
+            }
             lit = lit2;
         }
 
@@ -151,7 +157,7 @@ namespace euf {
         enode* n = m_egraph.find(e);
         if (!n) 
             n = m_egraph.mk(e, m_generation, 0, nullptr); 
-        SASSERT(n->bool_var() == UINT_MAX || n->bool_var() == v);
+        SASSERT(n->bool_var() == sat::null_bool_var || n->bool_var() == v);
         m_egraph.set_bool_var(n, v);
         if (m.is_eq(e) || m.is_or(e) || m.is_and(e) || m.is_not(e))
             m_egraph.set_merge_enabled(n, false);
@@ -177,10 +183,13 @@ namespace euf {
     void solver::add_not_distinct_axiom(app* e, enode* const* args) {
         SASSERT(m.is_distinct(e));
         unsigned sz = e->get_num_args();
-        if (sz <= 1)
-            return;
-
         sat::status st = sat::status::th(m_is_redundant, m.get_basic_family_id());
+
+        if (sz <= 1) {
+            s().mk_clause(0, nullptr, st);
+            return;
+        }
+
         static const unsigned distinct_max_args = 32;
         if (sz <= distinct_max_args) {
             sat::literal_vector lits;
@@ -228,10 +237,8 @@ namespace euf {
         static const unsigned distinct_max_args = 32;
         unsigned sz = e->get_num_args();
         sat::status st = sat::status::th(m_is_redundant, m.get_basic_family_id());
-        if (sz <= 1) {
-            s().mk_clause(0, nullptr, st);
+        if (sz <= 1) 
             return;
-        }
         if (sz <= distinct_max_args) {
             for (unsigned i = 0; i < sz; ++i) {
                 for (unsigned j = i + 1; j < sz; ++j) {
@@ -275,6 +282,7 @@ namespace euf {
             }
             else {
                 sat::bool_var v = si.to_bool_var(c);
+                s().set_external(v);
                 VERIFY(v != sat::null_bool_var);
                 VERIFY(s().is_external(v));
                 SASSERT(v != sat::null_bool_var);

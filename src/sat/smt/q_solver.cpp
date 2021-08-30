@@ -41,7 +41,7 @@ namespace q {
         quantifier* q = to_quantifier(e);
 
         auto const& exp = expand(q);
-        if (exp.size() > 1 && is_forall(q)) {
+        if (exp.size() > 1 && is_forall(q) && !l.sign()) {
             for (expr* e : exp) {
                 sat::literal lit = ctx.internalize(e, l.sign(), false, false); 
                 add_clause(~l, lit);                    
@@ -50,19 +50,21 @@ namespace q {
             }
             return;
         }
-        if (exp.size() > 1 && is_exists(q)) {
+        if (exp.size() > 1 && is_exists(q) && l.sign()) {
             sat::literal_vector lits;
             lits.push_back(~l);
             for (expr* e : exp)
                 lits.push_back(ctx.internalize(e, l.sign(), false, false));
             add_clause(lits);
-            if (ctx.relevancy_enabled())
-                ctx.add_root(lits);
+            ctx.add_root(lits);
             return;
         }
 
-        if (l.sign() == is_forall(e)) 
-            add_clause(~l, skolemize(q));
+        if (l.sign() == is_forall(e)) {
+            sat::literal lit = skolemize(q);
+            add_clause(~l, lit);
+            ctx.add_root(~l, lit);
+        }
         else {
             ctx.push_vec(m_universal, l);
             if (ctx.get_config().m_ematching)

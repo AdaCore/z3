@@ -76,8 +76,9 @@ namespace arith {
     }
 
     bool solver::unit_propagate() {
+        TRACE("arith", tout << "unit propagate\n";);
         m_model_is_initialized = false;
-        if (!m_new_eq && m_new_bounds.empty() && m_asserted_qhead == m_asserted.size())
+        if (!m_solver->has_changed_columns() && !m_new_eq && m_new_bounds.empty() && m_asserted_qhead == m_asserted.size())
             return false;
 
         m_new_eq = false;
@@ -618,11 +619,11 @@ namespace arith {
         }
         else if (a.is_arith_expr(o)) {
             expr_ref_vector args(m);
-            for (auto* arg : euf::enode_args(n)) {
-                if (m.is_value(arg->get_expr()))
-                    args.push_back(arg->get_expr());
+            for (auto* arg : *to_app(o)) {
+                if (m.is_value(arg))
+                    args.push_back(arg);
                 else 
-                    args.push_back(values.get(arg->get_root_id()));
+                    args.push_back(values.get(ctx.get_enode(arg)->get_root_id()));
             }
             value = m.mk_app(to_app(o)->get_decl(), args.size(), args.data());
             ctx.get_rewriter()(value);

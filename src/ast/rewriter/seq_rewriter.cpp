@@ -432,6 +432,7 @@ br_status seq_rewriter::mk_bool_app_helper(bool is_and, unsigned n, expr* const*
     obj_map<expr, expr*> in_re, not_in_re;
     bool found_pair = false;
     
+    ptr_buffer<expr> new_args;
     for (unsigned i = 0; i < n; ++i) {
         expr* args_i = args[i];
         expr* x = nullptr, *y = nullptr, *z = nullptr;
@@ -455,13 +456,15 @@ br_status seq_rewriter::mk_bool_app_helper(bool is_and, unsigned n, expr* const*
                 found_pair |= in_re.contains(x);
             }
         }
+        else 
+            new_args.push_back(args_i);
     }
     
     if (!found_pair) {
         return BR_FAILED;
     }
     
-    ptr_buffer<expr> new_args;
+
     for (auto const & kv : in_re) {
         expr* x = kv.m_key;
         expr* y = kv.m_value;
@@ -480,12 +483,6 @@ br_status seq_rewriter::mk_bool_app_helper(bool is_and, unsigned n, expr* const*
         expr* y = kv.m_value;
         if (!in_re.contains(x)) {
             new_args.push_back(re().mk_in_re(x, re().mk_complement(y)));
-        }
-    }
-    for (unsigned i = 0; i < n; ++i) {
-        expr* arg = args[i], * x;
-        if (!str().is_in_re(arg) && !(m().is_not(arg, x) && str().is_in_re(x))) {
-            new_args.push_back(arg);
         }
     }
     
@@ -716,6 +713,10 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
     case OP_STRING_STOI: 
         SASSERT(num_args == 1);
         st = mk_str_stoi(args[0], result);
+        break;
+    case OP_STRING_UBVTOS:
+        SASSERT(num_args == 1);
+        st = mk_str_ubv2s(args[0], result);
         break;
     case _OP_STRING_CONCAT:
     case _OP_STRING_PREFIX:
@@ -1778,6 +1779,10 @@ br_status seq_rewriter::mk_seq_replace(expr* a, expr* b, expr* c, expr_ref& resu
         result = str().mk_concat(c, a);
         return BR_REWRITE1;
     }
+    if (str().is_empty(a) && str().is_empty(c)) {
+        result = a;
+        return BR_DONE;
+    }
 
     m_lhs.reset();
     str().get_concat(a, m_lhs);
@@ -2203,6 +2208,17 @@ br_status seq_rewriter::mk_str_is_digit(expr* a, expr_ref& result) {
 }
 
 
+br_status seq_rewriter::mk_str_ubv2s(expr* a, expr_ref& result) {
+    bv_util bv(m());
+    rational val;
+    if (bv.is_numeral(a, val)) {
+        result = str().mk_string(zstring(val));
+        return BR_DONE;
+    }
+    return BR_FAILED;
+}
+
+
 br_status seq_rewriter::mk_str_itos(expr* a, expr_ref& result) {
     rational r;
     if (m_autil.is_numeral(a, r)) {
@@ -2262,6 +2278,11 @@ br_status seq_rewriter::mk_str_stoi(expr* a, expr_ref& result) {
     expr* b;
     if (str().is_itos(a, b)) {
         result = m().mk_ite(m_autil.mk_ge(b, zero()), b, minus_one());
+        return BR_DONE;
+    }
+    if (str().is_ubv2s(a, b)) {
+        bv_util bv(m());
+        result = bv.mk_bv2int(b);
         return BR_DONE;
     }
     
@@ -2500,7 +2521,7 @@ expr_ref seq_rewriter::is_nullable(expr* r) {
         m_op_cache.insert(_OP_RE_IS_NULLABLE, r, nullptr, result);        
     }
     STRACE("seq_verbose", tout << "is_nullable result: "
-                               << mk_pp(result, m()) << std::endl;);
+                               << result << std::endl;);
     return result;
 }
 
