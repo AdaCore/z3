@@ -33,7 +33,6 @@ Revision History:
 #include "smt/smt_statistics.h"
 #include "smt/smt_conflict_resolution.h"
 #include "smt/smt_relevancy.h"
-#include "smt/smt_induction.h"
 #include "smt/smt_case_split_queue.h"
 #include "smt/smt_almost_cg_table.h"
 #include "smt/smt_failure.h"
@@ -47,7 +46,7 @@ Revision History:
 #include "util/statistics.h"
 #include "smt/fingerprints.h"
 #include "smt/proto_model/proto_model.h"
-#include "smt/user_propagator.h"
+#include "smt/theory_user_propagator.h"
 #include "model/model.h"
 #include "solver/progress_callback.h"
 #include "solver/assertions/asserted_formulas.h"
@@ -89,7 +88,7 @@ namespace smt {
         scoped_ptr<quantifier_manager>   m_qmanager;
         scoped_ptr<model_generator>      m_model_generator;
         scoped_ptr<relevancy_propagator> m_relevancy_propagator;
-        user_propagator*            m_user_propagator;
+        theory_user_propagator*          m_user_propagator;
         random_gen                  m_random;
         bool                        m_flushing; // (debug support) true when flushing
         mutable unsigned            m_lemma_id;
@@ -184,7 +183,6 @@ namespace smt {
         unsigned                    m_simp_qhead { 0 };
         int                         m_simp_counter { 0 }; //!< can become negative
         scoped_ptr<case_split_queue> m_case_split_queue;
-        scoped_ptr<induction>       m_induction;
         double                      m_bvar_inc { 1.0 };
         bool                        m_phase_cache_on { true };
         unsigned                    m_phase_counter { 0 }; //!< auxiliary variable used to decide when to turn on/off phase caching
@@ -280,6 +278,9 @@ namespace smt {
             SASSERT(e_internalized(n));
             return m_app2enode[n->get_id()];
         }
+
+        void get_specrels(func_decl_set& rels) const;
+
 
         /**
            \brief Similar to get_enode, but returns 0 if n is to e_internalized.
@@ -1191,7 +1192,6 @@ namespace smt {
 
         bool more_than_k_unassigned_literals(clause * cls, unsigned k);
 
-        void internalize_assertions();
 
         void asserted_inconsistent();
 
@@ -1323,7 +1323,6 @@ namespace smt {
     public:
         bool can_propagate() const;
 
-        induction& get_induction(); 
 
         // Retrieve arithmetic values. 
         bool get_arith_lo(expr* e, rational& lo, bool& strict);
@@ -1609,6 +1608,8 @@ namespace smt {
 
         void assert_expr(expr * e, proof * pr);
 
+        void internalize_assertions();
+
         void push();
 
         void pop(unsigned num_scopes);
@@ -1694,40 +1695,46 @@ namespace smt {
          */
         void user_propagate_init(
             void*                 ctx, 
-            solver::push_eh_t&    push_eh,
-            solver::pop_eh_t&     pop_eh,
-            solver::fresh_eh_t&   fresh_eh);
+            user_propagator::push_eh_t&    push_eh,
+            user_propagator::pop_eh_t&     pop_eh,
+            user_propagator::fresh_eh_t&   fresh_eh);
 
-        void user_propagate_register_final(solver::final_eh_t& final_eh) {
+        void user_propagate_register_final(user_propagator::final_eh_t& final_eh) {
             if (!m_user_propagator) 
                 throw default_exception("user propagator must be initialized");
             m_user_propagator->register_final(final_eh);
         }
 
-        void user_propagate_register_fixed(solver::fixed_eh_t& fixed_eh) {
+        void user_propagate_register_fixed(user_propagator::fixed_eh_t& fixed_eh) {
             if (!m_user_propagator) 
                 throw default_exception("user propagator must be initialized");
             m_user_propagator->register_fixed(fixed_eh);
         }
         
-        void user_propagate_register_eq(solver::eq_eh_t& eq_eh) {
+        void user_propagate_register_eq(user_propagator::eq_eh_t& eq_eh) {
             if (!m_user_propagator) 
                 throw default_exception("user propagator must be initialized");
             m_user_propagator->register_eq(eq_eh);
         }
         
-        void user_propagate_register_diseq(solver::eq_eh_t& diseq_eh) {
+        void user_propagate_register_diseq(user_propagator::eq_eh_t& diseq_eh) {
             if (!m_user_propagator) 
                 throw default_exception("user propagator must be initialized");
             m_user_propagator->register_diseq(diseq_eh);
         }
 
-        unsigned user_propagate_register(expr* e) {
+        unsigned user_propagate_register_expr(expr* e) {
             if (!m_user_propagator) 
                 throw default_exception("user propagator must be initialized");
             return m_user_propagator->add_expr(e);
         }
-        
+
+        void user_propagate_register_created(user_propagator::created_eh_t& r) {
+            if (!m_user_propagator)
+                throw default_exception("user propagator must be initialized");
+            m_user_propagator->register_created(r);
+        }
+
         bool watches_fixed(enode* n) const;
 
         void assign_fixed(enode* n, expr* val, unsigned sz, literal const* explain);

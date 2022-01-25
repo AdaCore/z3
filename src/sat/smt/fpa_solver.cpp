@@ -15,6 +15,8 @@ Author:
 
 Revision History:
 
+    Ported from theory_fpa by nbjorner in 2020.
+
 --*/
 
 #include "sat/smt/fpa_solver.h"
@@ -81,6 +83,14 @@ namespace fpa {
         return conds;
     }
 
+    sat::check_result solver::check() {
+        SASSERT(m_converter.m_extra_assertions.empty());
+        if (unit_propagate())
+            return sat::check_result::CR_CONTINUE;
+        SASSERT(m_nodes.size() <= m_nodes_qhead);
+        return sat::check_result::CR_DONE;
+    }
+
     void solver::attach_new_th_var(enode* n) {
         theory_var v = mk_var(n);
         ctx.attach_th_var(n, this, v);
@@ -91,7 +101,10 @@ namespace fpa {
         SASSERT(m.is_bool(e));
         if (!visit_rec(m, e, sign, root, redundant))
             return sat::null_literal;
-        return expr2literal(e);
+        sat::literal lit = expr2literal(e);
+        if (sign)
+           lit.neg();
+        return lit;
     }
 
     void solver::internalize(expr* e, bool redundant) {
@@ -116,12 +129,11 @@ namespace fpa {
 
     bool solver::post_visit(expr* e, bool sign, bool root) {
         euf::enode* n = expr2enode(e);
-        app* a = to_app(e);
         SASSERT(!n || !n->is_attached_to(get_id()));
         if (!n)
             n = mk_enode(e, false);
         SASSERT(!n->is_attached_to(get_id()));
-        mk_var(n);
+        attach_new_th_var(n);
         TRACE("fp", tout << "post: " << mk_bounded_pp(e, m) << "\n";);
         m_nodes.push_back(std::tuple(n, sign, root));
         ctx.push(push_back_trail(m_nodes));
@@ -136,6 +148,8 @@ namespace fpa {
         SASSERT(n->get_decl()->get_range() == s);
 
         if (is_attached_to_var(n))
+            return;
+        if (m.is_ite(n->get_expr()))
             return;
         attach_new_th_var(n);
 
@@ -153,7 +167,6 @@ namespace fpa {
     }
 
     bool solver::unit_propagate() {
-
         if (m_nodes.size() <= m_nodes_qhead)
             return false;
         ctx.push(value_trail<unsigned>(m_nodes_qhead));
@@ -179,7 +192,7 @@ namespace fpa {
                 add_unit(atom);
             }
         }
-        else {
+        else {            
             switch (a->get_decl_kind()) {
             case OP_FPA_TO_FP:
             case OP_FPA_TO_UBV:
@@ -195,7 +208,7 @@ namespace fpa {
                 break;
             }
         }
-
+        activate(e);
     }
 
     void solver::activate(expr* n) {
@@ -203,7 +216,10 @@ namespace fpa {
 
         mpf_manager& mpfm = m_fpa_util.fm();
 
-        if (m_fpa_util.is_float(n) || m_fpa_util.is_rm(n)) {
+        if (m.is_ite(n)) {
+            // skip
+        }
+        else if (m_fpa_util.is_float(n) || m_fpa_util.is_rm(n)) {
             expr* a = nullptr, * b = nullptr, * c = nullptr;
             if (!m_fpa_util.is_fp(n)) {
                 app_ref wrapped = m_converter.wrap(n);
@@ -219,7 +235,11 @@ namespace fpa {
                     VERIFY(m_fpa_util.is_fp(bv_val_e, a, b, c));
                     expr* args[] = { a, b, c };
                     expr_ref cc_args(m_bv_util.mk_concat(3, args), m);
+                    // Require
+                    // wrap(n) = bvK
+                    // fp(extract(wrap(n)) = n
                     add_unit(eq_internalize(wrapped, cc_args));
+                    add_unit(eq_internalize(bv_val_e, n));
                     add_units(mk_side_conditions());
                 }
                 else 
@@ -306,11 +326,14 @@ namespace fpa {
         expr* e = n->get_expr();
         app_ref wrapped(m);
         expr_ref value(m);
+        
         auto is_wrapped = [&]() {
             if (!wrapped) wrapped = m_converter.wrap(e);
             return expr2enode(wrapped) != nullptr;
         };
-        if (m_fpa_util.is_fp(e)) {
+        if (m_fpa_util.is_rm_numeral(e) || m_fpa_util.is_numeral(e)) 
+            value = e;
+        else if (m_fpa_util.is_fp(e)) {
             SASSERT(n->num_args() == 3);
             expr* a = values.get(n->get_arg(0)->get_root_id());
             expr* b = values.get(n->get_arg(1)->get_root_id());
@@ -336,6 +359,7 @@ namespace fpa {
             value = m_fpa_util.mk_pzero(ebits, sbits);
         }
         values.set(n->get_root_id(), value);
+        TRACE("t_fpa", tout << ctx.bpp(n) << " := " << value << "\n";);
     }
 
     bool solver::add_dep(euf::enode* n, top_sort<euf::enode>& dep) {

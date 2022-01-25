@@ -101,6 +101,11 @@ namespace euf {
     theory_var th_euf_solver::get_th_var(expr* e) const {
         return get_th_var(ctx.get_enode(e));
     }
+
+    theory_var th_euf_solver::get_representative(theory_var v) const {
+        euf::enode* r = var2enode(v)->get_root();
+        return get_th_var(r);
+    }
     
     void th_euf_solver::push_core() {
         m_var2enode_lim.push_back(m_var2enode.size());
@@ -213,12 +218,7 @@ namespace euf {
     }
 
     euf::enode* th_euf_solver::e_internalize(expr* e) {
-        euf::enode* n = expr2enode(e);
-        if (!n) {
-            ctx.internalize(e, m_is_redundant);
-            n = expr2enode(e);
-        }
-        return n;
+        return ctx.e_internalize(e);
     }
 
     unsigned th_euf_solver::random() {

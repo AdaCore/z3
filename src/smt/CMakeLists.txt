@@ -30,7 +30,6 @@ z3_add_component(smt
     smt_farkas_util.cpp
     smt_for_each_relevant_expr.cpp
     smt_implied_equalities.cpp
-    smt_induction.cpp
     smt_internalizer.cpp
     smt_justification.cpp
     smt_kernel.cpp
@@ -71,9 +70,9 @@ z3_add_component(smt
     theory_str.cpp
     theory_str_mc.cpp
     theory_str_regex.cpp
+    theory_user_propagator.cpp
     theory_utvpi.cpp
     theory_wmaxsat.cpp
-    user_propagator.cpp
     uses_theory.cpp
     watch_list.cpp
   COMPONENT_DEPENDENCIES

@@ -105,7 +105,7 @@ namespace smt {
                     else
                         proc = alloc(expr_wrapper_proc, m.mk_false());
                 }
-                else if (m.is_value(r->get_expr()))
+                else if (m.is_model_value(r->get_expr()))
                     proc = alloc(expr_wrapper_proc, r->get_expr());                    
                 else {
                     family_id fid = s->get_family_id();
@@ -389,8 +389,7 @@ namespace smt {
         if (fid == null_family_id) return !m_hidden_ufs.contains(f); 
         if (fid == m.get_basic_family_id()) return false;
         theory * th = m_context->get_theory(fid);
-        if (!th) return true;
-        return th->include_func_interp(f);
+        return !th || th->include_func_interp(f);
     }
     
     /**

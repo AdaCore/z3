@@ -90,6 +90,14 @@ namespace q {
 
         univ.append(residue);
         add_projection_functions(mdl, univ);
+	for (unsigned i = mdl.get_num_functions(); i-- > 0; ) {
+            func_decl* f = mdl.get_function(i);
+            func_interp* fi = mdl.get_func_interp(f);
+            if (fi->is_partial())
+                fi->set_else(fi->get_max_occ_result());
+            if (fi->is_partial())
+                fi->set_else(mdl.get_some_value(f->get_range()));
+	}
         TRACE("q", tout << "end: " << mdl << "\n";);
     }
 
@@ -111,6 +119,18 @@ namespace q {
             add_projection_functions(mdl, f);
     }
 
+    /**
+    *  we are given f with interpretation:
+    *      if x = v0 and y = w0 then f0
+    *      else if x = v1 and y = w1 then f1
+    *      ...
+    * Create a new interpretation for f as follows:
+    * f := f_aux(project1(x), project2(y))
+    * f_aux uses the original interpretation of f
+    * project1 sorts the values of v0, v1, ..., and maps arguments below v0 to v0, between v0, v1 to v1 etc.
+    * project2 sorts values of w0, w1, ... and maps argument y to values w0, w1, ..
+    * 
+    */
     void model_fixer::add_projection_functions(model& mdl, func_decl* f) {
         // update interpretation of f so that the graph of f is fully determined by the
         // ground values of its arguments.
@@ -140,6 +160,19 @@ namespace q {
         mdl.update_func_interp(f, new_fi);
         mdl.register_decl(f_new, fi);
     }
+
+    /*
+    * For function f(...,t_idx, ..) collect the values of terms at position idx of f 
+    * as "values". 
+    * Map t_idx |-> mdl(t_idx)
+    * and mdl(t_idx) |-> t_idx
+    * Sort the values as [v_1, v_2, ..., v_n] with corresponding terms
+    * [t_1, t_2, ..., t_n]
+    * 
+    * Create the term if p(x) = if x <= v_1 then t_1 else if x <= v_2 then t_2 else ...  t_n
+    * where p is a fresh function 
+    * and return p(x)
+    */
 
     expr_ref model_fixer::add_projection_function(model& mdl, func_decl* f, unsigned idx) {
         sort* srt = f->get_domain(idx);
@@ -210,7 +243,7 @@ namespace q {
             auto* info = (*this)(q);
             quantifier* flat_q = info->get_flat_q();
             expr_ref body(flat_q->get_expr(), m);
-            for (expr* t : subterms(body))
+            for (expr* t : subterms::ground(body))
                 if (is_uninterp(t) && !to_app(t)->is_ground())
                     fns.insert(to_app(t)->get_decl());
         }
@@ -229,6 +262,15 @@ namespace q {
             return r->get_expr();
         return value;
     }
+
+    /**
+    * We are given a term f(...,arg_i,..) and value = mdl(arg_i)
+    * Create 
+    * 1 the bounds t_j <= arg_i < t_{j+1} where 
+    *   v_j <= value < v_{j+1} for the corresponding values of t_j, t_{j+1}
+    * 2 or the bound arg_i < t_0     if value < v_0
+    * 3 or the bound arg_i >= t_last if value > v_last
+    */
 
     void model_fixer::invert_arg(app* t, unsigned i, expr* value, expr_ref_vector& lits) {
         TRACE("q", tout << "invert-arg " << mk_pp(t, m) << " " << i << " " << mk_pp(value, m) << "\n";);

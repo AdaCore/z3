@@ -365,7 +365,7 @@ void cmd_context::insert_macro(symbol const& s, unsigned arity, sort*const* doma
     // recursive functions have opposite calling convention from macros!
     var_subst sub(m(), true);
     expr_ref tt = sub(t, rvars);
-    p.set_definition(replace, d, vars.size(), vars.data(), tt);
+    p.set_definition(replace, d, true, vars.size(), vars.data(), tt);
     register_fun(s, d.get_def()->get_decl());
 }
 
@@ -1004,7 +1004,7 @@ void cmd_context::insert_rec_fun(func_decl* f, expr_ref_vector const& binding, s
     
     recfun::promise_def d = p.get_promise_def(f);
     recfun_replace replace(m());
-    p.set_definition(replace, d, vars.size(), vars.data(), rhs);
+    p.set_definition(replace, d, false, vars.size(), vars.data(), rhs);
 }
 
 func_decl * cmd_context::find_func_decl(symbol const & s) const {
@@ -1194,6 +1194,59 @@ bool cmd_context::try_mk_macro_app(symbol const & s, unsigned num_args, expr * c
     return false;
 }
 
+bool cmd_context::try_mk_pdecl_app(symbol const & s, unsigned num_args, expr * const * args, unsigned num_indices, parameter const * indices, expr_ref & r) const {
+    sort_ref_vector binding(m());
+    auto match = [&](sort* s, sort* ps) {
+        if (ps == s)
+            return true;
+        if (m().is_uninterp(ps) && ps->get_name().is_numerical()) {
+            int index = ps->get_name().get_num();
+            if (index < 0)
+                return false;
+            binding.reserve(index + 1);
+            if (binding.get(index) && binding.get(index) != s)
+                return false;
+            binding[index] = s;
+            return true;
+        }
+        // Other matching is TBD
+        return false;
+    };
+    datatype::util dt(m());
+    func_decl_ref fn(m());
+    for (auto* c : dt.plugin().get_constructors(s)) {
+        if (c->accessors().size() != num_args)
+            continue;
+        binding.reset();
+        unsigned i = 0;
+        for (auto* a : *c) 
+            if (!match(args[i++]->get_sort(), a->range()))
+                goto match_failure;
+        if (binding.size() != c->get_def().params().size())
+            goto match_failure;
+        for (auto* b : binding)
+            if (!b)
+                goto match_failure;
+        
+        fn = c->instantiate(binding);
+        r = m().mk_app(fn, num_args, args);
+        return true;
+    match_failure:
+        ;
+    }    
+    if (num_args != 1)
+        return false;
+
+    for (auto* a : dt.plugin().get_accessors(s)) {        
+        fn = a->instantiate(args[0]->get_sort());
+        r = m().mk_app(fn, num_args, args);
+        return true;
+    }
+    
+    return false;
+}
+
+
 void cmd_context::mk_app(symbol const & s, unsigned num_args, expr * const * args, 
                          unsigned num_indices, parameter const * indices, sort * range,
                          expr_ref & result) const {
@@ -1206,7 +1259,9 @@ void cmd_context::mk_app(symbol const & s, unsigned num_args, expr * const * arg
         return;    
     if (try_mk_builtin_app(s, num_args, args, num_indices, indices, range, result)) 
         return;
-
+    if (!range && try_mk_pdecl_app(s, num_args, args, num_indices, indices, result))
+        return;
+    
     std::ostringstream buffer;
     buffer << "unknown constant " << s;
     if (num_args > 0) {
@@ -1773,9 +1828,8 @@ void cmd_context::add_declared_functions(model& mdl) {
                 mdl.register_decl(f, fi);
             }
         }
-        mdl.add_rec_funs();
     }
-    
+    mdl.add_rec_funs();    
 }
 
 void cmd_context::display_sat_result(lbool r) {
@@ -1899,7 +1953,7 @@ void cmd_context::complete_model(model_ref& md) const {
             SASSERT(!v->has_var_params());
             IF_VERBOSE(12, verbose_stream() << "(model.completion " << k << ")\n"; );
             ptr_vector<sort> param_sorts(v->get_num_params(), m().mk_bool_sort());
-            sort * srt = v->instantiate(*m_pmanager, param_sorts.size(), param_sorts.data());
+            sort * srt = v->instantiate(pm(), param_sorts.size(), param_sorts.data());
             if (!md->has_uninterpreted_sort(srt)) {
                 expr * singleton = m().get_some_value(srt);
                 md->register_usort(srt, 1, &singleton);

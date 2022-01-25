@@ -22,6 +22,7 @@ Revision History:
 #include "ast/ast_ll_pp.h"
 #include "ast/rewriter/var_subst.h"
 #include "ast/rewriter/th_rewriter.h"
+#include "ast/rewriter/expr_safe_replace.h"
 #include "ast/array_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
 #include "ast/recfun_decl_plugin.h"
@@ -237,15 +238,13 @@ void model::compress(bool force_inline) {
         top_sort ts(m);
         collect_deps(ts);
         ts.topological_sort();
-        for (func_decl * f : ts.top_sorted()) {
+        for (func_decl * f : ts.top_sorted())
             cleanup_interp(ts, f, force_inline);
-        }
 
         func_decl_set removed;
         ts.m_occur_count.reset();
-        for (func_decl * f : ts.top_sorted()) {
+        for (func_decl * f : ts.top_sorted()) 
             collect_occs(ts, f);
-        }
         
         // remove auxiliary declarations that are not used.
         for (func_decl * f : ts.top_sorted()) {
@@ -255,7 +254,8 @@ void model::compress(bool force_inline) {
                 removed.insert(f);
             }
         }
-        if (removed.empty()) break;
+        if (removed.empty())
+            break;
         TRACE("model", tout << "remove\n"; for (func_decl* f : removed) tout << f->get_name() << "\n";);
         remove_decls(m_decls, removed);
         remove_decls(m_func_decls, removed);
@@ -267,12 +267,14 @@ void model::compress(bool force_inline) {
 
 
 void model::collect_deps(top_sort& ts) {
-    for (auto const& kv : m_finterp) {
-        ts.insert(kv.m_key, collect_deps(ts, kv.m_value));
-    }
-    for (auto const& kv : m_interp) {
-        ts.insert(kv.m_key, collect_deps(ts, kv.m_value.second));
-    }
+    recfun::util u(m);
+    for (auto const& [f, v] : m_finterp) 
+        if (!u.has_def(f))
+            ts.insert(f, collect_deps(ts, v));
+        
+    for (auto const& [f,v] : m_interp)
+        if (!u.has_def(f))
+            ts.insert(f, collect_deps(ts, v.second));
 }
 
 struct model::deps_collector {
@@ -333,6 +335,7 @@ model::func_decl_set* model::collect_deps(top_sort& ts, func_interp * fi) {
 */
 
 void model::cleanup_interp(top_sort& ts, func_decl* f, bool force_inline) {
+    
     unsigned pid = ts.partition_id(f);
     expr * e1 = get_const_interp(f);
     if (e1) {
@@ -605,12 +608,13 @@ void model::add_rec_funs() {
                 
         func_interp* fi = alloc(func_interp, m, f->get_arity());
         // reverse argument order so that variable 0 starts at the beginning.
-        expr_ref_vector subst(m);
-        for (unsigned i = 0; i < f->get_arity(); ++i) {
-            subst.push_back(m.mk_var(i, f->get_domain(i)));
+        expr_safe_replace subst(m);
+        unsigned arity = f->get_arity();
+        for (unsigned i = 0; i < arity; ++i) {
+            subst.insert(m.mk_var(arity - i - 1, f->get_domain(i)), m.mk_var(i, f->get_domain(i)));            
         }
-        var_subst sub(m, true);
-        expr_ref bodyr = sub(rhs, subst);
+        expr_ref bodyr(m);
+        subst(rhs, bodyr);
         
         fi->set_else(bodyr);
         register_decl(f, fi);

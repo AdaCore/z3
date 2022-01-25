@@ -680,6 +680,8 @@ def _to_sort_ref(s, ctx):
         return ReSortRef(s, ctx)
     elif k == Z3_SEQ_SORT:
         return SeqSortRef(s, ctx)
+    elif k == Z3_CHAR_SORT:
+        return CharSortRef(s, ctx)
     return SortRef(s, ctx)
 
 
@@ -3204,7 +3206,7 @@ def Q(a, b, ctx=None):
     >>> Q(3,5).sort()
     Real
     """
-    return simplify(RatVal(a, b))
+    return simplify(RatVal(a, b, ctx=ctx))
 
 
 def Int(name, ctx=None):
@@ -4807,7 +4809,7 @@ def Ext(a, b):
     """
     ctx = a.ctx
     if z3_debug():
-        _z3_assert(is_array_sort(a) and is_array(b), "arguments must be arrays")
+        _z3_assert(is_array_sort(a) and (is_array(b) or b.is_lambda()), "arguments must be arrays")
     return _to_expr_ref(Z3_mk_array_ext(ctx.ref(), a.as_ast(), b.as_ast()), ctx)
 
 
@@ -6560,6 +6562,15 @@ class ModelRef(Z3PPObject):
         for i in range(Z3_model_get_num_funcs(self.ctx.ref(), self.model)):
             r.append(FuncDeclRef(Z3_model_get_func_decl(self.ctx.ref(), self.model, i), self.ctx))
         return r
+
+    def update_value(self, x, value):
+        """Update the interpretation of a constant"""
+        if is_expr(x):
+            x = x.decl()
+        if not is_func_decl(x) or x.arity() != 0:
+            raise Z3Exception("Expecting 0-ary function or constant expression")
+        value = _py2expr(value)
+        Z3_add_const_interp(x.ctx_ref(), self.model, x.ast, value.ast)
 
     def translate(self, target):
         """Translate `self` to the context `target`. That is, return a copy of `self` in the context `target`.
@@ -9572,7 +9583,7 @@ class FPNumRef(FPRef):
 
     def sign(self):
         num = (ctypes.c_int)()
-        nsign = Z3_fpa_get_numeral_sign(self.ctx.ref(), self.as_ast(), byref(l))
+        nsign = Z3_fpa_get_numeral_sign(self.ctx.ref(), self.as_ast(), byref(num))
         if nsign is False:
             raise Z3Exception("error retrieving the sign of a numeral.")
         return num.value != 0
@@ -10565,6 +10576,10 @@ class SeqSortRef(SortRef):
     def basis(self):
         return _to_sort_ref(Z3_get_seq_sort_basis(self.ctx_ref(), self.ast), self.ctx)
 
+class CharSortRef(SortRef):
+    """Character sort."""
+
+
 
 def StringSort(ctx=None):
     """Create a string sort
@@ -10574,6 +10589,15 @@ def StringSort(ctx=None):
     """
     ctx = _get_ctx(ctx)
     return SeqSortRef(Z3_mk_string_sort(ctx.ref()), ctx)
+
+def CharSort(ctx=None):
+    """Create a character sort
+    >>> ch = CharSort()
+    >>> print(ch)
+    Char
+    """
+    ctx = _get_ctx(ctx)
+    return CharSortRef(Z3_mk_char_sort(ctx.ref()), ctx)
 
 
 def SeqSort(s):
@@ -10682,12 +10706,11 @@ def is_string_value(a):
     """
     return isinstance(a, SeqRef) and a.is_string_value()
 
-
 def StringVal(s, ctx=None):
     """create a string expression"""
-    s = "".join(str(ch) if ord(ch) < 128 else "\\u{%x}" % (ord(ch)) for ch in s)
+    s = "".join(str(ch) if 32 <= ord(ch) and ord(ch) < 127 else "\\u{%x}" % (ord(ch)) for ch in s)
     ctx = _get_ctx(ctx)
-    return SeqRef(Z3_mk_lstring(ctx.ref(), len(s), s), ctx)
+    return SeqRef(Z3_mk_string(ctx.ref(), s), ctx)
 
 
 def String(name, ctx=None):
@@ -11042,6 +11065,16 @@ def Range(lo, hi, ctx=None):
     hi = _coerce_seq(hi, ctx)
     return ReRef(Z3_mk_re_range(lo.ctx_ref(), lo.ast, hi.ast), lo.ctx)
 
+def Diff(a, b, ctx=None):
+    """Create the difference regular epression
+    """
+    return ReRef(Z3_mk_re_diff(a.ctx_ref(), a.ast, b.ast), a.ctx)
+
+def AllChar(regex_sort, ctx=None):
+    """Create a regular expression that accepts all single character strings
+    """
+    return ReRef(Z3_mk_re_allchar(regex_sort.ctx_ref(), regex_sort.ast), regex_sort.ctx)
+
 # Special Relations
 
 
@@ -11074,33 +11107,34 @@ class PropClosures:
         self.bases = {}
         self.lock = None
 
-    def set_threaded():
+    def set_threaded(self):
         if self.lock is None:
             import threading
-            self.lock = threading.thread.Lock()
+            self.lock = threading.Lock()
 
     def get(self, ctx):
         if self.lock:
-            self.lock.acquire()
-        r = self.bases[ctx]
-        if self.lock:
-            self.lock.release()
+            with self.lock:
+                r = self.bases[ctx]
+        else:
+            r = self.bases[ctx]            
         return r
 
     def set(self, ctx, r):
         if self.lock:
-            self.lock.acquire()
-        self.bases[ctx] = r
-        if self.lock:
-            self.lock.release()
+            with self.lock:
+                self.bases[ctx] = r
+        else:
+            self.bases[ctx] = r
 
     def insert(self, r):
         if self.lock:
-            self.lock.acquire()
-        id = len(self.bases) + 3
-        self.bases[id] = r
-        if self.lock:
-            self.lock.release()
+            with self.lock:
+                id = len(self.bases) + 3
+                self.bases[id] = r
+        else:
+            id = len(self.bases) + 3
+            self.bases[id] = r
         return id
 
 
@@ -11123,8 +11157,9 @@ def user_prop_pop(ctx, num_scopes):
 
 def user_prop_fresh(id, ctx):
     _prop_closures.set_threaded()
-    new_prop = UsePropagateBase(None, ctx)
-    _prop_closures.set(new_prop.id, new_prop.fresh())
+    prop = _prop_closures.get(id)
+    new_prop = prop.fresh()
+    _prop_closures.set(new_prop.id, new_prop)
     return ctypes.c_void_p(new_prop.id)
 
 
@@ -11186,11 +11221,12 @@ class UserPropagateBase:
         self.eq = None
         self.diseq = None
         if ctx:
+            # TBD fresh is broken: ctx is not of the right type when we reach here.
             self._ctx = Context()
-            Z3_del_context(self._ctx.ctx)
-            self._ctx.ctx = ctx
-            self._ctx.eh = Z3_set_error_handler(ctx, z3_error_handler)
-            Z3_set_ast_print_mode(ctx, Z3_PRINT_SMTLIB2_COMPLIANT)
+            #Z3_del_context(self._ctx.ctx)
+            #self._ctx.ctx = ctx
+            #self._ctx.eh = Z3_set_error_handler(ctx, z3_error_handler)
+            #Z3_set_ast_print_mode(ctx, Z3_PRINT_SMTLIB2_COMPLIANT)
         if s:
             Z3_solver_propagate_init(self.ctx_ref(),
                                      s.solver,

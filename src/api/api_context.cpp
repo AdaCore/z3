@@ -87,8 +87,6 @@ namespace api {
         m_error_code = Z3_OK;
         m_print_mode = Z3_PRINT_SMTLIB_FULL;
         
-
-        m_interruptable = nullptr;
         m_error_handler = &default_error_handler;
 
         m_bv_fid    = m().mk_family_id("bv");
@@ -98,6 +96,7 @@ namespace api {
         m_datalog_fid = m().mk_family_id("datalog_relation");
         m_fpa_fid   = m().mk_family_id("fpa");
         m_seq_fid   = m().mk_family_id("seq");
+	    m_char_fid   = m().mk_family_id("char");
         m_special_relations_fid   = m().mk_family_id("specrels");
         m_dt_plugin = static_cast<datatype_decl_plugin*>(m().get_plugin(m_dt_fid));
     
@@ -119,19 +118,18 @@ namespace api {
     context::set_interruptable::set_interruptable(context & ctx, event_handler & i):
         m_ctx(ctx) {
         lock_guard lock(ctx.m_mux);
-        SASSERT(m_ctx.m_interruptable == 0);
-        m_ctx.m_interruptable = &i;        
+        m_ctx.m_interruptable.push_back(& i);
     }
 
     context::set_interruptable::~set_interruptable() {
         lock_guard lock(m_ctx.m_mux);
-        m_ctx.m_interruptable = nullptr;        
+        m_ctx.m_interruptable.pop_back();
     }
 
     void context::interrupt() {
         lock_guard lock(m_mux);
-        if (m_interruptable)
-            (*m_interruptable)(API_INTERRUPT_EH_CALLER);
+        for (auto * eh : m_interruptable)
+            (*eh)(API_INTERRUPT_EH_CALLER);
         m_limit.cancel();
         m().limit().cancel();        
     }
@@ -269,10 +267,8 @@ namespace api {
     
     void context::invoke_error_handler(Z3_error_code c) {
         if (m_error_handler) {
-            if (g_z3_log) {
-                // error handler can do crazy stuff such as longjmp
-                g_z3_log_enabled = true;
-            }
+            // error handler can do crazy stuff such as longjmp
+            ctx_enable_logging();
             m_error_handler(reinterpret_cast<Z3_context>(this), c);
         }
     }

@@ -23,8 +23,12 @@ Revision History:
 #include "api/api_ast_vector.h"
 #include "cmd_context/cmd_context.h"
 #include "smt/smt_solver.h"
+#include "smt/smt2_extra_cmds.h"
 #include "parsers/smt2/smt2parser.h"
 #include "solver/solver_na2as.h"
+#include "muz/fp/dl_cmds.h"
+#include "opt/opt_cmds.h"
+
 
 
 extern "C" {
@@ -42,6 +46,10 @@ extern "C" {
         Z3_TRY;
         ast_manager& m = mk_c(c)->m();
         scoped_ptr<cmd_context> ctx = alloc(cmd_context, false, &(m));
+        install_dl_cmds(*ctx.get());
+        install_opt_cmds(*ctx.get());
+        install_smt2_extra_cmds(*ctx.get());
+
         ctx->register_plist();
         ctx->set_ignore_check(true);
         Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), m);
@@ -149,6 +157,9 @@ extern "C" {
         LOG_Z3_eval_smtlib2_string(c, str);
         if (!mk_c(c)->cmd()) {
             mk_c(c)->cmd() = alloc(cmd_context, false, &(mk_c(c)->m()));
+            install_dl_cmds(*mk_c(c)->cmd());
+            install_opt_cmds(*mk_c(c)->cmd());
+            install_smt2_extra_cmds(*mk_c(c)->cmd());
             mk_c(c)->cmd()->set_solver_factory(mk_smt_strategic_solver_factory());
         }
         scoped_ptr<cmd_context>& ctx = mk_c(c)->cmd();

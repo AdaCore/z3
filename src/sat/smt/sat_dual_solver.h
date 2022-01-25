@@ -23,10 +23,13 @@ Author:
 namespace sat {
 
     class dual_solver {
-        struct no_drat_params : public params_ref {
-            no_drat_params();
+        class dual_params : public no_drat_params {
+        public:
+            dual_params() {
+                set_bool("core.minimize", false);
+            }
         };
-        no_drat_params  m_params;
+        dual_params     m_params;
         solver          m_solver;
         lim_svector<literal> m_units, m_roots;
         lim_svector<bool_var> m_tracked_vars;
@@ -35,6 +38,7 @@ namespace sat {
         unsigned_vector m_ext2var;
         unsigned_vector m_var2ext;
         lim_svector<unsigned> m_vars;
+        unsigned        m_num_scopes = 0;
         void add_literal(literal lit);
 
         bool_var ext2var(bool_var v);
@@ -45,6 +49,8 @@ namespace sat {
         void add_assumptions(solver const& s);
 
         std::ostream& display(solver const& s, std::ostream& out) const;
+
+        void flush();
 
     public:
         dual_solver(reslimit& l);

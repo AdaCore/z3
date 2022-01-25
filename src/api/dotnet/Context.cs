@@ -89,7 +89,6 @@ namespace Microsoft.Z3
         /// </remarks>
         public IntSymbol MkSymbol(int i)
         {
-
             return new IntSymbol(this, i);
         }
 
@@ -98,7 +97,6 @@ namespace Microsoft.Z3
         /// </summary>
         public StringSymbol MkSymbol(string name)
         {
-
             return new StringSymbol(this, name);
         }
 
@@ -107,7 +105,6 @@ namespace Microsoft.Z3
         /// </summary>
         internal Symbol[] MkSymbols(string[] names)
         {
-
             if (names == null) return null;
             Symbol[] result = new Symbol[names.Length];
             for (int i = 0; i < names.Length; ++i) result[i] = MkSymbol(names[i]);
@@ -120,6 +117,7 @@ namespace Microsoft.Z3
         private IntSort m_intSort = null;
         private RealSort m_realSort = null;
         private SeqSort m_stringSort = null;
+        private CharSort m_charSort = null;
 
         /// <summary>
         /// Retrieves the Boolean sort of the context.
@@ -154,6 +152,18 @@ namespace Microsoft.Z3
                 if (m_realSort == null) m_realSort = new RealSort(this); return m_realSort;
             }
         }
+
+        /// <summary>
+        /// Retrieves the String sort of the context.
+        /// </summary>
+        public CharSort CharSort
+        {
+            get
+            {
+                if (m_charSort == null) m_charSort = new CharSort(this); return m_charSort;
+            }
+        }
+
 
         /// <summary>
         /// Retrieves the String sort of the context.
@@ -546,18 +556,18 @@ namespace Microsoft.Z3
 
         /// <summary>
         /// Bind a definition to a recursive function declaration.
-	/// The function must have previously been created using
-	/// MkRecFuncDecl. The body may contain recursive uses of the function or
-	/// other mutually recursive functions. 
+        /// The function must have previously been created using
+        /// MkRecFuncDecl. The body may contain recursive uses of the function or
+        /// other mutually recursive functions. 
         /// </summary>
-	public void AddRecDef(FuncDecl f, Expr[] args, Expr body) 
-	{
-	    CheckContextMatch(f);
-	    CheckContextMatch<Expr>(args);
-	    CheckContextMatch(body);
+    public void AddRecDef(FuncDecl f, Expr[] args, Expr body) 
+    {
+        CheckContextMatch(f);
+        CheckContextMatch<Expr>(args);
+        CheckContextMatch(body);
             IntPtr[] argsNative = AST.ArrayToNative(args);
-	    Native.Z3_add_rec_def(nCtx, f.NativeObject, (uint)args.Length, argsNative, body.NativeObject);
-	}	
+        Native.Z3_add_rec_def(nCtx, f.NativeObject, (uint)args.Length, argsNative, body.NativeObject);
+    }
 
         /// <summary>
         /// Creates a new function declaration.
@@ -970,7 +980,8 @@ namespace Microsoft.Z3
             Debug.Assert(t != null);
             Debug.Assert(t.All(a => a != null));
             CheckContextMatch<BoolExpr>(t);
-            return new BoolExpr(this, Native.Z3_mk_and(nCtx, (uint)t.Count(), AST.EnumToNative(t)));
+            var ands = t.ToArray();
+            return new BoolExpr(this, Native.Z3_mk_and(nCtx, (uint)t.Count(), AST.ArrayToNative(ands)));
         }
 
         /// <summary>
@@ -995,7 +1006,8 @@ namespace Microsoft.Z3
             Debug.Assert(t.All(a => a != null));
 
             CheckContextMatch(t);
-            return new BoolExpr(this, Native.Z3_mk_or(nCtx, (uint)t.Count(), AST.EnumToNative(t)));
+            var ts = t.ToArray();
+            return new BoolExpr(this, Native.Z3_mk_or(nCtx, (uint)ts.Length, AST.ArrayToNative(ts)));
         }
 
         #endregion
@@ -1022,7 +1034,8 @@ namespace Microsoft.Z3
             Debug.Assert(t.All(a => a != null));
 
             CheckContextMatch(t);
-            return (ArithExpr)Expr.Create(this, Native.Z3_mk_add(nCtx, (uint)t.Count(), AST.EnumToNative(t)));
+            var ts = t.ToArray();
+            return (ArithExpr)Expr.Create(this, Native.Z3_mk_add(nCtx, (uint)ts.Length, AST.ArrayToNative(ts)));
         }
 
         /// <summary>
@@ -1034,7 +1047,8 @@ namespace Microsoft.Z3
             Debug.Assert(t.All(a => a != null));
 
             CheckContextMatch<ArithExpr>(t);
-            return (ArithExpr)Expr.Create(this, Native.Z3_mk_mul(nCtx, (uint)t.Length, AST.ArrayToNative(t)));
+            var ts = t.ToArray();
+            return (ArithExpr)Expr.Create(this, Native.Z3_mk_mul(nCtx, (uint)ts.Length, AST.ArrayToNative(ts)));
         }
 
         /// <summary>
@@ -1046,7 +1060,8 @@ namespace Microsoft.Z3
             Debug.Assert(t.All(a => a != null));
 
             CheckContextMatch<ArithExpr>(t);
-            return (ArithExpr)Expr.Create(this, Native.Z3_mk_mul(nCtx, (uint)t.Count(), AST.EnumToNative(t)));
+            var ts = t.ToArray();
+            return (ArithExpr)Expr.Create(this, Native.Z3_mk_mul(nCtx, (uint)ts.Length, AST.ArrayToNative(ts)));
         }
 
         /// <summary>
@@ -2386,6 +2401,25 @@ namespace Microsoft.Z3
         }
 
         /// <summary>
+        /// Convert a bit-vector expression, represented as an unsigned number, to a string.
+        /// </summary>
+        public SeqExpr UbvToString(Expr e)
+        {
+            Debug.Assert(e != null);
+            Debug.Assert(e is ArithExpr);
+            return new SeqExpr(this, Native.Z3_mk_ubv_to_str(nCtx, e.NativeObject));
+        }
+
+        /// <summary>
+        /// Convert a bit-vector expression, represented as an signed number, to a string.
+        /// </summary>
+        public SeqExpr SbvToString(Expr e) {
+            Debug.Assert(e != null);
+            Debug.Assert(e is ArithExpr);
+            return new SeqExpr(this, Native.Z3_mk_sbv_to_str(nCtx, e.NativeObject));
+        }
+
+        /// <summary>
         /// Convert an integer expression to a string.
         /// </summary>
         public IntExpr StringToInt(Expr e) 
@@ -2454,7 +2488,7 @@ namespace Microsoft.Z3
         /// <summary>
         /// Check if the string s1 is lexicographically strictly less than s2.
         /// </summary>
-	public BoolExpr MkStringLt(SeqExpr s1, SeqExpr s2) 
+        public BoolExpr MkStringLt(SeqExpr s1, SeqExpr s2) 
         {
             Debug.Assert(s1 != null);
             Debug.Assert(s2 != null);
@@ -2465,7 +2499,7 @@ namespace Microsoft.Z3
         /// <summary>
         /// Check if the string s1 is lexicographically strictly less than s2.
         /// </summary>
-	public BoolExpr MkStringLe(SeqExpr s1, SeqExpr s2) 
+        public BoolExpr MkStringLe(SeqExpr s1, SeqExpr s2) 
         {
             Debug.Assert(s1 != null);
             Debug.Assert(s2 != null);
@@ -2634,8 +2668,19 @@ namespace Microsoft.Z3
         }
 
         /// <summary>
+        /// Create a difference regular expression.
+        /// </summary>
+        public ReExpr MkDiff(ReExpr a, ReExpr b) 
+        {
+            Debug.Assert(a != null);
+            Debug.Assert(b != null);
+            CheckContextMatch(a, b);
+            return new ReExpr(this, Native.Z3_mk_re_diff(nCtx, a.NativeObject, b.NativeObject));
+        }
+
+        /// <summary>
         /// Create the empty regular expression.
-	/// The sort s should be a regular expression.
+        /// The sort s should be a regular expression.
         /// </summary>
         public ReExpr MkEmptyRe(Sort s) 
         {
@@ -2645,7 +2690,7 @@ namespace Microsoft.Z3
 
         /// <summary>
         /// Create the full regular expression.
-	/// The sort s should be a regular expression.
+        /// The sort s should be a regular expression.
         /// </summary>
         public ReExpr MkFullRe(Sort s) 
         {
@@ -2664,7 +2709,53 @@ namespace Microsoft.Z3
             CheckContextMatch(lo, hi);
             return new ReExpr(this, Native.Z3_mk_re_range(nCtx, lo.NativeObject, hi.NativeObject));
         }
-    
+
+        /// <summary>
+        /// Create less than or equal to between two characters.
+        /// </summary>
+        public BoolExpr MkCharLe(Expr ch1, Expr ch2) 
+        {
+            Debug.Assert(ch1 != null);
+            Debug.Assert(ch2 != null);
+            return new BoolExpr(this, Native.Z3_mk_char_le(nCtx, ch1.NativeObject, ch2.NativeObject));
+        }
+
+        /// <summary>
+        /// Create an integer (code point) from character.
+        /// </summary>
+        public IntExpr CharToInt(Expr ch) 
+        {
+            Debug.Assert(ch != null);
+            return new IntExpr(this, Native.Z3_mk_char_to_int(nCtx, ch.NativeObject));
+        }
+
+        /// <summary>
+        /// Create a bit-vector (code point) from character.
+        /// </summary>
+        public BitVecExpr CharToBV(Expr ch) 
+        {
+            Debug.Assert(ch != null);
+            return new BitVecExpr(this, Native.Z3_mk_char_to_bv(nCtx, ch.NativeObject));
+        }
+
+        /// <summary>
+        /// Create a character from a bit-vector (code point).
+        /// </summary>
+        public Expr CharFromBV(BitVecExpr bv) 
+        {
+            Debug.Assert(bv != null);
+            return new Expr(this, Native.Z3_mk_char_from_bv(nCtx, bv.NativeObject));
+        }
+
+        /// <summary>
+        /// Create a check if the character is a digit.
+        /// </summary>
+        public BoolExpr MkIsDigit(Expr ch) 
+        {
+            Debug.Assert(ch != null);
+            return new BoolExpr(this, Native.Z3_mk_char_is_digit(nCtx, ch.NativeObject));
+        }
+
         #endregion
 
         #region Pseudo-Boolean constraints
@@ -2674,10 +2765,11 @@ namespace Microsoft.Z3
         /// </summary>
         public BoolExpr MkAtMost(IEnumerable<BoolExpr> args, uint k)
         {
-           Debug.Assert(args != null);
-           CheckContextMatch<BoolExpr>(args);
-           return new BoolExpr(this, Native.Z3_mk_atmost(nCtx, (uint) args.Count(),
-                                                          AST.EnumToNative(args), k));
+            Debug.Assert(args != null);
+            CheckContextMatch<BoolExpr>(args);
+            var ts = args.ToArray();
+            return new BoolExpr(this, Native.Z3_mk_atmost(nCtx, (uint) ts.Length,
+                                                          AST.ArrayToNative(ts), k));
         }
 
         /// <summary>
@@ -2685,10 +2777,11 @@ namespace Microsoft.Z3
         /// </summary>
         public BoolExpr MkAtLeast(IEnumerable<BoolExpr> args, uint k)
         {
-           Debug.Assert(args != null);
-           CheckContextMatch<BoolExpr>(args);
-           return new BoolExpr(this, Native.Z3_mk_atleast(nCtx, (uint) args.Count(),
-                                                          AST.EnumToNative(args), k));
+            Debug.Assert(args != null);
+            CheckContextMatch<BoolExpr>(args);
+            var ts = args.ToArray();
+            return new BoolExpr(this, Native.Z3_mk_atleast(nCtx, (uint) ts.Length,
+                                                          AST.ArrayToNative(ts), k));
         }
 
         /// <summary>
@@ -3379,7 +3472,7 @@ namespace Microsoft.Z3
         {
             Debug.Assert(t1 != null);
             Debug.Assert(t2 != null);
-	    //  Debug.Assert(ts == null || Contract.ForAll(0, ts.Length, j => ts[j] != null));
+            //  Debug.Assert(ts == null || Contract.ForAll(0, ts.Length, j => ts[j] != null));
 
             return AndThen(t1, t2, ts);
         }
@@ -4676,7 +4769,7 @@ namespace Microsoft.Z3
             {
                 foreach (Z3Object a in arr)
                 {
-	            Debug.Assert(a != null); // It was an assume, now we added the precondition, and we made it into an assert
+                    Debug.Assert(a != null); // It was an assume, now we added the precondition, and we made it into an assert
                     CheckContextMatch(a);
                 }
             }

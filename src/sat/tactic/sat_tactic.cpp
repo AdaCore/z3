@@ -20,6 +20,7 @@ Notes:
 #include "model/model_v2_pp.h"
 #include "tactic/tactical.h"
 #include "sat/tactic/goal2sat.h"
+#include "sat/tactic/sat2goal.h"
 #include "sat/sat_solver.h"
 #include "sat/sat_params.hpp"
 
@@ -29,7 +30,7 @@ class sat_tactic : public tactic {
         ast_manager &   m;
         goal2sat        m_goal2sat;
         sat2goal        m_sat2goal;
-        scoped_ptr<sat::solver_core>   m_solver;
+        scoped_ptr<sat::solver> m_solver;
         params_ref      m_params;
         
         imp(ast_manager & _m, params_ref const & p):
@@ -113,8 +114,11 @@ class sat_tactic : public tactic {
                             break;
                         }
                     }
+
+                    bool euf = m_goal2sat.has_euf();
+		    
                     for (auto* f : fmls_to_validate) 
-                        if (md->is_false(f)) 
+                        if (!euf && md->is_false(f)) 
                             IF_VERBOSE(0, verbose_stream() << "failed to validate: " << mk_pp(f, m) << "\n";);
                     
                     m_goal2sat.update_model(md);
@@ -193,6 +197,8 @@ public:
     ~sat_tactic() override {
         SASSERT(m_imp == 0);
     }
+
+    char const* name() const override { return "sat"; }
 
     void updt_params(params_ref const & p) override {
         m_params = p;

@@ -301,26 +301,27 @@ namespace arith {
         m_explanation.add_pair(j, v);
     }
 
-    void solver::add_eq(lpvar u, lpvar v, lp::explanation const& e) {
+    bool solver::add_eq(lpvar u, lpvar v, lp::explanation const& e, bool is_fixed) {
         if (s().inconsistent())
-            return;
+            return false;
         theory_var uv = lp().local_to_external(u); // variables that are returned should have external representations
         theory_var vv = lp().local_to_external(v); // so maybe better to have them already transformed to external form
         if (is_equal(uv, vv))
-            return;
+            return false;
         enode* n1 = var2enode(uv);
         enode* n2 = var2enode(vv);
         expr* e1 = n1->get_expr();
         expr* e2 = n2->get_expr();
-        if (m.is_ite(e1) || m.is_ite(e2))
-            return;
+        if (!is_fixed && !a.is_numeral(e1) && !a.is_numeral(e2) && (m.is_ite(e1) || m.is_ite(e2)))
+            return false;
         if (e1->get_sort() != e2->get_sort())
-            return;
+            return false;
         reset_evidence();
         for (auto ev : e)
             set_evidence(ev.ci(), m_core, m_eqs);
         auto* jst = euf::th_explain::propagate(*this, m_core, m_eqs, n1, n2);
         ctx.propagate(n1, n2, jst->to_index());
+        return true;
     }
 
     bool solver::bound_is_interesting(unsigned vi, lp::lconstraint_kind kind, const rational& bval) const {
@@ -581,6 +582,27 @@ namespace arith {
                 value = ~value;
             if (!found_bad && value == get_phase(n->bool_var()))
                 continue;
+
+            TRACE("arith",
+                ptr_vector<expr> nodes;
+                expr_mark marks;
+                nodes.push_back(n->get_expr());
+                for (unsigned i = 0; i < nodes.size(); ++i) {
+                    expr* r = nodes[i];
+                    if (marks.is_marked(r))
+                        continue;
+                    marks.mark(r);
+                    if (is_app(r))
+                        for (expr* arg : *to_app(r))
+                            nodes.push_back(arg);
+                    expr_ref rval(m);                    
+                    expr_ref mval = mdl(r);
+                    if (ctx.get_egraph().find(r))
+                        rval = mdl(ctx.get_egraph().find(r)->get_root()->get_expr());
+                    tout << r->get_id() << ": " << mk_bounded_pp(r, m, 1) << " := " << mval;
+                    if (rval != mval) tout << " " << rval;
+                    tout << "\n";
+                });
             TRACE("arith",
                 tout << eval << " " << value << " " << ctx.bpp(n) << "\n";
                 tout << mdl << "\n";
@@ -605,7 +627,7 @@ namespace arith {
         else if (use_nra_model() && lp().external_to_local(v) != lp::null_lpvar) {
             anum const& an = nl_value(v, *m_a1);
             if (a.is_int(o) && !m_nla->am().is_int(an))
-                value = a.mk_numeral(rational::zero(), a.is_int(o));
+                value = a.mk_numeral(rational::zero(), a.is_int(o));       
             else
                 value = a.mk_numeral(m_nla->am(), nl_value(v, *m_a1), a.is_int(o));
         }
@@ -617,7 +639,7 @@ namespace arith {
                 r = floor(r);
             value = a.mk_numeral(r, o->get_sort());
         }
-        else if (a.is_arith_expr(o)) {
+        else if (a.is_arith_expr(o) && reflect(o)) {
             expr_ref_vector args(m);
             for (auto* arg : *to_app(o)) {
                 if (m.is_value(arg))
@@ -964,7 +986,7 @@ namespace arith {
         IF_VERBOSE(12, verbose_stream() << "final-check " << lp().get_status() << "\n");
         SASSERT(lp().ax_is_correct());
 
-        if (lp().get_status() != lp::lp_status::OPTIMAL) {
+        if (!lp().is_feasible() || lp().has_changed_columns()) {
             switch (make_feasible()) {
             case l_false:
                 get_infeasibility_explanation_and_set_conflict();
@@ -1075,6 +1097,8 @@ namespace arith {
             return l_false;
         case lp::lp_status::FEASIBLE:
         case lp::lp_status::OPTIMAL:
+        case lp::lp_status::UNBOUNDED:
+            SASSERT(!lp().has_changed_columns());
             return l_true;
         case lp::lp_status::TIME_EXHAUSTED:
         default:

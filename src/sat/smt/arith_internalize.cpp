@@ -42,6 +42,7 @@ namespace arith {
     void solver::init_internalize() {
         force_push();
         // initialize 0, 1 variables:
+        
         if (!m_internalize_initialized) {
             get_one(true);
             get_one(false);
@@ -276,7 +277,7 @@ namespace arith {
                 if (is_app(n)) {
                     internalize_args(to_app(n));
                     for (expr* arg : *to_app(n)) 
-                        if (a.is_arith_expr(arg))
+                        if (a.is_arith_expr(arg) && !m.is_bool(arg))
                             internalize_term(arg);
                 }
                 theory_var v = mk_evar(n);
@@ -307,7 +308,6 @@ namespace arith {
 
     bool solver::internalize_atom(expr* atom) {
         TRACE("arith", tout << mk_pp(atom, m) << "\n";);
-        SASSERT(!ctx.get_enode(atom));
         expr* n1, *n2;
         rational r;
         lp_api::bound_kind k;
@@ -335,21 +335,18 @@ namespace arith {
         }
         else if (a.is_le(atom, n1, n2)) {
             expr_ref n3(a.mk_sub(n1, n2), m);
-            rewrite(n3);
             v = internalize_def(n3);
             k = lp_api::upper_t;
             r = 0;
         }
         else if (a.is_ge(atom, n1, n2)) {
             expr_ref n3(a.mk_sub(n1, n2), m);
-            rewrite(n3);
             v = internalize_def(n3);
             k = lp_api::lower_t;
             r = 0;
         }
         else if (a.is_lt(atom, n1, n2)) {
             expr_ref n3(a.mk_sub(n1, n2), m);
-            rewrite(n3);
             v = internalize_def(n3);
             k = lp_api::lower_t;
             r = 0;
@@ -357,7 +354,6 @@ namespace arith {
         }
         else if (a.is_gt(atom, n1, n2)) {
             expr_ref n3(a.mk_sub(n1, n2), m);
-            rewrite(n3);
             v = internalize_def(n3);
             k = lp_api::upper_t;
             r = 0;
@@ -484,10 +480,10 @@ namespace arith {
             return st.vars()[0];
         }
         else if (is_one(st) && a.is_numeral(term)) {
-            return get_one(a.is_int(term));
+            return lp().local_to_external(get_one(a.is_int(term)));
         }
         else if (is_zero(st) && a.is_numeral(term)) {
-            return get_zero(a.is_int(term));
+            return lp().local_to_external(get_zero(a.is_int(term)));
         }
         else {
             init_left_side(st);

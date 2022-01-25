@@ -367,6 +367,25 @@ namespace datatype {
             return m.mk_func_decl(name, arity, domain, range, info);
         }
 
+        ptr_vector<constructor> plugin::get_constructors(symbol const& s) const {
+            ptr_vector<constructor> result;
+            for (auto [k, d] : m_defs) 
+                for (auto* c : *d)
+                    if (c->name() == s)
+                        result.push_back(c);
+            return result;
+        }
+
+        ptr_vector<accessor> plugin::get_accessors(symbol const& s) const {
+            ptr_vector<accessor> result;
+            for (auto [k, d] : m_defs) 
+                for (auto* c : *d)
+                    for (auto* a : *c)
+                        if (a->name() == s)
+                            result.push_back(a);
+            return result;
+        }
+
         func_decl * decl::plugin::mk_recognizer(unsigned num_parameters, parameter const * parameters, 
                                                 unsigned arity, sort * const * domain, sort *) {
             ast_manager& m = *m_manager;
@@ -387,7 +406,7 @@ namespace datatype {
             VALIDATE_PARAM(arity == 1 && num_parameters == 1 && parameters[0].is_ast() && is_func_decl(parameters[0].get_ast()));
             VALIDATE_PARAM(u().is_datatype(domain[0]));
             VALIDATE_PARAM_PP(domain[0] == to_func_decl(parameters[0].get_ast())->get_range(), "invalid sort argument passed to recognizer");
-            // blindly trust that parameter is a constructor
+            VALIDATE_PARAM_PP(u().is_constructor(to_func_decl(parameters[0].get_ast())), "expecting constructor argument to recognizer");
             sort* range = m_manager->mk_bool_sort();
             func_decl_info info(m_family_id, OP_DT_IS, num_parameters, parameters);
             info.m_private_parameters = true;
@@ -556,9 +575,8 @@ namespace datatype {
 
         void plugin::remove(symbol const& s) {
             def* d = nullptr;
-            if (m_defs.find(s, d)) {
+            if (m_defs.find(s, d)) 
                 dealloc(d);
-            }
             m_defs.remove(s);
         }
 
@@ -688,18 +706,20 @@ namespace datatype {
        \brief Return true if the inductive datatype is recursive.
     */
     bool util::is_recursive_core(sort* s) const {
-        obj_map<sort, status> already_found;
+        map<symbol, status, symbol_hash_proc, symbol_eq_proc> already_found;
         ptr_vector<sort> todo, subsorts;
         sort* s0 = s;
         todo.push_back(s);
-        status st;
+        status st;        
         while (!todo.empty()) {
             s = todo.back();
-            if (already_found.find(s, st) && st == BLACK) {
+            if (already_found.find(datatype_name(s), st) && st == BLACK) {
                 todo.pop_back();
                 continue;
             }
-            already_found.insert(s, GRAY);
+            if (!is_declared(s))
+                return true;
+            already_found.insert(datatype_name(s), GRAY);
             def const& d = get_def(s);
             bool can_process       = true;
             for (constructor const* c : d) {
@@ -710,9 +730,9 @@ namespace datatype {
                     get_subsorts(d, subsorts);
                     for (sort * s2 : subsorts) {
                         if (is_datatype(s2)) {
-                            if (already_found.find(s2, st)) {
+                            if (already_found.find(datatype_name(s2), st)) {
                                 // type is recursive
-                                if (st == GRAY && s0 == s2) 
+                                if (st == GRAY && datatype_name(s0) == datatype_name(s2)) 
                                     return true;
                             }
                             else {
@@ -724,7 +744,7 @@ namespace datatype {
                 }
             }
             if (can_process) {
-                already_found.insert(s, BLACK);
+                already_found.insert(datatype_name(s), BLACK);
                 todo.pop_back();
             }
         }

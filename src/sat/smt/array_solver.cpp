@@ -174,8 +174,10 @@ namespace array {
         ctx.push_vec(get_var_data(v_child).m_parent_selects, select);
         euf::enode* child = var2enode(v_child);
         TRACE("array", tout << "v" << v_child << " - " << ctx.bpp(select) << " " << ctx.bpp(child) << " prop: " << should_prop_upward(get_var_data(v_child)) << "\n";);
+        TRACE("array", tout << "can beta reduce " << can_beta_reduce(child) << "\n";);
         if (can_beta_reduce(child)) 
             push_axiom(select_axiom(select, child));
+        propagate_parent_select_axioms(v_child);
     }
 
     void solver::add_lambda(theory_var v, euf::enode* lambda) {
@@ -226,6 +228,9 @@ namespace array {
         
         auto& d = get_var_data(v);
 
+        for (euf::enode* lambda : d.m_lambdas) 
+            propagate_select_axioms(d, lambda);        
+        
         for (euf::enode* lambda : d.m_parent_lambdas)
             propagate_select_axioms(d, lambda);
     }
@@ -267,8 +272,7 @@ namespace array {
         return !get_config().m_array_delay_exp_axiom && d.m_prop_upward;
     }
 
-    bool solver::can_beta_reduce(euf::enode* n) const {
-        expr* c = n->get_expr();
+    bool solver::can_beta_reduce(expr* c) const {
         return a.is_const(c) || a.is_as_array(c) || a.is_store(c) || is_lambda(c) || a.is_map(c);
     }
 }

@@ -342,9 +342,7 @@ namespace sat {
     clause* solver::mk_clause(unsigned num_lits, literal * lits, sat::status st) {
         m_model_is_current = false;
             
-        for (unsigned i = 0; i < num_lits; i++) 
-            VERIFY(!was_eliminated(lits[i]));
-        
+
         DEBUG_CODE({
                 for (unsigned i = 0; i < num_lits; i++) {
                     CTRACE("sat", was_eliminated(lits[i]), tout << lits[i] << " was eliminated\n";);
@@ -1304,7 +1302,8 @@ namespace sat {
         flet<bool> _searching(m_searching, true);
         m_clone = nullptr;
         if (m_mc.empty() && gparams::get_ref().get_bool("model_validate", false)) {
-            m_clone = alloc(solver, m_params, m_rlimit);
+            
+            m_clone = alloc(solver, m_no_drat_params, m_rlimit);
             m_clone->copy(*this);
             m_clone->set_extension(nullptr);
         }
@@ -1892,11 +1891,8 @@ namespace sat {
     void solver::init_ext_assumptions() {
         if (m_ext && m_ext->tracking_assumptions()) {
             m_ext_assumption_set.reset();
-            unsigned trail_size = m_trail.size();
             if (!inconsistent())
-                m_ext->add_assumptions();
-            for (unsigned i = trail_size; i < m_trail.size(); ++i)
-                m_ext_assumption_set.insert(m_trail[i]);
+                m_ext->add_assumptions(m_ext_assumption_set);
         }
     }
 
@@ -2224,6 +2220,7 @@ namespace sat {
     bool solver::should_restart() const {
         if (m_conflicts_since_restart <= m_restart_threshold) return false;
         if (scope_lvl() < 2 + search_lvl()) return false;
+        if (m_case_split_queue.empty()) return false;
         if (m_config.m_restart != RS_EMA) return true;
         return 
             m_fast_glue_avg + search_lvl() <= scope_lvl() && 
@@ -2314,9 +2311,9 @@ namespace sat {
     }
 
     unsigned solver::restart_level(bool to_base) {
-        if (to_base || scope_lvl() == search_lvl()) {
-            return scope_lvl() - search_lvl();
-        }
+        SASSERT(!m_case_split_queue.empty());
+        if (to_base || scope_lvl() == search_lvl()) 
+            return scope_lvl() - search_lvl();        
         else {
             bool_var next = m_case_split_queue.min_var();
 

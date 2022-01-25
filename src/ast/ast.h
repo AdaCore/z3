@@ -845,7 +845,7 @@ class quantifier : public expr {
     char                m_patterns_decls[0];
 
     static unsigned get_obj_size(unsigned num_decls, unsigned num_patterns, unsigned num_no_patterns) {
-        return sizeof(quantifier) + num_decls * (sizeof(sort *) + sizeof(symbol)) + (num_patterns + num_no_patterns) * sizeof(expr*);
+        return (unsigned)(sizeof(quantifier) + num_decls * (sizeof(sort *) + sizeof(symbol)) + (num_patterns + num_no_patterns) * sizeof(expr*));
     }
 
     quantifier(quantifier_kind k, unsigned num_decls, sort * const * decl_sorts, symbol const * decl_names, expr * body, sort* s,
@@ -1049,6 +1049,12 @@ public:
        We need this because some plugin values are too expensive too canonize.
     */
     virtual bool is_value(app * a) const { return false; }
+
+
+    /**
+       \brief return true if the expression can be used as a model value.
+     */
+    virtual bool is_model_value(app* a) const { return is_value(a); }
 
     /**
        \brief Return true if \c a is a unique plugin value.
@@ -1399,6 +1405,7 @@ inline bool has_labels(expr const * n) {
 class some_value_proc {
 public:
     virtual expr * operator()(sort * s) = 0;
+    virtual ~some_value_proc() = default;
 };
 
 // -----------------------------------

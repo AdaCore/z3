@@ -19,6 +19,7 @@ Notes:
 #include<math.h>
 
 #include "ast/ast_smt2_pp.h"
+#include "ast/ast_pp.h"
 #include "ast/well_sorted.h"
 #include "ast/rewriter/th_rewriter.h"
 #include "ast/rewriter/fpa_rewriter.h"
@@ -101,7 +102,7 @@ expr_ref bv2fpa_converter::convert_bv2fp(sort * s, expr * sgn, expr * exp, expr 
     rational exp_unbiased_q;
     exp_unbiased_q = exp_q - m_fpa_util.fm().m_powers2.m1(ebits - 1);
 
-    scoped_mpz sig_z(mpzm); 
+    scoped_mpz sig_z(mpzm);
     mpf_exp_t exp_z;
     mpzm.set(sig_z, sig_q.to_mpq().numerator());
     exp_z = mpzm.get_int64(exp_unbiased_q.to_mpq().numerator());
@@ -311,10 +312,19 @@ func_interp * bv2fpa_converter::convert_func_interp(model_core * mc, func_decl *
             }
         }
 
-        expr_ref bv_els(m);
-        bv_els = bv_fi->get_else();
-        if (bv_els) {
-            expr_ref ft_els = rebuild_floats(mc, rng, bv_els);
+        if (m_fpa_util.is_to_sbv(f) || m_fpa_util.is_to_ubv(f)) {
+            auto fid = m_fpa_util.get_family_id();
+            auto k = m_fpa_util.is_to_sbv(f) ? OP_FPA_TO_SBV_I : OP_FPA_TO_UBV_I;
+            expr_ref_vector dom(m);
+            for (unsigned i = 0; i < f->get_arity(); ++i)
+                dom.push_back(m.mk_var(i, f->get_domain(i)));
+            parameter param = f->get_parameter(0);
+            func_decl_ref to_bv_i(m.mk_func_decl(fid, k, 1, &param, dom.size(), dom.data()), m);
+            expr_ref else_value(m.mk_app(to_bv_i, dom.size(), dom.data()), m);
+            result->set_else(else_value);
+        }
+        else if (bv_fi->get_else()) {
+            expr_ref ft_els = rebuild_floats(mc, rng, bv_fi->get_else());
             m_th_rw(ft_els);
             TRACE("bv2fpa", tout << "else=" << mk_ismt2_pp(ft_els, m) << std::endl;);
             result->set_else(ft_els);
@@ -336,7 +346,7 @@ void bv2fpa_converter::convert_consts(model_core * mc, model_core * target_model
         app * a0 = to_app(val->get_arg(0));
 
         expr_ref v0(m), v1(m), v2(m);
-#ifdef Z3DEBUG
+#ifdef Z3DEBUG_FPA2BV_NAMES
         app * a1 = to_app(val->get_arg(1));
         app * a2 = to_app(val->get_arg(2));
         v0 = mc->get_const_interp(a0->get_decl());
@@ -368,7 +378,7 @@ void bv2fpa_converter::convert_consts(model_core * mc, model_core * target_model
 
         SASSERT(val->is_app_of(m_fpa_util.get_family_id(), OP_FPA_FP));
 
-#ifdef Z3DEBUG
+#ifdef Z3DEBUG_FPA2BV_NAMES
         SASSERT(to_app(val->get_arg(0))->get_decl()->get_arity() == 0);
         SASSERT(to_app(val->get_arg(1))->get_decl()->get_arity() == 0);
         SASSERT(to_app(val->get_arg(2))->get_decl()->get_arity() == 0);
@@ -376,9 +386,10 @@ void bv2fpa_converter::convert_consts(model_core * mc, model_core * target_model
         seen.insert(to_app(val->get_arg(1))->get_decl());
         seen.insert(to_app(val->get_arg(2))->get_decl());
 #else
-        SASSERT(a->get_arg(0)->get_kind() == OP_EXTRACT);
-        SASSERT(to_app(a->get_arg(0))->get_arg(0)->get_kind() == OP_EXTRACT);
+        SASSERT(is_app(val->get_arg(0)));
+        SASSERT(m_bv_util.is_extract(val->get_arg(0)));
         seen.insert(to_app(to_app(val->get_arg(0))->get_arg(0))->get_decl());
+
 #endif
 
         if (!sgn && !sig && !exp)
@@ -412,24 +423,32 @@ void bv2fpa_converter::convert_min_max_specials(model_core * mc, model_core * ta
         app * np_cnst = kv.m_value.second;
 
         expr_ref pzero(m), nzero(m);
-        pzero = m_fpa_util.mk_pzero(f->get_range());
-        nzero = m_fpa_util.mk_nzero(f->get_range());
+        sort* srt = f->get_range();
+        pzero = m_fpa_util.mk_pzero(srt);
+        nzero = m_fpa_util.mk_nzero(srt);
 
         expr_ref pn(m), np(m);
-        if (!mc->eval(pn_cnst->get_decl(), pn)) pn = pzero;
-        if (!mc->eval(np_cnst->get_decl(), np)) np = pzero;
+        if (!mc->eval(pn_cnst->get_decl(), pn)) pn = m_bv_util.mk_numeral(0, 1);
+        if (!mc->eval(np_cnst->get_decl(), np)) np = m_bv_util.mk_numeral(0, 1);
         seen.insert(pn_cnst->get_decl());
         seen.insert(np_cnst->get_decl());
 
         rational pn_num, np_num;
         unsigned bv_sz;
-        m_bv_util.is_numeral(pn, pn_num, bv_sz);
-        m_bv_util.is_numeral(np, np_num, bv_sz);
+        VERIFY(m_bv_util.is_numeral(pn, pn_num, bv_sz));
+        VERIFY(m_bv_util.is_numeral(np, np_num, bv_sz));
 
         func_interp * flt_fi = alloc(func_interp, m, f->get_arity());
         expr * pn_args[2] = { pzero, nzero };
-        if (pn != np) flt_fi->insert_new_entry(pn_args, (pn_num.is_one() ? nzero : pzero));
-        flt_fi->set_else(np_num.is_one() ? nzero : pzero);
+        expr * np_args[2] = { nzero, pzero };
+        flt_fi->insert_new_entry(pn_args, (pn_num.is_one() ? nzero : pzero));
+        flt_fi->insert_new_entry(np_args, (np_num.is_one() ? nzero : pzero));
+
+        auto fid = m_fpa_util.get_family_id();
+        auto k = is_decl_of(f, fid, OP_FPA_MIN) ? OP_FPA_MIN_I : OP_FPA_MAX_I;
+        func_decl_ref min_max_i(m.mk_func_decl(fid, k, 0, nullptr, 2, pn_args), m);
+        expr_ref else_value(m.mk_app(min_max_i, m.mk_var(0, srt), m.mk_var(1, srt)), m);
+        flt_fi->set_else(else_value);
 
         target_model->register_decl(f, flt_fi);
         TRACE("bv2fpa", tout << "fp.min/fp.max special: " << std::endl <<

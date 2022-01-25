@@ -121,7 +121,7 @@ namespace {
 
     struct instruction {
         opcode         m_opcode;
-        instruction *  m_next;
+        instruction* m_next = nullptr;
 #ifdef _PROFILE_MAM
         unsigned       m_counter; // how often it was executed
 #endif
@@ -1224,9 +1224,10 @@ namespace {
                     return;
 
             SASSERT(head->m_next == 0);
+
             m_seq.push_back(m_ct_manager.mk_yield(m_qa, m_mp, m_qa->get_num_decls(), reinterpret_cast<unsigned*>(m_vars.begin())));
 
-            for (instruction * curr : m_seq) {
+            for (instruction* curr : m_seq) {
                 head->m_next = curr;
                 head = curr;
             }
@@ -2090,7 +2091,6 @@ namespace {
         enode * n = m_registers[j2->m_reg]->get_root();
         if (n->get_num_parents() == 0)
             return nullptr;
-        unsigned num_args = n->get_num_args();
         enode_vector * v  = mk_enode_vector();
         enode_vector::const_iterator it1  = n->begin_parents();
         enode_vector::const_iterator end1 = n->end_parents();
@@ -2108,11 +2108,9 @@ namespace {
                 for (; it2 != end2; ++it2) {
                     enode * p2 = *it2;
                     if (p2->get_decl() == f &&
-                        num_args == n->get_num_args() && 
-                        num_args == p2->get_num_args() &&
                         m_context.is_relevant(p2) &&
                         p2->is_cgr() &&
-                        i < num_args && 
+                        i < p2->get_num_args() && 
                         p2->get_arg(i)->get_root() == p) {
                         v->push_back(p2);
                     }
@@ -2309,7 +2307,10 @@ namespace {
 
     main_loop:
 
+        if (!m_pc)
+            goto backtrack;
         TRACE("mam_int", display_pc_info(tout););
+        
 #ifdef _PROFILE_MAM
         const_cast<instruction*>(m_pc)->m_counter++;
 #endif

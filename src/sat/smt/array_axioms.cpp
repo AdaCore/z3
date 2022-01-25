@@ -120,9 +120,15 @@ namespace array {
         app* select = r.select->get_app();
         SASSERT(a.is_select(select));
         SASSERT(can_beta_reduce(r.n));
-        TRACE("array", display(tout << "select-axiom: ", r) << "\n";);
 
-        if (get_config().m_array_delay_exp_axiom && r.select->get_arg(0)->get_root() != r.n->get_root() && !r.is_delayed() && m_enable_delay) {
+        bool should_delay = 
+            get_config().m_array_delay_exp_axiom && 
+            r.select->get_arg(0)->get_root() != r.n->get_root() && 
+            !r.is_delayed() && m_enable_delay;
+
+        TRACE("array", display(tout << "select-axiom: " << (should_delay ? "delay " : ""), r) << "\n";);
+
+        if (should_delay) {
             IF_VERBOSE(11, verbose_stream() << "delay: " << mk_bounded_pp(child, m) << " " << mk_bounded_pp(select, m) << "\n");
             ctx.push(reset_new(*this, idx));
             r.set_delayed();
@@ -175,18 +181,14 @@ namespace array {
         ptr_buffer<expr> sel1_args, sel2_args;
         unsigned num_args = select->get_num_args();
 
-        if (select->get_arg(0) != store && expr2enode(select->get_arg(0))->get_root() == expr2enode(store)->get_root()) 
-            return false;
         bool has_diff = false;
         for (unsigned i = 1; i < num_args; i++) 
             has_diff |= expr2enode(select->get_arg(i))->get_root() != expr2enode(store->get_arg(i))->get_root();
         if (!has_diff)
             return false;
 
-
         sel1_args.push_back(store);
-        sel2_args.push_back(store->get_arg(0));
-        
+        sel2_args.push_back(store->get_arg(0));       
         
         for (unsigned i = 1; i < num_args; i++) {
             sel1_args.push_back(select->get_arg(i));
@@ -209,10 +211,9 @@ namespace array {
               tout << "select-store " << ctx.bpp(s1) << " " << ctx.bpp(s1->get_root()) << "\n";
               tout << "select-store " << ctx.bpp(s2) << " " << ctx.bpp(s2->get_root()) << "\n";);
 
-
         if (s1->get_root() == s2->get_root())
             return new_prop;
-
+        
         sat::literal sel_eq = sat::null_literal;
         auto init_sel_eq = [&]() {
             if (sel_eq != sat::null_literal) 
@@ -272,7 +273,6 @@ namespace array {
      * e1 = e2 or select(e1, diff(e1,e2)) != select(e2, diff(e1, e2))
      */
     bool solver::assert_extensionality(expr* e1, expr* e2) {
-        TRACE("array", tout << "extensionality-axiom: " << mk_bounded_pp(e1, m) << " == " << mk_bounded_pp(e2, m) << "\n";);
         ++m_stats.m_num_extensionality_axiom;
         func_decl_ref_vector const& funcs = sort2diff(e1->get_sort());
         expr_ref_vector args1(m), args2(m);
@@ -287,6 +287,7 @@ namespace array {
         expr_ref sel2(a.mk_select(args2), m);
         literal lit1 = eq_internalize(e1, e2);
         literal lit2 = eq_internalize(sel1, sel2);
+        TRACE("array", tout << "extensionality-axiom: " << mk_bounded_pp(e1, m) << " == " << mk_bounded_pp(e2, m) << "\n" << lit1 << " " << ~lit2 << "\n";);
         return add_clause(lit1, ~lit2);
     }
 
@@ -427,9 +428,11 @@ namespace array {
             app_ref sel1(m), sel2(m);
             sel1 = a.mk_select(args1);
             sel2 = a.mk_select(args2);
+            prop |= !ctx.get_enode(sel1) || !ctx.get_enode(sel2);
             if (ctx.propagate(e_internalize(sel1), e_internalize(sel2), array_axiom()))
                 prop = true;
         }
+        prop |= !ctx.get_enode(def1) || !ctx.get_enode(def2);
         if (ctx.propagate(e_internalize(def1), e_internalize(def2), array_axiom()))
             prop = true;
         return prop;
@@ -448,6 +451,7 @@ namespace array {
         expr_ref alpha(a.mk_select(args), m);
         expr_ref beta(alpha);
         rewrite(beta);
+        TRACE("array", tout << alpha << " == " << beta << "\n";);
         return ctx.propagate(e_internalize(alpha), e_internalize(beta), array_axiom());
     }
 
@@ -528,19 +532,22 @@ namespace array {
         if (!get_config().m_array_delay_exp_axiom)
             return false;
         unsigned num_vars = get_num_vars();
+        bool change = false;
         for (unsigned v = 0; v < num_vars; v++) {
             propagate_parent_select_axioms(v);
             auto& d = get_var_data(v);
             if (!d.m_prop_upward)
                 continue;
             euf::enode* n = var2enode(v);
+            if (add_as_array_eqs(n))
+                change = true;
             bool has_default = false;
             for (euf::enode* p : euf::enode_parents(n))
                 has_default |= a.is_default(p->get_expr());
             if (has_default)
-                propagate_parent_default(v);            
+                propagate_parent_default(v);      
         }
-        bool change = false;
+
         unsigned sz = m_axiom_trail.size();
         m_delay_qhead = 0;
         
@@ -553,8 +560,30 @@ namespace array {
         return change;
     }
 
+    bool solver::add_as_array_eqs(euf::enode* n) {
+        func_decl* f = nullptr;
+        bool change = false;
+        if (!a.is_as_array(n->get_expr(), f))
+            return false;
+        for (unsigned i = 0; i < ctx.get_egraph().enodes_of(f).size(); ++i) {
+            euf::enode* p = ctx.get_egraph().enodes_of(f)[i];
+            expr_ref_vector select(m);
+            select.push_back(n->get_expr());
+            for (expr* arg : *to_app(p->get_expr()))
+                select.push_back(arg);
+            expr_ref _e(a.mk_select(select.size(), select.data()), m);
+            euf::enode* e = e_internalize(_e);
+            if (e->get_root() != p->get_root()) {
+                add_unit(eq_internalize(_e, p->get_expr()));
+                change = true;
+            }
+        }
+        return change;
+    }
+
     bool solver::add_interface_equalities() {
         sbuffer<theory_var> roots;
+        collect_defaults();
         collect_shared_vars(roots);
         bool prop = false;
         for (unsigned i = roots.size(); i-- > 0; ) {
@@ -565,10 +594,12 @@ namespace array {
                 expr* e2 = var2expr(v2);
                 if (e1->get_sort() != e2->get_sort())
                     continue;
-                if (have_different_model_values(v1, v2))
+                if (must_have_different_model_values(v1, v2)) {
                     continue;
-                if (ctx.get_egraph().are_diseq(var2enode(v1), var2enode(v2)))
-                    continue;              
+                }
+                if (ctx.get_egraph().are_diseq(var2enode(v1), var2enode(v2))) {
+                    continue;
+                }
                 sat::literal lit = eq_internalize(e1, e2);
                 if (s().value(lit) == l_undef) 
                     prop = true;
@@ -589,24 +620,28 @@ namespace array {
             if (r->is_marked1()) 
                 continue;            
             // arrays used as indices in other arrays have to be treated as shared issue #3532, #3529            
-            if (ctx.is_shared(r) || is_select_arg(r)) 
-                roots.push_back(r->get_th_var(get_id()));
-            
+            if (ctx.is_shared(r) || is_shared_arg(r)) 
+                roots.push_back(r->get_th_var(get_id()));           
             r->mark1();
             to_unmark.push_back(r);            
         }
-        TRACE("array", tout << "collecting shared vars...\n" << unsigned_vector(roots.size(), (unsigned*)roots.data())  << "\n";);
+        TRACE("array", tout << "collecting shared vars...\n"; for (auto v : roots) tout << ctx.bpp(var2enode(v)) << "\n";);
         for (auto* n : to_unmark)
             n->unmark1();
     }
 
-    bool solver::is_select_arg(euf::enode* r) {
+    bool solver::is_shared_arg(euf::enode* r) {
         SASSERT(r->is_root());
-        for (euf::enode* n : euf::enode_parents(r)) 
-            if (a.is_select(n->get_expr())) 
-                for (unsigned i = 1; i < n->num_args(); ++i) 
-                    if (r == n->get_arg(i)->get_root()) 
+        for (euf::enode* n : euf::enode_parents(r)) {
+            expr* e = n->get_expr();
+            if (a.is_select(e))
+                for (unsigned i = 1; i < n->num_args(); ++i)
+                    if (r == n->get_arg(i)->get_root())
                         return true;
+            if (a.is_const(e))
+                return true;
+        }
+            
         return false;
     }
 

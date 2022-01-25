@@ -15,7 +15,7 @@ import shutil
 from mk_exception import *
 import mk_genfile_common
 from fnmatch import fnmatch
-import distutils.sysconfig
+import sysconfig
 import compileall
 import subprocess
 
@@ -48,7 +48,7 @@ CXX_COMPILERS=['g++', 'clang++']
 C_COMPILERS=['gcc', 'clang']
 JAVAC=None
 JAR=None
-PYTHON_PACKAGE_DIR=distutils.sysconfig.get_python_lib(prefix=getenv("PREFIX", None))
+PYTHON_PACKAGE_DIR=sysconfig.get_path('purelib')
 BUILD_DIR='build'
 REV_BUILD_DIR='..'
 SRC_DIR='src'
@@ -1611,7 +1611,7 @@ class PythonInstallComponent(Component):
                                       os.path.join(self.pythonPkgDir,'z3'),
                                       in_prefix=self.in_prefix_install)
 
-        if PYTHON_PACKAGE_DIR != distutils.sysconfig.get_python_lib():
+        if PYTHON_PACKAGE_DIR != sysconfig.get_path('purelib'):
             out.write('\t@echo Z3Py was installed at \'%s\', make sure this directory is in your PYTHONPATH environment variable.' % PYTHON_PACKAGE_DIR)
 
     def mk_uninstall(self, out):
@@ -1735,7 +1735,7 @@ class DotNetDLLComponent(Component):
             dotnetCmdLine.extend(['Release'])
 
         path = os.path.join(os.path.abspath(BUILD_DIR), ".")
-        dotnetCmdLine.extend(['-o', path])
+        dotnetCmdLine.extend(['-o', "\"%s\"" % path])
             
         MakeRuleCmd.write_cmd(out, ' '.join(dotnetCmdLine))
         out.write('\n')        
@@ -2014,21 +2014,34 @@ class MLComponent(Component):
 
             LIBZ3 = LIBZ3 + ' ' + ' '.join(map(lambda x: '-cclib ' + x, LDFLAGS.split()))
 
+            stubs_install_path = '$$(%s printconf path)/stublibs' % OCAMLFIND
+            if not STATIC_LIB:
+                loadpath = '-ccopt -L' + stubs_install_path
+                dllpath = '-dllpath ' + stubs_install_path
+                LIBZ3 = LIBZ3 + ' ' + loadpath + ' ' + dllpath
+
             if DEBUG_MODE and not(is_cygwin()):
                 # Some ocamlmklib's don't like -g; observed on cygwin, but may be others as well.
                 OCAMLMKLIB += ' -g'
 
             z3mls = os.path.join(self.sub_dir, 'z3ml')
 
+            LIBZ3ML = ''
+            if STATIC_LIB:
+                LIBZ3ML = '-oc ' + os.path.join(self.sub_dir, 'z3ml-static')
+
             out.write('%s.cma: %s %s %s\n' % (z3mls, cmos, stubso, z3linkdep))
-            out.write('\t%s -o %s -I %s -L. %s %s %s\n' % (OCAMLMKLIB, z3mls, self.sub_dir, stubso, cmos, LIBZ3))
+            out.write('\t%s -o %s %s -I %s -L. %s %s %s\n' % (OCAMLMKLIB, z3mls, LIBZ3ML, self.sub_dir, stubso, cmos, LIBZ3))
             out.write('%s.cmxa: %s %s %s %s.cma\n' % (z3mls, cmxs, stubso, z3linkdep, z3mls))
-            out.write('\t%s -o %s -I %s -L. %s %s %s\n' % (OCAMLMKLIB, z3mls, self.sub_dir, stubso, cmxs, LIBZ3))
+            out.write('\t%s -o %s %s -I %s -L. %s %s %s\n' % (OCAMLMKLIB, z3mls, LIBZ3ML, self.sub_dir, stubso, cmxs, LIBZ3))
             out.write('%s.cmxs: %s.cmxa\n' % (z3mls, z3mls))
             out.write('\t%s -linkall -shared -o %s.cmxs -I . -I %s %s.cmxa\n' % (OCAMLOPTF, z3mls, self.sub_dir, z3mls))
 
             out.write('\n')
             out.write('ml: %s.cma %s.cmxa %s.cmxs\n' % (z3mls, z3mls, z3mls))
+            if IS_OSX:
+                out.write('\tinstall_name_tool -id %s/libz3.dylib libz3.dylib\n' % (stubs_install_path))
+                out.write('\tinstall_name_tool -change libz3.dylib %s/libz3.dylib api/ml/dllz3ml.so\n' % (stubs_install_path))                
             out.write('\n')
 
             if IS_WINDOWS:
@@ -2041,6 +2054,7 @@ class MLComponent(Component):
                 self.mk_uninstall(out)
                 out.write('\n')
 
+    # The following three functions may be out of date.
     def mk_install_deps(self, out):
         if is_ml_enabled() and self._install_bindings():
             out.write(get_component(Z3_DLL_COMPONENT).dll_name + '$(SO_EXT) ')
@@ -2285,6 +2299,41 @@ class MLExampleComponent(ExampleComponent):
                 out.write(' %s/%s' % (self.to_ex_dir, mlfile))
             out.write('\n')
             out.write('_ex_%s: ml_example.byte ml_example$(EXE_EXT)\n\n' % self.name)
+
+        debug_opt = '-g ' if DEBUG_MODE else ''
+
+        if STATIC_LIB:
+            opam_z3_opts = '-thread -package z3-static -linkpkg'
+            ml_post_install_tests = [
+                (OCAMLC,              'ml_example_static.byte'),
+                (OCAMLC + ' -custom', 'ml_example_static_custom.byte'),
+                (OCAMLOPT,            'ml_example_static$(EXE_EXT)')
+            ]
+        else:
+            opam_z3_opts = '-thread -package z3 -linkpkg'
+            ml_post_install_tests = [
+                (OCAMLC,              'ml_example_shared.byte'),
+                (OCAMLC + ' -custom', 'ml_example_shared_custom.byte'),
+                (OCAMLOPT,            'ml_example_shared$(EXE_EXT)')
+            ]
+
+        for ocaml_compiler, testname in ml_post_install_tests:
+            out.write(testname + ':')
+            for mlfile in get_ml_files(self.ex_dir):
+                out.write(' %s' % os.path.join(self.to_ex_dir, mlfile))
+            out.write('\n')
+            out.write('\tocamlfind %s -o %s %s %s ' % (ocaml_compiler, debug_opt, testname, opam_z3_opts))
+            for mlfile in get_ml_files(self.ex_dir):
+                out.write(' %s/%s' % (self.to_ex_dir, mlfile))
+            out.write('\n')
+
+        if STATIC_LIB:
+            out.write('_ex_ml_example_post_install: ml_example_static.byte ml_example_static_custom.byte ml_example_static$(EXE_EXT)\n')
+        else:
+            out.write('_ex_ml_example_post_install: ml_example_shared.byte ml_example_shared_custom.byte ml_example_shared$(EXE_EXT)\n')
+
+        out.write('\n')
+
 
 class PythonExampleComponent(ExampleComponent):
     def __init__(self, name, path):
@@ -2643,7 +2692,7 @@ def mk_config():
             print("Python pkg dir: %s" % PYTHON_PACKAGE_DIR)
             if GPROF:
                 print('gprof:          enabled')
-            print('Python version: %s' % distutils.sysconfig.get_python_version())
+            print('Python version: %s' % sysconfig.get_python_version())
             if is_java_enabled():
                 print('JNI Bindings:   %s' % JNI_HOME)
                 print('Java Compiler:  %s' % JAVAC)
