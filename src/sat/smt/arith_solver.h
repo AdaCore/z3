@@ -239,6 +239,7 @@ namespace arith {
         void add_def_constraint(lp::constraint_index index, theory_var v);
         void add_def_constraint_and_equality(lpvar vi, lp::lconstraint_kind kind, const rational& bound);
         void internalize_args(app* t, bool force = false);
+        void ensure_arg_vars(app* t);
         theory_var internalize_power(app* t, app* n, unsigned p);
         theory_var internalize_mul(app* t);
         theory_var internalize_def(expr* term);
@@ -263,6 +264,7 @@ namespace arith {
         // axioms
         void mk_div_axiom(expr* p, expr* q);
         void mk_to_int_axiom(app* n);
+        void mk_abs_axiom(app* n);
         void mk_is_int_axiom(expr* n);
         void mk_idiv_mod_axioms(expr* p, expr* q);
         void mk_rem_axiom(expr* dividend, expr* divisor);
@@ -417,6 +419,7 @@ namespace arith {
         void false_case_of_check_nla(const nla::lemma& l);        
         void dbg_finalize_model(model& mdl);
 
+
     public:
         solver(euf::solver& ctx, theory_id id);
         ~solver() override;
@@ -424,6 +427,8 @@ namespace arith {
         void get_antecedents(literal l, sat::ext_justification_idx idx, literal_vector& r, bool probing) override;
         void asserted(literal l) override;
         sat::check_result check() override;
+        void simplify() override {}
+        void init_search() override {}
 
         std::ostream& display(std::ostream& out) const override;
         std::ostream& display_justification(std::ostream& out, sat::ext_justification_idx idx) const override;
@@ -445,6 +450,8 @@ namespace arith {
         bool is_shared(theory_var v) const override;
         lbool get_phase(bool_var v) override;
         bool include_func_interp(func_decl* f) const override;
+        bool enable_ackerman_axioms(euf::enode* n) const override { return !a.is_add(n->get_expr()); }
+        bool has_unhandled() const override { return m_not_handled != nullptr; }
 
         // bounds and equality propagation callbacks
         lp::lar_solver& lp() { return *m_solver; }

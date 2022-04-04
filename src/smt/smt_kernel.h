@@ -202,6 +202,12 @@ namespace smt {
            \brief Return the set of formulas assigned by the kernel.
         */
         void get_assignments(expr_ref_vector & result);
+
+
+        /**
+           \brief Return units assigned by the kernel.
+        */
+        void get_units(expr_ref_vector& result);
         
         /**
            \brief Return the set of relevant labels in the last check command.
@@ -301,7 +307,7 @@ namespace smt {
         
         void user_propagate_register_diseq(user_propagator::eq_eh_t& diseq_eh);
 
-        unsigned user_propagate_register_expr(expr* e);
+        void user_propagate_register_expr(expr* e);
         
         void user_propagate_register_created(user_propagator::created_eh_t& r);
 

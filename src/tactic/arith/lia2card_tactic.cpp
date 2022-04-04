@@ -135,8 +135,8 @@ public:
     char const* name() const override { return "lia2card"; }
 
     void updt_params(params_ref const & p) override {
-        m_params = p;
-        m_compile_equality = p.get_bool("compile_equality", true);
+        m_params.append(p);
+        m_compile_equality = m_params.get_bool("compile_equality", true);
     }
 
     expr_ref mk_bounded(expr_ref_vector& axioms, app* x, unsigned lo, unsigned hi) {
@@ -216,11 +216,10 @@ public:
             }
             // IF_VERBOSE(0, verbose_stream() << mk_pp(g->form(i), m) << "\n--->\n" << new_curr << "\n";);
             g->update(i, new_curr, new_pr, g->dep(i));
-
         }
-        for (expr* a : axioms) {
+        for (expr* a : axioms) 
             g->assert_expr(a);
-        }
+
         if (m_mc) g->add(m_mc.get());
         g->inc_depth();
         result.push_back(g.get());

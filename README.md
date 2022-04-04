@@ -21,9 +21,11 @@ See the [release notes](RELEASE_NOTES) for notes on various stable releases of Z
 
 ## Build status
 
-| Azure Pipelines | Code Coverage | Open Bugs | Android Build | WASM Build |
+| Azure Pipelines | Code Coverage | Open Bugs | Android Build | WASM Build | 
 | --------------- | --------------|-----------|---------------|------------|
 | [![Build Status](https://dev.azure.com/Z3Public/Z3/_apis/build/status/Z3Prover.z3?branchName=master)](https://dev.azure.com/Z3Public/Z3/_build/latest?definitionId=1&branchName=master) | [![CodeCoverage](https://github.com/Z3Prover/z3/actions/workflows/coverage.yml/badge.svg)](https://github.com/Z3Prover/z3/actions/workflows/coverage.yml) | [![Open Issues](https://github.com/Z3Prover/z3/actions/workflows/wip.yml/badge.svg)](https://github.com/Z3Prover/z3/actions/workflows/wip.yml) |[![Android Build](https://github.com/Z3Prover/z3/actions/workflows/android-build.yml/badge.svg)](https://github.com/Z3Prover/z3/actions/workflows/android-build.yml) | [![WASM Build](https://github.com/Z3Prover/z3/actions/workflows/wasm.yml/badge.svg)](https://github.com/Z3Prover/z3/actions/workflows/wasm.yml) |
+
+<a href="https://github.com/z3prover/z3/pkgs/container/z3">Docker image</a>.
 
 [1]: #building-z3-on-windows-using-visual-studio-command-prompt
 [2]: #building-z3-using-make-and-gccclang
@@ -85,7 +87,7 @@ A 32 bit build should work similarly (but is untested); the same is true for 32/
 
 By default, it will install z3 executable at ``PREFIX/bin``, libraries at
 ``PREFIX/lib``, and include files at ``PREFIX/include``, where ``PREFIX``
-installation prefix if inferred by the ``mk_make.py`` script. It is usually
+installation prefix is inferred by the ``mk_make.py`` script. It is usually
 ``/usr`` for most Linux distros, and ``/usr/local`` for FreeBSD and macOS. Use
 the ``--prefix=`` command line option to change the install prefix. For example:
 
@@ -163,7 +165,7 @@ You can install the Python wrapper for Z3 for the latest release from pypi using
 
 Use the ``--python`` command line flag with ``mk_make.py`` to enable building these.
 
-Note that is required on certain platforms that the Python package directory
+Note that it is required on certain platforms that the Python package directory
 (``site-packages`` on most distributions and ``dist-packages`` on Debian based
 distributions) live under the install prefix. If you use a non standard prefix
 you can use the ``--pypkgdir`` option to change the Python package directory
@@ -200,9 +202,14 @@ See [``examples/python``](examples/python) for examples.
 
 The Julia package [Z3.jl](https://github.com/ahumenberger/Z3.jl) wraps the C++ API of Z3. Information about updating and building the Julia bindings can be found in [src/api/julia](src/api/julia).
 
-### ``Web Assembly``
+### ``Web Assembly`` / ``TypeScript`` / ``JavaScript``
 
-[WebAssembly](https://github.com/cpitclaudel/z3.wasm) bindings are provided by Clément Pit-Claudel.
+A WebAssembly build with associated TypeScript typings is published on npm as [z3-solver](https://www.npmjs.com/package/z3-solver). Information about building these bindings can be found in [src/api/js](src/api/js).
+
+### Smalltalk (``Pharo`` / ``Smalltalk/X``)
+
+Project [MachineArithmetic](https://github.com/shingarov/MachineArithmetic) provides Smalltalk interface
+to Z3's C API. For more information, see [MachineArithmetic/README.md](https://github.com/shingarov/MachineArithmetic/blob/pure-z3/MachineArithmetic/README.md)
 
 ## System Overview
 
@@ -220,5 +227,6 @@ The Julia package [Z3.jl](https://github.com/ahumenberger/Z3.jl) wraps the C++ A
 * C
 * OCaml
 * [Julia](https://github.com/ahumenberger/Z3.jl)
+* [Smalltalk](https://github.com/shingarov/MachineArithmetic/blob/pure-z3/MachineArithmetic/README.md) (supports Pharo and Smalltalk/X)
 
 

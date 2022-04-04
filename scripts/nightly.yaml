@@ -1,5 +1,6 @@
 variables:
-  ReleaseVersion: '4.8.14'
+  ReleaseVersion: '4.8.15'
+  MacFlags: 'CXXFLAGS="-arch arm64 -arch x86_64" LINK_EXTRA_FLAGS="-arch arm64 -arch x86_64" SLINK_EXTRA_FLAGS="-arch arm64 -arch x86_64" FPMATH_ENABLED=False'
 
 stages:
 - stage: Build
@@ -10,7 +11,7 @@ stages:
     pool:
       vmImage: "macOS-latest"
     steps:
-    - script: python scripts/mk_unix_dist.py --dotnet-key=$(Build.SourcesDirectory)/resources/z3.snk
+    - script: $(MacFlags) python scripts/mk_unix_dist.py --dotnet-key=$(Build.SourcesDirectory)/resources/z3.snk
     - script: git clone https://github.com/z3prover/z3test z3test
     - script: python z3test/scripts/test_benchmarks.py build-dist/z3 z3test/regressions/smt2    
     - script: cp dist/*.zip $(Build.ArtifactStagingDirectory)/.
@@ -92,7 +93,7 @@ stages:
     - task: CmdLine@2
       inputs:
         script:
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86 &
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86 &
           python scripts\mk_win_dist.py
             --x86-only
             --dotnet-key=$(Build.SourcesDirectory)/resources/z3.snk
@@ -115,7 +116,7 @@ stages:
     - task: CmdLine@2
       inputs:
         script:
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64 &
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64 &
           python scripts\mk_win_dist.py
             --x64-only
             --dotnet-key=$(Build.SourcesDirectory)/resources/z3.snk
@@ -132,8 +133,8 @@ stages:
 
 - stage: Package
   jobs:
-  - job: NuGet
-    displayName: "NuGet packaging"
+  - job: NuGet64
+    displayName: "NuGet 64 packaging"
     pool:
       vmImage: "windows-latest"
     steps:
@@ -147,11 +148,6 @@ stages:
       displayName: 'Download Win64 Build'
       inputs:
         artifact: 'Windows64'
-        path: $(Agent.TempDirectory)\package
-    - task: DownloadPipelineArtifact@2
-      displayName: 'Download Win32 Build'
-      inputs:
-        artifact: 'Windows32'
         path: $(Agent.TempDirectory)\package
     - task: DownloadPipelineArtifact@2
       displayName: 'Download Ubuntu Build'
@@ -245,6 +241,105 @@ stages:
         targetPath: $(Build.ArtifactStagingDirectory)
         artifactName: 'NuGet'
 
+  - job: NuGet32
+    displayName: "NuGet 32 packaging"
+    pool:
+      vmImage: "windows-latest"
+    steps:
+    - powershell: write-host $(System.DefinitionId)
+      displayName: 'System.DefinitionId'
+    - powershell: write-host $(Build.BuildId)
+      displayName: 'Build.BuildId'
+    - powershell: write-host $(System.TeamProjectId)
+      displayName: 'System.TeamProjectId'
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Win32 Build'
+      inputs:
+        artifact: 'Windows32'
+        path: $(Agent.TempDirectory)\package
+    - task: NuGetToolInstaller@0
+      inputs:
+        versionSpec: 5.x
+        checkLatest: false        
+    - task: PythonScript@0
+      displayName: 'Python: assemble files'
+      inputs:
+        scriptSource: 'filepath'
+        scriptPath: scripts\mk_nuget_task.py
+        workingDirectory: $(Agent.TempDirectory)\package
+        arguments:
+          $(Agent.TempDirectory)\package
+          $(ReleaseVersion)
+          $(Build.Repository.Uri)
+          $(Build.SourceBranchName)
+          $(Build.SourceVersion)
+          $(Build.SourcesDirectory)
+          symbols
+          x86
+    - task: NugetCommand@2
+      displayName: 'NuGet Pack Symbols'
+      inputs:
+        command: custom
+        arguments: 'pack $(Agent.TempDirectory)\package\out\Microsoft.Z3.x86.sym.nuspec -OutputDirectory $(Build.ArtifactStagingDirectory) -Verbosity detailed -Symbols -SymbolPackageFormat snupkg -BasePath $(Agent.TempDirectory)\package\out' 
+    - task: EsrpCodeSigning@1
+      displayName: 'Sign Package'
+      inputs:
+        ConnectedServiceName: 'z3-esrp-signing-2'
+        FolderPath: $(Build.ArtifactStagingDirectory)
+        Pattern: Microsoft.Z3.x86.$(ReleaseVersion).nupkg
+        signConfigType: 'inlineSignParams'
+        inlineOperation: |
+          [
+            {
+              "KeyCode" : "CP-401405",
+              "OperationCode" : "NuGetSign",
+              "Parameters" : {},
+              "ToolName" : "sign",
+              "ToolVersion" : "1.0"
+            },
+            {
+              "KeyCode" : "CP-401405",
+              "OperationCode" : "NuGetVerify",
+              "Parameters" : {},
+              "ToolName" : "sign",
+              "ToolVersion" : "1.0"
+            }
+          ]
+        SessionTimeout: '60'
+        MaxConcurrency: '50'
+        MaxRetryAttempts: '5'
+    - task: EsrpCodeSigning@1
+      displayName: 'Sign Symbol Package'
+      inputs:
+        ConnectedServiceName: 'z3-esrp-signing-2'
+        FolderPath: $(Build.ArtifactStagingDirectory)
+        Pattern: Microsoft.Z3.x86.$(ReleaseVersion).snupkg
+        signConfigType: 'inlineSignParams'
+        inlineOperation: |
+          [
+            {
+              "KeyCode" : "CP-401405",
+              "OperationCode" : "NuGetSign",
+              "Parameters" : {},
+              "ToolName" : "sign",
+              "ToolVersion" : "1.0"
+            },
+            {
+              "KeyCode" : "CP-401405",
+              "OperationCode" : "NuGetVerify",
+              "Parameters" : {},
+              "ToolName" : "sign",
+              "ToolVersion" : "1.0"
+            }
+          ]
+        SessionTimeout: '60'
+        MaxConcurrency: '50'
+        MaxRetryAttempts: '5'        
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: $(Build.ArtifactStagingDirectory)
+        artifactName: 'NuGet32'
+
 
   - job: Python
     displayName: "Python packaging"
@@ -324,6 +419,11 @@ stages:
       displayName: "Download NuGet"
       inputs:
         artifactName: 'NuGet'
+        targetPath: tmp
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download NuGet32"
+      inputs:
+        artifactName: 'NuGet32'
         targetPath: tmp
     - task: GitHubRelease@0
       inputs:

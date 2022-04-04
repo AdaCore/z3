@@ -190,9 +190,9 @@ public:
         m_t2->user_propagate_register_diseq(diseq_eh);
     }
 
-    unsigned user_propagate_register_expr(expr* e) override {
+    void user_propagate_register_expr(expr* e) override {
         m_t1->user_propagate_register_expr(e);
-        return m_t2->user_propagate_register_expr(e);
+        m_t2->user_propagate_register_expr(e);
     }
 
     void user_propagate_clear() override {
@@ -335,6 +335,25 @@ public:
                 }
                 catch (tactic_exception &) {
                     result.reset();
+                }
+                catch (z3_error & ex) {
+                    IF_VERBOSE(10, verbose_stream() << "z3 error: " << ex.error_code() << " in or-else\n");
+                    throw;
+                }
+                catch (z3_exception& ex) {
+                    IF_VERBOSE(10, verbose_stream() << ex.msg() << " in or-else\n");
+                    throw;
+                }
+                catch (const std::exception &ex) {
+                    IF_VERBOSE(10, verbose_stream() << ex.what() << " in or-else\n");
+                    throw;
+                }
+                catch (...) {
+                    IF_VERBOSE(10, verbose_stream() << " unclassified exception in or-else\n");
+                    // std::current_exception returns a std::exception_ptr, which apparently 
+                    // needs to be re-thrown to extract type information.
+                    // typeid(ex).name() would be nice.
+                    throw;
                 }
             }
             else {
@@ -829,7 +848,7 @@ public:
     void reset() override { m_t->reset(); }
     void set_logic(symbol const& l) override { m_t->set_logic(l); }    
     void set_progress_callback(progress_callback * callback) override { m_t->set_progress_callback(callback); }
-    unsigned user_propagate_register_expr(expr* e) override { return m_t->user_propagate_register_expr(e); }
+    void user_propagate_register_expr(expr* e) override { m_t->user_propagate_register_expr(e); }
     void user_propagate_clear() override { m_t->user_propagate_clear(); }
 
 protected:

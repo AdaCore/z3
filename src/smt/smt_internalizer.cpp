@@ -375,7 +375,6 @@ namespace smt {
         }
         else {
             SASSERT(is_app(n));
-            SASSERT(!gate_ctx);
             internalize_term(to_app(n));
         }
     }
@@ -605,6 +604,8 @@ namespace smt {
         bool_var bv = get_bool_var(fa);
         assign(literal(bv, false), nullptr);
         mark_as_relevant(bv);
+        push_trail(value_trail<bool>(m_has_lambda));
+        m_has_lambda = true;
     }
 
     /**
@@ -974,7 +975,7 @@ namespace smt {
         }
         enode * e           = enode::mk(m, m_region, m_app2enode, n, generation, suppress_args, merge_tf, m_scope_lvl, cgc_enabled, true);
         TRACE("mk_enode_detail", tout << "e.get_num_args() = " << e->get_num_args() << "\n";);
-        if (n->get_num_args() == 0 && m.is_unique_value(n))
+        if (m.is_unique_value(n))
             e->mark_as_interpreted();
         TRACE("mk_var_bug", tout << "mk_enode: " << id << "\n";);
         TRACE("generation", tout << "mk_enode: " << id << " " << generation << "\n";);

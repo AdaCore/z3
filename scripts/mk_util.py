@@ -92,7 +92,6 @@ DOTNET_CORE_ENABLED=False
 DOTNET_KEY_FILE=getenv("Z3_DOTNET_KEY_FILE", None)
 JAVA_ENABLED=False
 ML_ENABLED=False
-JS_ENABLED=False
 PYTHON_INSTALL_ENABLED=False
 STATIC_LIB=False
 STATIC_BIN=False
@@ -115,6 +114,7 @@ ALWAYS_DYNAMIC_BASE=False
 
 FPMATH="Default"
 FPMATH_FLAGS="-mfpmath=sse -msse -msse2"
+FPMATH_ENABLED=getenv("FPMATH_ENABLED", "True")
 
 
 def check_output(cmd):
@@ -279,6 +279,9 @@ def test_gmp(cc):
 
 def test_fpmath(cc):
     global FPMATH_FLAGS
+    if FPMATH_ENABLED == "False":
+        FPMATH_FLAGS=""
+        return "Disabled"
     if is_verbose():
         print("Testing floating point support...")
     t = TempFile('tstsse.cpp')
@@ -681,7 +684,7 @@ def display_help(exit_code):
 # Parse configuration option for mk_make script
 def parse_options():
     global VERBOSE, DEBUG_MODE, IS_WINDOWS, VS_X64, ONLY_MAKEFILES, SHOW_CPPS, VS_PROJ, TRACE, VS_PAR, VS_PAR_NUM
-    global DOTNET_CORE_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, JS_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED, PYTHON_ENABLED
+    global DOTNET_CORE_ENABLED, DOTNET_KEY_FILE, JAVA_ENABLED, ML_ENABLED, STATIC_LIB, STATIC_BIN, PREFIX, GMP, PYTHON_PACKAGE_DIR, GPROF, GIT_HASH, GIT_DESCRIBE, PYTHON_INSTALL_ENABLED, PYTHON_ENABLED
     global LINUX_X64, SLOW_OPTIMIZE, LOG_SYNC, SINGLE_THREADED
     global GUARD_CF, ALWAYS_DYNAMIC_BASE
     try:
@@ -749,8 +752,6 @@ def parse_options():
             GIT_DESCRIBE = True
         elif opt in ('', '--ml'):
             ML_ENABLED = True
-        elif opt == "--js":
-            JS_ENABLED = True
         elif opt in ('', '--log-sync'):
             LOG_SYNC = True
         elif opt == '--single-threaded':
@@ -813,16 +814,6 @@ def set_build_dir(d):
     BUILD_DIR = norm_path(d)
     REV_BUILD_DIR = reverse_path(d)
 
-def set_z3js_dir(p):
-    global SRC_DIR, Z3JS_SRC_DIR
-    p = norm_path(p)
-    full = os.path.join(SRC_DIR, p)
-    if not os.path.exists(full):
-        raise MKException("Python bindings directory '%s' does not exist" % full)
-    Z3JS_SRC_DIR = full
-    if VERBOSE:
-        print("Js bindings directory was detected.")
-
 def set_z3py_dir(p):
     global SRC_DIR, Z3PY_SRC_DIR
     p = norm_path(p)
@@ -858,9 +849,6 @@ def get_components():
 def get_z3py_dir():
     return Z3PY_SRC_DIR
 
-# Return directory where the js bindings are located
-def get_z3js_dir():
-    return Z3JS_SRC_DIR
 
 # Return true if in verbose mode
 def is_verbose():
@@ -871,9 +859,6 @@ def is_java_enabled():
 
 def is_ml_enabled():
     return ML_ENABLED
-
-def is_js_enabled():
-    return JS_ENABLED
 
 def is_dotnet_core_enabled():
     return DOTNET_CORE_ENABLED
@@ -1697,6 +1682,7 @@ class DotNetDLLComponent(Component):
 
   <PropertyGroup>
     <TargetFramework>netstandard1.4</TargetFramework>
+    <LangVersion>8.0</LangVersion>
     <DefineConstants>$(DefineConstants);DOTNET_CORE</DefineConstants>
     <DebugType>portable</DebugType>
     <AssemblyName>Microsoft.Z3</AssemblyName>
@@ -2014,7 +2000,7 @@ class MLComponent(Component):
 
             LIBZ3 = LIBZ3 + ' ' + ' '.join(map(lambda x: '-cclib ' + x, LDFLAGS.split()))
 
-            stubs_install_path = '$$(%s printconf path)/stublibs' % OCAMLFIND
+            stubs_install_path = '$$(%s printconf destdir)/stublibs' % OCAMLFIND
             if not STATIC_LIB:
                 loadpath = '-ccopt -L' + stubs_install_path
                 dllpath = '-dllpath ' + stubs_install_path
@@ -2095,7 +2081,7 @@ class MLComponent(Component):
             out.write(' %s' % ((os.path.join(self.sub_dir, 'z3ml.cmxa'))))
             out.write(' %s' % ((os.path.join(self.sub_dir, 'z3ml.cmxs'))))
             out.write(' %s' % ((os.path.join(self.sub_dir, 'dllz3ml'))))
-            if is_windows() or is_cygwin_mingw():
+            if is_windows() or is_cygwin_mingw() or is_msys2():
                 out.write('.dll')
             else:
                 out.write('.so') # .so also on OSX!
@@ -2643,7 +2629,7 @@ def mk_config():
             SLIBFLAGS    = '%s -m32' % SLIBFLAGS
         if TRACE or DEBUG_MODE:
             CPPFLAGS     = '%s -D_TRACE' % CPPFLAGS
-        if is_cygwin_mingw():
+        if is_cygwin_mingw() or is_msys2():
             # when cross-compiling with MinGW, we need to statically link its standard libraries
             # and to make it create an import library.
             SLIBEXTRAFLAGS = '%s -static-libgcc -static-libstdc++ -Wl,--out-implib,libz3.dll.a' % SLIBEXTRAFLAGS
@@ -3025,17 +3011,14 @@ def mk_bindings(api_files):
         ml_output_dir = None
         if is_ml_enabled():
           ml_output_dir = get_component('ml').src_dir
-        if is_js_enabled():
-          set_z3js_dir("api/js")
-          js_output_dir = get_component('js').src_dir
         # Get the update_api module to do the work for us
+        update_api.VERBOSE = is_verbose()
         update_api.generate_files(api_files=new_api_files,
           api_output_dir=get_component('api').src_dir,
           z3py_output_dir=get_z3py_dir(),
           dotnet_output_dir=dotnet_output_dir,
           java_output_dir=java_output_dir,
           java_package_name=java_package_name,
-          js_output_dir=get_z3js_dir(),
           ml_output_dir=ml_output_dir,
           ml_src_dir=ml_output_dir
         )

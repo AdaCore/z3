@@ -124,7 +124,7 @@ namespace sat {
         clause_vector           m_clauses;
         clause_vector           m_learned;
         unsigned                m_num_frozen;
-        unsigned_vector         m_active_vars, m_free_vars, m_vars_to_reinit;
+        unsigned_vector         m_active_vars, m_free_vars, m_vars_to_free, m_vars_to_reinit;
         vector<watch_list>      m_watches;
         svector<lbool>          m_assignment;
         svector<justification>  m_justification; 
@@ -266,6 +266,11 @@ namespace sat {
         //
         // -----------------------
         void add_clause(unsigned num_lits, literal * lits, sat::status st) override { mk_clause(num_lits, lits, st); }
+        void add_clause(literal l1, literal l2, status st) {
+            literal lits[2] = { l1, l2 };
+            add_clause(2, lits, st);
+        }
+        void add_clause(literal lit, status st) { literal lits[1] = { lit }; add_clause(1, lits, st); }
         bool_var add_var(bool ext) override { return mk_var(ext, true); }
 
         bool_var mk_var(bool ext = false, bool dvar = true);
@@ -369,7 +374,7 @@ namespace sat {
         void set_eliminated(bool_var v, bool f) override;
         bool was_eliminated(literal l) const { return was_eliminated(l.var()); }
         void set_phase(literal l) override { if (l.var() < num_vars()) m_best_phase[l.var()] = m_phase[l.var()] = !l.sign(); }
-        bool_var get_phase(bool_var b) { return m_phase.get(b, false); }
+        bool get_phase(bool_var b) { return m_phase.get(b, false); }
         void move_to_front(bool_var b);
         unsigned scope_lvl() const { return m_scope_lvl; }
         unsigned search_lvl() const { return m_search_lvl; }
@@ -750,7 +755,7 @@ namespace sat {
 
         u_map<index_set>       m_antecedents;
         literal_vector         m_todo_antecedents;
-        vector<literal_vector> m_binary_clause_graph;
+        // vector<literal_vector> m_binary_clause_graph;
 
         bool extract_assumptions(literal lit, index_set& s);
         

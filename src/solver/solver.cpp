@@ -226,7 +226,7 @@ void solver::collect_param_descrs(param_descrs & r) {
 }
 
 void solver::reset_params(params_ref const & p) {
-    m_params = p;
+    m_params.append(p);
     solver_params sp(m_params);
     m_cancel_backup_file = sp.cancel_backup_file();
 }
@@ -242,6 +242,7 @@ expr_ref_vector solver::get_units() {
     ast_manager& m = get_manager();
     expr_ref_vector fmls(m), result(m), tmp(m);
     get_assertions(fmls);
+    get_units_core(fmls);
     obj_map<expr, bool> units;
     for (expr* f : fmls) {
         if (m.is_not(f, f) && is_literal(m, f)) {

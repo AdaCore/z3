@@ -371,6 +371,7 @@ namespace bv {
         if (m_true == sat::null_literal) {
             ctx.push(value_trail<sat::literal>(m_true));
             m_true = ctx.internalize(m.mk_true(), false, true, false);
+            s().assign_unit(m_true);
         }
         return m_true;
     }
@@ -427,7 +428,6 @@ namespace bv {
         expr_ref sum(m_autil.mk_add(sz, args.data()), m);
         sat::literal lit = eq_internalize(n, sum);
 	add_unit(lit);
-	ctx.add_root(lit);
     }
 
     void solver::internalize_int2bv(app* n) {
@@ -457,7 +457,6 @@ namespace bv {
         rhs = m_autil.mk_mod(e, m_autil.mk_int(mod));
 	sat::literal eq_lit = eq_internalize(lhs, rhs);
 	add_unit(eq_lit);
-	ctx.add_root(eq_lit);
        
         expr_ref_vector n_bits(m);
         get_bits(n_enode, n_bits);
@@ -470,7 +469,6 @@ namespace bv {
             lhs = n_bits.get(i);
 	    eq_lit = eq_internalize(lhs, rhs);
 	    add_unit(eq_lit);
-	    ctx.add_root(eq_lit);
         }
     }
 
@@ -536,7 +534,6 @@ namespace bv {
         if (p.hi_div0()) {
             eq_lit = eq_internalize(n, ibin(arg1, arg2));
 	    add_unit(eq_lit);
-	    ctx.add_root(eq_lit);
 	}
 	else {
 	    unsigned sz = bv.get_bv_size(n);
@@ -654,7 +651,6 @@ namespace bv {
         mk_bits(get_th_var(e));
 	sat::literal eq_lit = eq_internalize(e, r);
         add_unit(eq_lit);
-	ctx.add_root(eq_lit);
     }
 
     void solver::internalize_bit2bool(app* n) {

@@ -124,7 +124,7 @@ namespace {
         smt_params m_smt_params_save;
 
         void push_params() override {
-            m_params_save = params_ref();
+            m_params_save.reset();           
             m_params_save.copy(solver::get_params());
             m_smt_params_save = m_smt_params;
         }
@@ -236,8 +236,8 @@ namespace {
             m_context.user_propagate_register_diseq(diseq_eh);
         }
 
-        unsigned user_propagate_register_expr(expr* e) override { 
-            return m_context.user_propagate_register_expr(e);
+        void user_propagate_register_expr(expr* e) override { 
+            m_context.user_propagate_register_expr(e);
         }
 
         void user_propagate_register_created(user_propagator::created_eh_t& c) override {
@@ -316,6 +316,10 @@ namespace {
         expr * get_assertion(unsigned idx) const override {
             SASSERT(idx < get_num_assertions());
             return m_context.get_formula(idx);
+        }
+
+        void get_units_core(expr_ref_vector& units) override {
+            m_context.get_units(units);
         }
 
         expr_ref_vector cube(expr_ref_vector& vars, unsigned cutoff) override {

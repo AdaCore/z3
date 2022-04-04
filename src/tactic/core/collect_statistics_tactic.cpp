@@ -60,7 +60,7 @@ public:
     }
 
     void updt_params(params_ref const & p) override {
-        m_params = p;
+        m_params.append(p);
     }
 
     void collect_param_descrs(param_descrs & r) override {}
@@ -110,7 +110,6 @@ protected:
         void operator()(quantifier * q) {
             m_stats["quantifiers"]++;
             SASSERT(is_app(q->get_expr()));
-            app * body = to_app(q->get_expr());
             switch (q->get_kind()) {
             case forall_k:
                 m_stats["forall-variables"] += q->get_num_decls();
@@ -128,12 +127,10 @@ protected:
             if (m_stats.find("max-quantification-depth") == m_stats.end() ||
                 m_stats["max-quantification-depth"] < m_qdepth)
                 m_stats["max-quantification-depth"] = m_qdepth;
-            this->operator()(body);
             m_qdepth--;
         }
 
         void operator()(app * n) {
-            m_stats["function-applications"]++;
             this->operator()(n->get_decl());
         }
 

@@ -224,8 +224,6 @@ namespace smt {
     };
 
     void theory_bv::add_new_diseq_axiom(theory_var v1, theory_var v2, unsigned idx) {
-        if (!params().m_bv_eq_axioms)
-            return;
         m_prop_diseqs.push_back(bv_diseq(v1, v2, idx));
         ctx.push_trail(push_back_vector<svector<bv_diseq>>(m_prop_diseqs));
     }
@@ -518,6 +516,21 @@ namespace smt {
             m_fixed_var_table.insert(key, v);
         }
     }
+
+    bool theory_bv::is_fixed_propagated(theory_var v, expr_ref& val, literal_vector& lits) {
+        numeral r;
+        enode* n = get_enode(v);
+        if (!get_fixed_value(v, r))
+            return false;
+        val = m_util.mk_numeral(r, n->get_sort());
+        for (literal b : m_bits[v]) {
+            if (ctx.get_assignment(b) == l_false)
+                b.neg();
+            lits.push_back(b);
+        }
+        return true;
+    }
+
 
     bool theory_bv::get_fixed_value(theory_var v, numeral & result)  const {
         result.reset();
@@ -982,7 +995,9 @@ namespace smt {
         process_args(n);                          
         expr_ref_vector arg1_bits(m), arg2_bits(m);
         get_arg_bits(n, 0, arg1_bits);                                                  
-        get_arg_bits(n, 1, arg2_bits);                                                  
+        get_arg_bits(n, 1, arg2_bits);
+        if (ctx.b_internalized(n))
+            return;
         expr_ref le(m);
         if (Signed)
             m_bb.mk_sle(arg1_bits.size(), arg1_bits.data(), arg2_bits.data(), le);
@@ -1306,6 +1321,7 @@ namespace smt {
         else {
             ctx.assign(consequent, mk_bit_eq_justification(v1, v2, consequent, antecedent));
             if (params().m_bv_eq_axioms) {
+
                 literal_vector lits;
                 lits.push_back(~consequent);
                 lits.push_back(antecedent);
@@ -1328,7 +1344,7 @@ namespace smt {
                     ctx.mk_th_axiom(get_id(), lits.size(), lits.data());
                 }
             }
-     
+        
             if (m_wpos[v2] == idx)
                 find_wpos(v2);
             // REMARK: bit_eq_justification is marked as a theory_bv justification.

@@ -301,10 +301,23 @@ UNARY_CMD(pp_cmd, "display", "<term>", "display the given term.", CPK_EXPR, expr
     ctx.regular_stream() << std::endl;
 });
 
-UNARY_CMD(echo_cmd, "echo", "<string>", "display the given string", CPK_STRING, char const *,
-    bool smt2c = ctx.params().m_smtlib2_compliant;
-    ctx.regular_stream() << (smt2c ? "\"" : "") << arg << (smt2c ? "\"" : "") << std::endl;);
+static std::string escape_string(char const* arg) {
+    std::string result;
+    while (*arg) {
+        auto ch = *arg++;
+        if (ch == '"')
+            result.push_back(ch);
+        result.push_back(ch);
+    }
+    return result;
+}
 
+UNARY_CMD(echo_cmd, "echo", "<string>", "display the given string", CPK_STRING, char const *,
+          bool smt2c = ctx.params().m_smtlib2_compliant;
+          if (smt2c) 
+              ctx.regular_stream() << "\"" << escape_string(arg) << "\"" << std::endl;
+          else
+              ctx.regular_stream() << arg << std::endl;);
 
 class set_get_option_cmd : public cmd {
 protected:
@@ -804,9 +817,9 @@ public:
         sort_ref range(ctx.m());
         array_sort_args.push_back(m_f->get_range());
         range = array_sort->instantiate(ctx.pm(), array_sort_args.size(), array_sort_args.data());
-        parameter p[1] = { parameter(m_f) };
+        parameter p(m_f);
         func_decl_ref new_map(ctx.m());
-        new_map = ctx.m().mk_func_decl(get_array_fid(ctx), OP_ARRAY_MAP, 1, p, domain.size(), domain.data(), range.get());
+        new_map = ctx.m().mk_func_decl(get_array_fid(ctx), OP_ARRAY_MAP, 1, &p, domain.size(), domain.data(), range.get());
         if (new_map == 0)
             throw cmd_exception("invalid array map operator");
         ctx.insert(m_name, new_map);

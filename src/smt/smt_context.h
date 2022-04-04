@@ -773,6 +773,7 @@ namespace smt {
 
         void internalize_quantifier(quantifier * q, bool gate_ctx);
 
+        bool m_has_lambda = false;
         void internalize_lambda(quantifier * q);
 
         void internalize_formula_core(app * n, bool gate_ctx);
@@ -1575,7 +1576,7 @@ namespace smt {
 
         void log_stats();
 
-        void copy_user_propagator(context& src);
+        void copy_user_propagator(context& src, bool copy_registered);
 
     public:
         context(ast_manager & m, smt_params & fp, params_ref const & p = params_ref());
@@ -1690,6 +1691,8 @@ namespace smt {
 
         void get_assertions(ptr_vector<expr> & result) { m_asserted_formulas.get_assertions(result); }
 
+        void get_units(expr_ref_vector& result);
+
         /*
          * user-propagator
          */
@@ -1723,10 +1726,10 @@ namespace smt {
             m_user_propagator->register_diseq(diseq_eh);
         }
 
-        unsigned user_propagate_register_expr(expr* e) {
+        void user_propagate_register_expr(expr* e) {
             if (!m_user_propagator) 
                 throw default_exception("user propagator must be initialized");
-            return m_user_propagator->add_expr(e);
+            m_user_propagator->add_expr(e);
         }
 
         void user_propagate_register_created(user_propagator::created_eh_t& r) {
@@ -1746,6 +1749,8 @@ namespace smt {
         void assign_fixed(enode* n, expr* val, literal explain) {
             assign_fixed(n, val, 1, &explain);
         }
+
+        bool is_fixed(enode* n, expr_ref& val, literal_vector& explain);
 
         void display(std::ostream & out) const;
 

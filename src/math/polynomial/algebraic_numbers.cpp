@@ -730,9 +730,9 @@ namespace algebraic_numbers {
             }
             else {
                 algebraic_cell * c = a.to_algebraic();
-                if (!upm().normalize_interval_core(c->m_p_sz, c->m_p, sign_lower(c), bqm(), lower(c), upper(c)))
+                if (!upm().normalize_interval_core(c->m_p_sz, c->m_p, sign_lower(c), bqm(), lower(c), upper(c))) 
                     reset(a);
-                SASSERT(acell_inv(*c));
+                SASSERT(is_zero(a) || acell_inv(*a.to_algebraic()));
             }
         }
 
@@ -2013,6 +2013,11 @@ namespace algebraic_numbers {
             }
             else {
                 algebraic_cell * c = a.to_algebraic();
+                if (c->m_i == 0) {
+                    // undefined
+                    c->m_i = upm().get_root_id(c->m_p_sz, c->m_p, lower(c)) + 1;
+                }
+                SASSERT(c->m_i > 0);
                 return c->m_i;
             }
         }

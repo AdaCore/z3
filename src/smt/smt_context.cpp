@@ -171,7 +171,7 @@ namespace smt {
         dst_ctx.setup_context(dst_ctx.m_fparams.m_auto_config);
         dst_ctx.internalize_assertions();
         
-        dst_ctx.copy_user_propagator(src_ctx);
+        dst_ctx.copy_user_propagator(src_ctx, true);
 
         TRACE("smt_context",
               src_ctx.display(tout);
@@ -193,13 +193,16 @@ namespace smt {
         }
     }
 
-    void context::copy_user_propagator(context& src_ctx) {
+    void context::copy_user_propagator(context& src_ctx, bool copy_registered) {
         if (!src_ctx.m_user_propagator) 
             return;
-        ast_translation tr(src_ctx.m, m, false);
         auto* p = get_theory(m.mk_family_id("user_propagator"));
         m_user_propagator = reinterpret_cast<theory_user_propagator*>(p);
         SASSERT(m_user_propagator);
+        if (!copy_registered) {
+            return;
+        }
+        ast_translation tr(src_ctx.m, m, false);
         for (unsigned i = 0; i < src_ctx.m_user_propagator->get_num_vars(); ++i) {
             app* e = src_ctx.m_user_propagator->get_expr(i);
             m_user_propagator->add_expr(tr(e));
@@ -211,6 +214,7 @@ namespace smt {
         new_ctx->m_is_auxiliary = true;
         new_ctx->set_logic(l == nullptr ? m_setup.get_logic() : *l);
         copy_plugins(*this, *new_ctx);
+        new_ctx->copy_user_propagator(*this, false);
         return new_ctx;
     }
 
@@ -2906,6 +2910,30 @@ namespace smt {
         m_user_propagator->new_fixed_eh(v, val, sz, explain);
     }
 
+    bool context::is_fixed(enode* n, expr_ref& val, literal_vector& explain) {
+        if (m.is_bool(n->get_expr())) {
+            literal lit = get_literal(n->get_expr());
+            switch (get_assignment(lit)) {
+            case l_true:
+                val = m.mk_true(); explain.push_back(lit); return true;
+            case l_false:
+                val = m.mk_false(); explain.push_back(~lit); return true;
+            default:
+                return false;
+            }
+        }
+        theory_var_list * l = n->get_th_var_list();
+        while (l) {
+            theory_id tid = l->get_id();
+            auto* p = m_theories.get_plugin(tid);
+            if (p && p->is_fixed_propagated(l->get_var(), val, explain))
+                return true;
+            l = l->get_next();
+        }
+        return false;
+    }
+
+
     void context::push() {       
         pop_to_base_lvl();
         setup_context(false);
@@ -3707,7 +3735,7 @@ namespace smt {
         if (status == l_false) {
             return false;
         }
-        if (status == l_true && !m_qmanager->has_quantifiers()) {
+        if (status == l_true && !m_qmanager->has_quantifiers() && !m_has_lambda) {
             return false;
         }
         if (status == l_true && m_qmanager->has_quantifiers()) {
@@ -3730,6 +3758,11 @@ namespace smt {
                 break;
             }
         }
+        if (status == l_true && m_has_lambda) {
+            m_last_search_failure = LAMBDAS;
+            status = l_undef;
+            return false;
+        }
         inc_limits();
         if (status == l_true || !m_fparams.m_restart_adaptive || m_agility < m_fparams.m_restart_agility_threshold) {
             SASSERT(!inconsistent());
@@ -3741,13 +3774,13 @@ namespace smt {
                 pop_scope(m_scope_lvl - curr_lvl);
                 SASSERT(at_search_level());
             }
-            for (theory* th : m_theory_set) {
-                if (!inconsistent()) th->restart_eh();
-            }
+            for (theory* th : m_theory_set) 
+                if (!inconsistent()) 
+                    th->restart_eh();
+
             TRACE("mbqi_bug_detail", tout << "before instantiating quantifiers...\n";);
-            if (!inconsistent()) {
+            if (!inconsistent()) 
                 m_qmanager->restart_eh();
-            }
             if (inconsistent()) {
                 VERIFY(!resolve_conflict());
                 status = l_false;
@@ -3969,6 +4002,10 @@ namespace smt {
         TRACE("final_check_step", tout << "RESULT final_check: " << result << "\n";);
         if (result == FC_GIVEUP && f != OK)
             m_last_search_failure = f;
+        if (result == FC_DONE && m_has_lambda) {
+            m_last_search_failure = LAMBDAS;
+            result = FC_GIVEUP;
+        }
         return result;
     }
 
@@ -4579,6 +4616,22 @@ namespace smt {
         get_assignments(result);
         return result;
     }
+
+    void context::get_units(expr_ref_vector& result) {
+        expr_mark visited;
+        for (expr* fml : result)
+            visited.mark(fml);
+        for (literal lit : m_assigned_literals) {
+            if (get_assign_level(lit) > m_base_lvl)
+                break;
+            expr_ref e(m);
+            literal2expr(lit, e);
+            if (visited.is_marked(e))
+                continue;
+            result.push_back(std::move(e));
+        }
+    }
+
 
     failure context::get_last_search_failure() const {
         return m_last_search_failure;

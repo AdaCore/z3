@@ -21,6 +21,7 @@ Notes:
 #include "ast/rewriter/bool_rewriter.h"
 #include "ast/rewriter/arith_rewriter.h"
 #include "ast/rewriter/bv_rewriter.h"
+#include "ast/rewriter/char_rewriter.h"
 #include "ast/rewriter/datatype_rewriter.h"
 #include "ast/rewriter/array_rewriter.h"
 #include "ast/rewriter/fpa_rewriter.h"
@@ -48,6 +49,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     dl_rewriter         m_dl_rw;
     pb_rewriter         m_pb_rw;
     seq_rewriter        m_seq_rw;
+    char_rewriter       m_char_rw;
     recfun_rewriter     m_rec_rw;
     arith_util          m_a_util;
     bv_util             m_bv_util;
@@ -247,6 +249,8 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             return m_pb_rw.mk_app_core(f, num, args, result);
         if (fid == m_seq_rw.get_fid())
             return m_seq_rw.mk_app_core(f, num, args, result);
+        if (fid == m_char_rw.get_fid())
+            return m_char_rw.mk_app_core(f, num, args, result);        
         if (fid == m_rec_rw.get_fid())
             return m_rec_rw.mk_app_core(f, num, args, result);
         return BR_FAILED;
@@ -295,6 +299,8 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     bool is_ite_value_tree(expr * t) {
         if (!m().is_ite(t))
             return false;
+        if (t->get_ref_count() != 1)
+            return false;
         ptr_buffer<app> todo;
         todo.push_back(to_app(t));
         while (!todo.empty()) {
@@ -303,12 +309,12 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             expr * arg1 = ite->get_arg(1);
             expr * arg2 = ite->get_arg(2);
 
-            if (m().is_ite(arg1) && arg1->get_ref_count() == 1) // do not apply on shared terms, since it may blowup
+            if (m().is_ite(arg1) && arg1->get_ref_count() == 1) // do not apply on shared terms, since it may blow up
                 todo.push_back(to_app(arg1));
             else if (!m().is_value(arg1))
                 return false;
 
-            if (m().is_ite(arg2) && arg2->get_ref_count() == 1) // do not apply on shared terms, since it may blowup
+            if (m().is_ite(arg2) && arg2->get_ref_count() == 1) // do not apply on shared terms, since it may blow up
                 todo.push_back(to_app(arg2));
             else if (!m().is_value(arg2))
                 return false;
@@ -319,7 +325,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
     br_status pull_ite(func_decl * f, unsigned num, expr * const * args, expr_ref & result) {
         if (num == 2 && m().is_bool(f->get_range()) && !m().is_bool(args[0])) {
             if (m().is_ite(args[0])) {
-                if (m().is_value(args[1]))
+                if (m().is_value(args[1]) && args[0]->get_ref_count() == 1) 
                     return pull_ite_core<false>(f, to_app(args[0]), to_app(args[1]), result);
                 if (m().is_ite(args[1]) && to_app(args[0])->get_arg(0) == to_app(args[1])->get_arg(0)) {
                     // (p (ite C A1 B1) (ite C A2 B2)) --> (ite (p A1 A2) (p B1 B2))
@@ -329,17 +335,17 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                     return BR_REWRITE2;
                 }
             }
-            if (m().is_ite(args[1]) && m().is_value(args[0]))
+            if (m().is_ite(args[1]) && m().is_value(args[0]) && args[1]->get_ref_count() == 1)
                 return pull_ite_core<true>(f, to_app(args[1]), to_app(args[0]), result);
         }
         family_id fid = f->get_family_id();
         if (num == 2 && (fid == m().get_basic_family_id() || fid == m_a_rw.get_fid() || fid == m_bv_rw.get_fid())) {
             // (f v3 (ite c v1 v2)) --> (ite v (f v3 v1) (f v3 v2))
-            if (m().is_value(args[0]) && is_ite_value_tree(args[1]))
+            if (m().is_value(args[0]) && is_ite_value_tree(args[1])) 
                 return pull_ite_core<true>(f, to_app(args[1]), to_app(args[0]), result);
 
             // (f (ite c v1 v2) v3) --> (ite v (f v1 v3) (f v2 v3))
-            if (m().is_value(args[1]) && is_ite_value_tree(args[0]))
+            if (m().is_value(args[1]) && is_ite_value_tree(args[0])) 
                 return pull_ite_core<false>(f, to_app(args[0]), to_app(args[1]), result);
         }
         return BR_FAILED;
@@ -627,7 +633,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                 count_down_subterm_references(result, reference_map);
 
                 // Any term that was newly introduced by the rewrite step is only referenced within / reachable from the result term.
-                for (auto kv : reference_map) {
+                for (auto const& kv : reference_map) {
                     if (kv.m_value == 0) {
                         m().trace_stream() << "[attach-enode] #" << kv.m_key->get_id() << " 0\n";
                     }
@@ -691,7 +697,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             return;
         if (m_new_subst) {
             m_rep.reset();
-            for (auto kv : m_subst->sub())
+            for (auto const& kv : m_subst->sub())
                 m_rep.insert(kv.m_key, kv.m_value);
             m_new_subst = false;
         }
@@ -800,6 +806,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         m_dl_rw(m),
         m_pb_rw(m),
         m_seq_rw(m),
+        m_char_rw(m),
         m_rec_rw(m),
         m_a_util(m),
         m_bv_util(m),
@@ -859,8 +866,8 @@ ast_manager & th_rewriter::m() const {
 }
 
 void th_rewriter::updt_params(params_ref const & p) {
-    m_params = p;
-    m_imp->cfg().updt_params(p);
+    m_params.append(p);
+    m_imp->cfg().updt_params(m_params);
 }
 
 void th_rewriter::get_param_descrs(param_descrs & r) {
