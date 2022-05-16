@@ -204,6 +204,10 @@ public:
         m_t2->user_propagate_register_created(created_eh);
     }
 
+    void user_propagate_register_decide(user_propagator::decide_eh_t& decide_eh) override {
+        m_t2->user_propagate_register_decide(decide_eh);
+    }
+
 };
 
 tactic * and_then(tactic * t1, tactic * t2) {
@@ -334,6 +338,9 @@ public:
                     return;
                 }
                 catch (tactic_exception &) {
+                    result.reset();
+                }
+                catch (rewriter_exception&) {
                     result.reset();
                 }
                 catch (z3_error & ex) {
@@ -1019,7 +1026,6 @@ public:
     void operator()(goal_ref const & in, goal_ref_buffer& result) override {
         cancel_eh<reslimit> eh(in->m().limit());
         { 
-            // Warning: scoped_timer is not thread safe in Linux.
             scoped_timer timer(m_timeout, &eh);
             m_t->operator()(in, result);            
         }

@@ -996,6 +996,8 @@ typedef enum
         information is exposed. Tools may use the string representation of the
         function declaration to obtain more information.
 
+   - Z3_OP_RECURSIVE: function declared as recursive
+
    - Z3_OP_UNINTERPRETED: kind used for uninterpreted symbols.
 */
 typedef enum {
@@ -1320,6 +1322,7 @@ typedef enum {
     Z3_OP_FPA_BV2RM,
 
     Z3_OP_INTERNAL,
+    Z3_OP_RECURSIVE,
 
     Z3_OP_UNINTERPRETED
 } Z3_decl_kind;
@@ -1434,13 +1437,14 @@ Z3_DECLARE_CLOSURE(Z3_error_handler, void, (Z3_context c, Z3_error_code e));
 /**
    \brief callback functions for user propagator.
 */
-Z3_DECLARE_CLOSURE(Z3_push_eh,    void, (void* ctx));
-Z3_DECLARE_CLOSURE(Z3_pop_eh,     void, (void* ctx, unsigned num_scopes));
+Z3_DECLARE_CLOSURE(Z3_push_eh,    void, (void* ctx, Z3_solver_callback cb));
+Z3_DECLARE_CLOSURE(Z3_pop_eh,     void, (void* ctx, Z3_solver_callback cb, unsigned num_scopes));
 Z3_DECLARE_CLOSURE(Z3_fresh_eh,   void*, (void* ctx, Z3_context new_context));
 Z3_DECLARE_CLOSURE(Z3_fixed_eh,   void, (void* ctx, Z3_solver_callback cb, Z3_ast t, Z3_ast value));
 Z3_DECLARE_CLOSURE(Z3_eq_eh,      void, (void* ctx, Z3_solver_callback cb, Z3_ast s, Z3_ast t));
 Z3_DECLARE_CLOSURE(Z3_final_eh,   void, (void* ctx, Z3_solver_callback cb));
 Z3_DECLARE_CLOSURE(Z3_created_eh, void, (void* ctx, Z3_solver_callback cb, Z3_ast t));
+Z3_DECLARE_CLOSURE(Z3_decide_eh,  void, (void* ctx, Z3_solver_callback cb, Z3_ast*, unsigned*, Z3_lbool*));
 
 
 /**
@@ -2089,6 +2093,19 @@ extern "C" {
                                   Z3_symbol name,
                                   unsigned num_constructors,
                                   Z3_constructor constructors[]);
+
+    /**
+       \brief create a forward reference to a recursive datatype being declared.
+       The forward reference can be used in a nested occurrence: the range of an array
+       or as element sort of a sequence. The forward reference should only be used when
+       used in an accessor for a recursive datatype that gets declared.
+
+       Forward references can replace the use sort references, that are unsigned integers
+       in the \c Z3_mk_constructor call
+
+       def_API('Z3_mk_datatype_sort', SORT, (_in(CONTEXT), _in(SYMBOL)))
+     */
+    Z3_sort Z3_API Z3_mk_datatype_sort(Z3_context c, Z3_symbol name);
 
     /**
        \brief Create list of constructors.
@@ -2910,6 +2927,16 @@ extern "C" {
        def_API('Z3_mk_repeat', AST, (_in(CONTEXT), _in(UINT), _in(AST)))
     */
     Z3_ast Z3_API Z3_mk_repeat(Z3_context c, unsigned i, Z3_ast t1);
+    
+    /**
+       \brief Extracts the bit at position \ccode{i} of a bit-vector and 
+       yields a boolean.
+
+       The node \c t1 must have a bit-vector sort.
+
+       def_API('Z3_mk_bit2bool', AST, (_in(CONTEXT), _in(UINT), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_bit2bool(Z3_context c, unsigned i, Z3_ast t1);
 
     /**
        \brief Shift left.
@@ -3683,7 +3710,7 @@ extern "C" {
 
 
     /**
-       \brief Return index of first occurrence of \c substr in \c s starting from offset \c offset.
+       \brief Return index of the first occurrence of \c substr in \c s starting from offset \c offset.
        If \c s does not contain \c substr, then the value is -1, if \c offset is the length of \c s, then the value is -1 as well.
        The value is -1 if \c offset is negative or larger than the length of \c s.
 
@@ -3692,7 +3719,7 @@ extern "C" {
     Z3_ast Z3_API Z3_mk_seq_index(Z3_context c, Z3_ast s, Z3_ast substr, Z3_ast offset);
 
     /**
-       \brief Return the last occurrence of \c substr in \c s.
+       \brief Return index of the last occurrence of \c substr in \c s.
        If \c s does not contain \c substr, then the value is -1, 
        def_API('Z3_mk_seq_last_index', AST, (_in(CONTEXT), _in(AST), _in(AST)))
     */
@@ -6751,10 +6778,18 @@ extern "C" {
     void Z3_API Z3_solver_propagate_diseq(Z3_context c, Z3_solver s, Z3_eq_eh eq_eh);
 
     /**
-    * \brief register a callback when a new expression with a registered function is used by the solver 
-    * The registered function appears at the top level and is created using \ref Z3_propagate_solver_declare.
+       \brief register a callback when a new expression with a registered function is used by the solver 
+       The registered function appears at the top level and is created using \ref Z3_propagate_solver_declare.
     */
     void Z3_API Z3_solver_propagate_created(Z3_context c, Z3_solver s, Z3_created_eh created_eh);
+    
+    /**
+       \brief register a callback when the solver decides to split on a registered expression.
+       The callback may set the passed expression to another registered expression which will be selected instead.
+       In case the expression is a bitvector the bit to split on is determined by the bit argument and the 
+       truth-value to try first is given by is_pos. In case the truth value is undefined the solver will decide.
+    */
+    void Z3_API Z3_solver_propagate_decide(Z3_context c, Z3_solver s, Z3_decide_eh decide_eh);
 
     /**
         Create uninterpreted function declaration for the user propagator.

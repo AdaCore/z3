@@ -63,9 +63,17 @@ namespace euf {
         }
     };
 
+    void solver::save_model(model_ref& mdl) {
+        m_qmodel = mdl;
+    }
+
     void solver::update_model(model_ref& mdl) {
         TRACE("model", tout << "create model\n";);
-        mdl->reset_eval_cache();
+        if (m_qmodel) {
+            mdl = m_qmodel;
+            return;
+        }
+        mdl->reset_eval_cache();        
         for (auto* mb : m_solvers)
             mb->init_model();
         m_values.reset();
@@ -327,8 +335,8 @@ namespace euf {
                 continue;
             if (!tt && !mdl.is_true(e))
                 continue;
-            IF_VERBOSE(0, display_validation_failure(verbose_stream(), mdl, n););
             CTRACE("euf", first, display_validation_failure(tout, mdl, n););
+            IF_VERBOSE(0, display_validation_failure(verbose_stream(), mdl, n););
             (void)first;
             first = false;
             exit(1);

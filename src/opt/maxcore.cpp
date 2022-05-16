@@ -3,14 +3,17 @@ Copyright (c) 2014 Microsoft Corporation
 
 Module Name:
 
-    maxsres.cpp
+    maxcore.cpp
 
 Abstract:
    
-    MaxRes (weighted) max-sat algorithms:
+    Core based (weighted) max-sat algorithms:
 
-    - mus:     max-sat algorithm by Nina and Bacchus, AAAI 2014.
-    - mus-mss: based on dual refinement of bounds.
+    - mu:        max-sat algorithm by Nina and Bacchus, AAAI 2014.
+    - mus-mss:   based on dual refinement of bounds.
+    - binary:    binary versino of maxres
+    - rc2:       implementaion of rc2 heuristic using cardinality constraints
+
 
     MaxRes is a core-guided approach to maxsat.
     MusMssMaxRes extends the core-guided approach by
@@ -63,16 +66,19 @@ Notes:
 #include "opt/opt_context.h"
 #include "opt/opt_params.hpp"
 #include "opt/opt_lns.h"
+#include "opt/opt_cores.h"
 #include "opt/maxsmt.h"
-#include "opt/maxres.h"
+#include "opt/maxcore.h"
 
 using namespace opt;
 
-class maxres : public maxsmt_solver_base {
+class maxcore : public maxsmt_solver_base {
 public:
     enum strategy_t {
         s_primal,
-        s_primal_dual
+        s_primal_dual,
+        s_primal_binary,
+        s_rc2        
     };
 private:
     struct stats {
@@ -84,10 +90,10 @@ private:
         }
     };
 
-    struct lns_maxres : public lns_context {
-        maxres& i;
-        lns_maxres(maxres& i) :i(i) {}
-        ~lns_maxres() override {}
+    struct lns_maxcore : public lns_context {
+        maxcore& i;
+        lns_maxcore(maxcore& i) :i(i) {}
+        ~lns_maxcore() override {}
         void update_model(model_ref& mdl) override { i.update_assignment(mdl); }
         void relax_cores(vector<expr_ref_vector> const& cores) override { i.relax_cores(cores); }
         rational cost(model& mdl) override { return i.cost(mdl); }
@@ -95,7 +101,6 @@ private:
         expr_ref_vector const& soft() override { return i.m_asms; }
     };
 
-    unsigned         m_index;
     stats            m_stats;
     expr_ref_vector  m_B;
     expr_ref_vector  m_asms;    
@@ -107,50 +112,37 @@ private:
     strategy_t       m_st;
     rational         m_max_upper;    
     model_ref        m_csmodel;
-    lns_maxres       m_lnsctx;
+    lns_maxcore      m_lnsctx;
     lns              m_lns;
-    unsigned         m_correction_set_size;
-    bool             m_found_feasible_optimum;
-    bool             m_hill_climb;             // prefer large weight soft clauses for cores
-    unsigned         m_last_index;             // last index used during hill-climbing
-    bool             m_add_upper_bound_block;  // restrict upper bound with constraint
-    unsigned         m_max_num_cores;          // max number of cores per round.
-    unsigned         m_max_core_size;          // max core size per round.
-    bool             m_maximize_assignment;    // maximize assignment to find MCS
-    unsigned         m_max_correction_set_size;// maximal set of correction set that is tolerated.
-    bool             m_wmax;                   // Block upper bound using wmax
-                                               // this option is disabled if SAT core is used.
-    bool             m_pivot_on_cs;            // prefer smaller correction set to core.
-    bool             m_dump_benchmarks;        // display benchmarks (into wcnf format)
-    bool             m_enable_lns { false };   // enable LNS improvements
-    unsigned         m_lns_conflicts { 1000 }; // number of conflicts used for LNS improvement
-    
+    unsigned         m_correction_set_size = 0;
+    bool             m_found_feasible_optimum = false;
+    bool             m_hill_climb = true;              // prefer large weight soft clauses for cores
+    bool             m_add_upper_bound_block = false;  // restrict upper bound with constraint
+    unsigned         m_max_core_size = 3;              // max core size per round.
+    bool             m_maximize_assignment = false;    // maximize assignment to find MCS
+    unsigned         m_max_correction_set_size = 3;    // maximal set of correction set that is tolerated.
+    bool             m_wmax = false;                   // Block upper bound using wmax
+                                                       // this option is disabled if SAT core is used.
+    bool             m_pivot_on_cs = true;             // prefer smaller correction set to core.
+    bool             m_dump_benchmarks;                // display benchmarks (into wcnf format)
+    bool             m_enable_lns = false;             // enable LNS improvements
+    unsigned         m_lns_conflicts = 1000;           // number of conflicts used for LNS improvement
+    bool             m_enable_core_rotate = false;     // enable core rotation
     std::string      m_trace_id;
     typedef ptr_vector<expr> exprs;
 
 public:
-    maxres(maxsat_context& c, unsigned index, 
-           weights_t& ws, expr_ref_vector const& soft, 
+    maxcore(maxsat_context& c, unsigned index,
+           vector<soft>& soft,
            strategy_t st):
-        maxsmt_solver_base(c, ws, soft),
-        m_index(index), 
+        maxsmt_solver_base(c, soft, index),
         m_B(m), m_asms(m), m_defs(m),
         m_new_core(m),
         m_mus(c.get_solver()),
         m_trail(m),
         m_st(st),
         m_lnsctx(*this),
-        m_lns(s(), m_lnsctx),
-        m_correction_set_size(0),
-        m_found_feasible_optimum(false),
-        m_hill_climb(true),
-        m_last_index(0),
-        m_add_upper_bound_block(false),
-        m_max_num_cores(UINT_MAX),
-        m_max_core_size(3),
-        m_maximize_assignment(false),
-        m_max_correction_set_size(3),
-        m_pivot_on_cs(true)       
+        m_lns(s(), m_lnsctx)
     {
         switch(st) {
         case s_primal:
@@ -159,10 +151,19 @@ public:
         case s_primal_dual:
             m_trace_id = "pd-maxres";
             break;
+        case s_primal_binary:
+            m_trace_id = "maxres-bin";
+            break;
+        case s_rc2:
+            m_trace_id = "rc2";
+            break;
+        default:
+            UNREACHABLE();
+            break;
         }        
     }
 
-    ~maxres() override {}
+    ~maxcore() override {}
 
     bool is_literal(expr* l) {
         return 
@@ -307,17 +308,15 @@ public:
                Give preference to cores that have large minimal values.
             */
             sort_assumptions(asms);              
-            m_last_index = 0;
+            unsigned last_index = 0;
             unsigned index = 0;
-            bool first = index > 0;
             SASSERT(index < asms.size() || asms.empty());
             IF_VERBOSE(10, verbose_stream() << "start hill climb " << index << " asms: " << asms.size() << "\n";);
             while (index < asms.size() && is_sat == l_true) {
-                while (!first && asms.size() > 20*(index - m_last_index) && index < asms.size()) {
+                while (asms.size() > 20*(index - last_index) && index < asms.size()) {
                     index = next_index(asms, index);
                 }
-                first = false;
-                m_last_index = index;
+                last_index = index;
                 is_sat = check_sat(index, asms.data());
             }            
         }
@@ -359,6 +358,8 @@ public:
         m_defs.reset();
         switch(m_st) {
         case s_primal:
+        case s_primal_binary:
+        case s_rc2:
             return mus_solver();
         case s_primal_dual:
             return primal_dual_solver();
@@ -367,16 +368,9 @@ public:
     }
 
     void collect_statistics(statistics& st) const override {
-        st.update("maxres-cores", m_stats.m_num_cores);
-        st.update("maxres-correction-sets", m_stats.m_num_cs);
+        st.update("maxsat-cores", m_stats.m_num_cores);
+        st.update("maxsat-correction-sets", m_stats.m_num_cs);
     }
-
-    struct weighted_core {
-        exprs    m_core;
-        rational m_weight;
-        weighted_core(exprs const& c, rational const& w):
-            m_core(c), m_weight(w) {}
-    };
 
     lbool get_cores(vector<weighted_core>& cores) {
         // assume m_s is unsat.
@@ -415,8 +409,8 @@ public:
             remove_soft(core, m_asms);
             split_core(core);  
 
-            if (core.size()  >= m_max_core_size) break;
-            if (cores.size() >= m_max_num_cores) break;
+            if (core.size() >= m_max_core_size)
+                break;
 
             is_sat = check_sat_hill_climb(m_asms);            
         }
@@ -448,8 +442,8 @@ public:
     }
 
     struct compare_asm {
-        maxres& mr;
-        compare_asm(maxres& mr):mr(mr) {}
+        maxcore& mr;
+        compare_asm(maxcore& mr):mr(mr) {}
         bool operator()(expr* a, expr* b) const {
             rational w1 = mr.get_weight(a);
             rational w2 = mr.get_weight(b);
@@ -492,6 +486,9 @@ public:
     }
 
     lbool process_unsat() {
+        if (m_enable_core_rotate) 
+            return core_rotate();
+
         vector<weighted_core> cores;
         lbool is_sat = get_cores(cores);
         if (is_sat != l_true) {
@@ -506,18 +503,31 @@ public:
         }
     }
 
+    lbool core_rotate() {
+        cores find_cores(s(), m_lnsctx);
+        find_cores.updt_params(m_params);
+        vector<weighted_core> const& cores = find_cores();
+        for (auto const & [core, w] : cores) {
+            if (core.empty())
+                return l_false;
+            remove_soft(core, m_asms);
+            split_core(core);
+            process_unsat(core, w);
+        }
+        return l_true;
+    }
+
+    
     unsigned max_core_size(vector<exprs> const& cores) {
         unsigned result = 0;
-        for (auto const& c : cores) {
+        for (auto const& c : cores) 
             result = std::max(c.size(), result);
-        }
         return result;
     }
 
     void process_unsat(vector<weighted_core> const& cores) {
-        for (auto const & c : cores) {
+        for (auto const & c : cores) 
             process_unsat(c.m_core, c.m_weight);
-        }
         improve_model(m_model);
     }
 
@@ -534,8 +544,18 @@ public:
         expr_ref fml(m);
         SASSERT(!core.empty());
         TRACE("opt", display_vec(tout << "minimized core: ", core););
-        IF_VERBOSE(10, display_vec(verbose_stream() << "core: ", core););        
-        max_resolve(core, w);
+        IF_VERBOSE(10, display_vec(verbose_stream() << "core: ", core););
+        switch (m_st) {
+        case strategy_t::s_primal_binary:
+            bin_max_resolve(core, w);
+            break;
+        case strategy_t::s_rc2:
+            max_resolve_rc2(core, w);
+            break;
+        default:
+            max_resolve(core, w);
+            break;
+        }
         fml = mk_not(m, mk_and(m, core.size(), core.data()));
         add(fml);
         // save small cores such that lex-combinations of maxres can reuse these cores.
@@ -551,7 +571,8 @@ public:
             --m_correction_set_size;
         }
         trace();
-        if (m_c.num_objectives() == 1 && m_pivot_on_cs && m_csmodel.get() && m_correction_set_size < core.size()) {
+        bool no_hidden_soft = (m_st == s_primal_dual || m_st == s_primal || m_st == s_primal_binary);
+        if (no_hidden_soft && m_c.num_objectives() == 1 && m_pivot_on_cs && m_csmodel.get() && m_correction_set_size < core.size()) {
             exprs cs;
             get_current_correction_set(m_csmodel.get(), cs);
             m_correction_set_size = cs.size();
@@ -579,25 +600,21 @@ public:
         else {
             w = m_mus.get_best_model(mdl);
         }
-        if (mdl.get() && w < m_upper) {
+        if (mdl.get() && w < m_upper) 
             update_assignment(mdl);
-        }
         return nullptr != mdl.get();
     }
 
     lbool minimize_core(expr_ref_vector& core) {
-        if (core.empty()) {
+        if (core.empty()) 
             return l_true;
-        }
-        if (m_c.sat_enabled()) {
+        if (m_c.sat_enabled()) 
             return l_true;
-        }
         m_mus.reset();
         m_mus.add_soft(core.size(), core.data());
         lbool is_sat = m_mus.get_mus(m_new_core);
-        if (is_sat != l_true) {
+        if (is_sat != l_true) 
             return is_sat;
-        }
         core.reset();
         core.append(m_new_core);
         return l_true;
@@ -611,9 +628,8 @@ public:
         if (core.empty()) return rational(0);
         // find the minimal weight:
         rational w = get_weight(core[0]);
-        for (unsigned i = 1; i < core.size(); ++i) {
+        for (unsigned i = 1; i < core.size(); ++i) 
             w = std::min(w, get_weight(core[i]));
-        }
         return w;
     }
 
@@ -646,10 +662,10 @@ public:
     }
 
     void display(std::ostream& out) {
-        for (expr * a : m_asms) {
+        for (expr * a : m_asms) 
             out << mk_pp(a, m) << " : " << get_weight(a) << "\n";
-        }
     }
+
 
     void max_resolve(exprs const& core, rational const& w) {
         SASSERT(!core.empty());
@@ -700,6 +716,96 @@ public:
             m_defs.push_back(fml);
         }
     }
+
+
+    void bin_max_resolve(exprs const& _core, rational w) {
+        expr_ref_vector core(m, _core.size(), _core.data());
+        expr_ref fml(m), cls(m);
+        for (unsigned i = 0; i + 1 < core.size(); i += 2) {
+            expr* a = core.get(i);
+            expr* b = core.get(i + 1);
+            expr* u = mk_fresh_bool("u");
+            expr* v = mk_fresh_bool("v");
+            // u = a or b
+            // v = a and b
+            cls = m.mk_or(a, b);
+            fml = m.mk_implies(u, cls);
+            add(fml);
+            update_model(u, cls);
+            m_defs.push_back(fml);
+            cls = m.mk_and(a, b);
+            fml = m.mk_implies(v, cls);
+            add(fml);
+            update_model(v, cls);
+            m_defs.push_back(fml);
+            new_assumption(u, w);
+            core.push_back(v);
+        }
+        s().assert_expr(m.mk_not(core.back()));
+    }
+
+
+
+
+    // rc2, using cardinality constraints
+
+    // create and cache at-most k constraints
+    struct bound_info {
+        ptr_vector<expr> es;
+        unsigned         k = 0;
+        rational         weight;
+        bound_info() {}
+        bound_info(ptr_vector<expr> const& es, unsigned k, rational const& weight):
+            es(es), k(k), weight(weight) {}
+        bound_info(expr_ref_vector const& es, unsigned k, rational const& weight):
+            es(es.size(), es.data()), k(k), weight(weight) {}
+    };
+    
+    obj_map<expr, expr*>      m_at_mostk;
+    obj_map<expr, bound_info> m_bounds;
+    rational                  m_unfold_upper;
+
+    expr* mk_atmost(expr_ref_vector const& es, unsigned bound, rational const& weight) {
+        pb_util pb(m);
+        expr_ref am(pb.mk_at_most_k(es, bound), m);
+        expr* r = nullptr;
+        if (m_at_mostk.find(am, r)) 
+            return r;
+        r = mk_fresh_bool("r");
+        m_trail.push_back(am);
+        bound_info b(es, bound, weight);
+        m_at_mostk.insert(am, r);
+        m_bounds.insert(r, b);
+        expr_ref fml(m);
+        fml = m.mk_implies(r, am);
+        add(fml);
+        m_defs.push_back(fml);
+        update_model(r, am);
+        return r;
+    }
+
+    void max_resolve_rc2(exprs const& core, rational weight) {
+        expr_ref_vector ncore(m);
+        for (expr* f : core) {
+            ncore.push_back(mk_not(m, f));
+            bound_info b;
+            if (!m_bounds.find(f, b))
+                continue;
+            m_bounds.remove(f);
+            if (b.k + 1 >= b.es.size())
+                continue;
+            expr_ref_vector es(m, b.es.size(), b.es.data());
+            expr* amk = mk_atmost(es, b.k + 1, b.weight);
+            new_assumption(amk, b.weight);
+            m_unfold_upper -= b.weight;
+        }
+        if (core.size() > 1) {
+            m_unfold_upper += rational(core.size() - 2) * weight;
+            expr* am = mk_atmost(ncore, 1, weight);
+            new_assumption(am, weight);
+        }
+    }
+    
 
     // cs is a correction set (a complement of a (maximal) satisfying assignment).
     void cs_max_resolve(exprs const& cs, rational const& w) {
@@ -780,7 +886,7 @@ public:
     }
 
     rational cost(model& mdl) {
-        rational upper(0);
+        rational upper = m_unfold_upper;
         for (soft& s : m_soft) 
             if (!mdl.is_true(s.s)) 
                 upper += s.weight;                    
@@ -791,11 +897,10 @@ public:
         improve_model(mdl);
         mdl->set_model_completion(true);
         unsigned correction_set_size = 0;
-        for (expr* a : m_asms) {
-            if (mdl->is_false(a)) {
+        for (expr* a : m_asms) 
+            if (mdl->is_false(a)) 
                 ++correction_set_size;
-            }
-        }
+
         if (!m_csmodel.get() || correction_set_size < m_correction_set_size) {
             m_csmodel = mdl;
             m_correction_set_size = correction_set_size;
@@ -810,22 +915,22 @@ public:
             return;
         }
 
-        if (!m_c.verify_model(m_index, mdl.get(), upper)) {
+        if (!m_c.verify_model(m_index, mdl.get(), upper)) 
             return;
-        }
 
+        unsigned num_assertions = s().get_num_assertions();
         m_model = mdl;
         m_c.model_updated(mdl.get());
 
         TRACE("opt", tout << "updated upper: " << upper << "\n";);
 
-        for (soft& s : m_soft) {
+        for (soft& s : m_soft) 
             s.set_value(m_model->is_true(s.s));
-        }
        
         verify_assignment();
 
-        m_upper = upper;
+        if (num_assertions == s().get_num_assertions())
+            m_upper = upper;
         
         trace();
 
@@ -862,7 +967,6 @@ public:
         opt_params p(_p);
         m_hill_climb =              p.maxres_hill_climb();
         m_add_upper_bound_block =   p.maxres_add_upper_bound_block();
-        m_max_num_cores =           p.maxres_max_num_cores();
         m_max_core_size =           p.maxres_max_core_size();
         m_maximize_assignment =     p.maxres_maximize_assignment();
         m_max_correction_set_size = p.maxres_max_correction_set_size();
@@ -870,29 +974,25 @@ public:
         m_wmax =                    p.maxres_wmax();
         m_dump_benchmarks =         p.dump_benchmarks();
         m_enable_lns =              p.enable_lns(); 
+        m_enable_core_rotate =      p.enable_core_rotate(); 
         m_lns_conflicts =           p.lns_conflicts();
 	if (m_c.num_objectives() > 1)
 	  m_add_upper_bound_block = false;
     }
 
     lbool init_local() {
-        m_lower.reset();
         m_trail.reset();
         lbool is_sat = l_true;
-        obj_map<expr, rational> new_soft;
-        is_sat = find_mutexes(new_soft);
-        if (is_sat != l_true) {
-            return is_sat;
-        }
-        for (auto const& kv : new_soft) {
-            add_soft(kv.m_key, kv.m_value);
-        }
+        for (auto const& [e, w, t] : m_soft)
+            add_soft(e, w);
         m_max_upper = m_upper;
         m_found_feasible_optimum = false;
-        m_last_index = 0;
         add_upper_bound_block();
         m_csmodel = nullptr;
         m_correction_set_size = 0;
+        m_unfold_upper = 0;
+        m_at_mostk.reset();
+        m_bounds.reset();
         return l_true;
     }
 
@@ -900,8 +1000,7 @@ public:
         if (m_found_feasible_optimum) {
             add(m_defs);
             add(m_asms);
-            TRACE("opt", tout << "Committing feasible solution\ndefs:" << m_defs << "\nasms:" << m_asms << "\n";);
-
+            TRACE("opt", tout << "Committing feasible solution\ndefs:" << m_defs << "\nasms:" << m_asms << "\n");
         }
         // else: there is only a single assignment to these soft constraints.
     }
@@ -954,12 +1053,24 @@ public:
 };
 
 opt::maxsmt_solver_base* opt::mk_maxres(
-    maxsat_context& c, unsigned id, weights_t& ws, expr_ref_vector const& soft) {
-    return alloc(maxres, c, id, ws, soft, maxres::s_primal);
+    maxsat_context& c, unsigned id, vector<soft>& soft) {
+    return alloc(maxcore, c, id, soft, maxcore::s_primal);
 }
 
-opt::maxsmt_solver_base* opt::mk_primal_dual_maxres(
-    maxsat_context& c, unsigned id, weights_t& ws, expr_ref_vector const& soft) {
-    return alloc(maxres, c, id, ws, soft, maxres::s_primal_dual);
+opt::maxsmt_solver_base* opt::mk_rc2(
+    maxsat_context& c, unsigned id, vector<soft>& soft) {
+    return alloc(maxcore, c, id, soft, maxcore::s_rc2);
 }
+
+opt::maxsmt_solver_base* opt::mk_maxres_binary(
+    maxsat_context& c, unsigned id, vector<soft>& soft) {
+    return alloc(maxcore, c, id, soft, maxcore::s_primal_binary);
+}
+
+
+opt::maxsmt_solver_base* opt::mk_primal_dual_maxres(
+    maxsat_context& c, unsigned id, vector<soft>& soft) {
+    return alloc(maxcore, c, id, soft, maxcore::s_primal_dual);
+}
+
 

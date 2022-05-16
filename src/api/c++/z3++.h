@@ -1359,6 +1359,7 @@ namespace z3 {
 
         friend expr operator~(expr const & a);
         expr extract(unsigned hi, unsigned lo) const { Z3_ast r = Z3_mk_extract(ctx(), hi, lo, *this); ctx().check_error(); return expr(ctx(), r); }
+        expr bit2bool(unsigned i) const { Z3_ast r = Z3_mk_bit2bool(ctx(), i, *this); ctx().check_error(); return expr(ctx(), r); }
         unsigned lo() const { assert (is_app() && Z3_get_decl_num_parameters(ctx(), decl()) == 2); return static_cast<unsigned>(Z3_get_decl_int_parameter(ctx(), decl(), 1)); }
         unsigned hi() const { assert (is_app() && Z3_get_decl_num_parameters(ctx(), decl()) == 2); return static_cast<unsigned>(Z3_get_decl_int_parameter(ctx(), decl(), 0)); }
 
@@ -2333,7 +2334,7 @@ namespace z3 {
 
     inline expr pble(expr_vector const& es, int const* coeffs, int bound) {
         assert(es.size() > 0);
-        context& ctx = es[0].ctx();
+        context& ctx = es[0u].ctx();
         array<Z3_ast> _es(es);
         Z3_ast r = Z3_mk_pble(ctx, _es.size(), _es.ptr(), coeffs, bound);
         ctx.check_error();
@@ -2341,7 +2342,7 @@ namespace z3 {
     }
     inline expr pbge(expr_vector const& es, int const* coeffs, int bound) {
         assert(es.size() > 0);
-        context& ctx = es[0].ctx();
+        context& ctx = es[0u].ctx();
         array<Z3_ast> _es(es);
         Z3_ast r = Z3_mk_pbge(ctx, _es.size(), _es.ptr(), coeffs, bound);
         ctx.check_error();
@@ -2349,7 +2350,7 @@ namespace z3 {
     }
     inline expr pbeq(expr_vector const& es, int const* coeffs, int bound) {
         assert(es.size() > 0);
-        context& ctx = es[0].ctx();
+        context& ctx = es[0u].ctx();
         array<Z3_ast> _es(es);
         Z3_ast r = Z3_mk_pbeq(ctx, _es.size(), _es.ptr(), coeffs, bound);
         ctx.check_error();
@@ -2357,7 +2358,7 @@ namespace z3 {
     }
     inline expr atmost(expr_vector const& es, unsigned bound) {
         assert(es.size() > 0);
-        context& ctx = es[0].ctx();
+        context& ctx = es[0u].ctx();
         array<Z3_ast> _es(es);
         Z3_ast r = Z3_mk_atmost(ctx, _es.size(), _es.ptr(), bound);
         ctx.check_error();
@@ -2365,7 +2366,7 @@ namespace z3 {
     }
     inline expr atleast(expr_vector const& es, unsigned bound) {
         assert(es.size() > 0);
-        context& ctx = es[0].ctx();
+        context& ctx = es[0u].ctx();
         array<Z3_ast> _es(es);
         Z3_ast r = Z3_mk_atleast(ctx, _es.size(), _es.ptr(), bound);
         ctx.check_error();
@@ -2373,7 +2374,7 @@ namespace z3 {
     }
     inline expr sum(expr_vector const& args) {
         assert(args.size() > 0);
-        context& ctx = args[0].ctx();
+        context& ctx = args[0u].ctx();
         array<Z3_ast> _args(args);
         Z3_ast r = Z3_mk_add(ctx, _args.size(), _args.ptr());
         ctx.check_error();
@@ -2382,7 +2383,7 @@ namespace z3 {
 
     inline expr distinct(expr_vector const& args) {
         assert(args.size() > 0);
-        context& ctx = args[0].ctx();
+        context& ctx = args[0u].ctx();
         array<Z3_ast> _args(args);
         Z3_ast r = Z3_mk_distinct(ctx, _args.size(), _args.ptr());
         ctx.check_error();
@@ -2411,14 +2412,14 @@ namespace z3 {
         Z3_ast r;
         assert(args.size() > 0);
         if (args.size() == 1) {
-            return args[0];
+            return args[0u];
         }
-        context& ctx = args[0].ctx();
+        context& ctx = args[0u].ctx();
         array<Z3_ast> _args(args);
-        if (Z3_is_seq_sort(ctx, args[0].get_sort())) {
+        if (Z3_is_seq_sort(ctx, args[0u].get_sort())) {
             r = Z3_mk_seq_concat(ctx, _args.size(), _args.ptr());
         }
-        else if (Z3_is_re_sort(ctx, args[0].get_sort())) {
+        else if (Z3_is_re_sort(ctx, args[0u].get_sort())) {
             r = Z3_mk_re_concat(ctx, _args.size(), _args.ptr());
         }
         else {
@@ -2448,7 +2449,7 @@ namespace z3 {
     inline expr mk_xor(expr_vector const& args) {
         if (args.empty())
             return args.ctx().bool_val(false);
-        expr r = args[0];
+        expr r = args[0u];
         for (unsigned i = 1; i < args.size(); ++i)
             r = r ^ args[i];
         return r;
@@ -2771,7 +2772,7 @@ namespace z3 {
                 assert(!m_end && !m_empty);
                 m_cube = m_solver.cube(m_vars, m_cutoff);
                 m_cutoff = 0xFFFFFFFF;
-                if (m_cube.size() == 1 && m_cube[0].is_false()) {
+                if (m_cube.size() == 1 && m_cube[0u].is_false()) {
                     m_cube = z3::expr_vector(m_solver.ctx());
                     m_end = true;
                 }
@@ -3005,7 +3006,7 @@ namespace z3 {
         }
         array<Z3_tactic> buffer(n);
         for (unsigned i = 0; i < n; ++i) buffer[i] = tactics[i];
-        return tactic(tactics[0].ctx(), Z3_tactic_par_or(tactics[0].ctx(), n, buffer.ptr()));
+        return tactic(tactics[0u].ctx(), Z3_tactic_par_or(tactics[0u].ctx(), n, buffer.ptr()));
     }
 
     inline tactic par_and_then(tactic const & t1, tactic const & t2) {
@@ -3804,7 +3805,7 @@ namespace z3 {
     }
     inline expr re_intersect(expr_vector const& args) {
         assert(args.size() > 0);
-        context& ctx = args[0].ctx();
+        context& ctx = args[0u].ctx();
         array<Z3_ast> _args(args);
         Z3_ast r = Z3_mk_re_intersect(ctx, _args.size(), _args.ptr());
         ctx.check_error();
@@ -3943,11 +3944,13 @@ namespace z3 {
         typedef std::function<void(void)> final_eh_t;
         typedef std::function<void(expr const&, expr const&)> eq_eh_t;
         typedef std::function<void(expr const&)> created_eh_t;
+        typedef std::function<void(expr&, unsigned&, Z3_lbool&)> decide_eh_t;
 
         final_eh_t m_final_eh;
         eq_eh_t    m_eq_eh;
         fixed_eh_t m_fixed_eh;
         created_eh_t m_created_eh;
+        decide_eh_t m_decide_eh;
         solver*    s;
         context*   c;
         std::vector<z3::context*> subcontexts;
@@ -3964,18 +3967,23 @@ namespace z3 {
             }
         };
 
-        static void push_eh(void* p) {
+        static void push_eh(void* _p, Z3_solver_callback cb) {
+            user_propagator_base* p = static_cast<user_propagator_base*>(_p);
+            scoped_cb _cb(p, cb);
             static_cast<user_propagator_base*>(p)->push();
         }
 
-        static void pop_eh(void* p, unsigned num_scopes) {
-            static_cast<user_propagator_base*>(p)->pop(num_scopes);
+        static void pop_eh(void* _p, Z3_solver_callback cb, unsigned num_scopes) {
+            user_propagator_base* p = static_cast<user_propagator_base*>(_p);
+            scoped_cb _cb(p, cb);
+            static_cast<user_propagator_base*>(_p)->pop(num_scopes);
         }
 
-        static void* fresh_eh(void* p, Z3_context ctx) {
+        static void* fresh_eh(void* _p, Z3_context ctx) {
+            user_propagator_base* p = static_cast<user_propagator_base*>(_p);
             context* c = new context(ctx);
-            static_cast<user_propagator_base*>(p)->subcontexts.push_back(c);
-            return static_cast<user_propagator_base*>(p)->fresh(*c);
+            p->subcontexts.push_back(c);
+            return p->fresh(*c);
         }
 
         static void fixed_eh(void* _p, Z3_solver_callback cb, Z3_ast _var, Z3_ast _value) {
@@ -4004,8 +4012,16 @@ namespace z3 {
             expr e(p->ctx(), _e);
             p->m_created_eh(e);
         }
-
-
+        
+        static void decide_eh(void* _p, Z3_solver_callback cb, Z3_ast* _val, unsigned* bit, Z3_lbool* is_pos) {
+            user_propagator_base* p = static_cast<user_propagator_base*>(_p);
+            scoped_cb _cb(p, cb);
+            expr val(p->ctx(), *_val);
+            p->m_decide_eh(val, *bit, *is_pos);
+            // TBD: life time of val is within the scope of this callback.
+            *_val = val;
+        }
+        
     public:
         user_propagator_base(context& c) : s(nullptr), c(&c) {}
         
@@ -4114,6 +4130,22 @@ namespace z3 {
                 Z3_solver_propagate_created(ctx(), *s, created_eh);
             }
         }
+        
+        void register_decide(decide_eh_t& c) {
+            m_decide_eh = c;
+            if (s) {
+                Z3_solver_propagate_decide(ctx(), *s, decide_eh);
+            }
+        }
+
+        void register_decide() {
+            m_decide_eh = [this](expr& val, unsigned& bit, Z3_lbool& is_pos) {
+                decide(val, bit, is_pos);
+            };
+            if (s) {
+                Z3_solver_propagate_decide(ctx(), *s, decide_eh);
+            }
+        }
 
         virtual void fixed(expr const& /*id*/, expr const& /*e*/) { }
 
@@ -4122,6 +4154,8 @@ namespace z3 {
         virtual void final() { }
 
         virtual void created(expr const& /*e*/) {}
+        
+        virtual void decide(expr& /*val*/, unsigned& /*bit*/, Z3_lbool& /*is_pos*/) {}
 
         /**
            \brief tracks \c e by a unique identifier that is returned by the call.

@@ -1101,6 +1101,28 @@ class ExprRef(AstRef):
         else:
             return []
 
+    def from_string(self, s):
+        pass
+
+    def serialize(self):
+        s = Solver()
+        f = Function('F', self.sort(), BoolSort(self.ctx))
+        s.add(f(self))
+        return s.sexpr()
+
+def deserialize(st):
+    """inverse function to the serialize method on ExprRef.
+    It is made available to make it easier for users to serialize expressions back and forth between
+    strings. Solvers can be serialized using the 'sexpr()' method.
+    """
+    s = Solver()
+    s.from_string(st)
+    if len(s.assertions()) != 1:
+        raise Z3Exception("single assertion expected")
+    fml = s.assertions()[0]
+    if fml.num_args() != 1:
+        raise Z3Exception("dummy function 'F' expected")
+    return fml.arg(0)
 
 def _to_expr_ref(a, ctx):
     if isinstance(a, Pattern):
@@ -2278,6 +2300,9 @@ class ArithSortRef(SortRef):
         False
         """
         return self.kind() == Z3_INT_SORT
+
+    def is_bool(self):
+        return False
 
     def subsort(self, other):
         """Return `True` if `self` is a subsort of `other`."""
@@ -6591,6 +6616,19 @@ class ModelRef(Z3PPObject):
         """Update the interpretation of a constant"""
         if is_expr(x):
             x = x.decl()
+        if is_func_decl(x) and x.arity() != 0 and isinstance(value, FuncInterp):
+            fi1 = value.f
+            fi2 = Z3_add_func_interp(x.ctx_ref(), self.model, x.ast, value.else_value().ast);
+            fi2 = FuncInterp(fi2, x.ctx)
+            for i in range(value.num_entries()):
+                e = value.entry(i)
+                n = Z3_func_entry_get_num_args(x.ctx_ref(), e.entry)
+                v = AstVector()
+                for j in range(n):
+                    v.push(entry.arg_value(j))                    
+                val = Z3_func_entry_get_value(x.ctx_ref(), e.entry)
+                Z3_func_interp_add_entry(x.ctx_ref(), fi2.f, v.vector, val)
+            return
         if not is_func_decl(x) or x.arity() != 0:
             raise Z3Exception("Expecting 0-ary function or constant expression")
         value = _py2expr(value)
@@ -11237,12 +11275,16 @@ def ensure_prop_closures():
         _prop_closures = PropClosures()
 
 
-def user_prop_push(ctx):
-    _prop_closures.get(ctx).push()
+def user_prop_push(ctx, cb):
+    prop = _prop_closures.get(ctx)
+    prop.cb = cb
+    prop.push()
 
 
-def user_prop_pop(ctx, num_scopes):
-    _prop_closures.get(ctx).pop(num_scopes)
+def user_prop_pop(ctx, cb, num_scopes):
+    prop = _prop_closures.get(ctx)
+    prop.cb = cb
+    prop.pop(num_scopes)
 
 
 def user_prop_fresh(id, ctx):

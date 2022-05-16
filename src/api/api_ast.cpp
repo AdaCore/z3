@@ -164,7 +164,7 @@ extern "C" {
             return;
         }
         recfun_replace replace(m);
-        p.set_definition(replace, pd, true, n, _vars.data(), abs_body);
+        p.set_definition(replace, pd, false, n, _vars.data(), abs_body);
         Z3_CATCH;
     }
 
@@ -355,7 +355,7 @@ extern "C" {
             return mk_c(c)->mk_external_string(buffer.str());
         }
         else {
-            return mk_c(c)->mk_external_string(_s.bare_str());
+            return mk_c(c)->mk_external_string(_s.str());
         }
         Z3_CATCH_RETURN("");
     }
@@ -1328,6 +1328,9 @@ extern "C" {
             default: return Z3_OP_INTERNAL;
             }
         }
+
+        if (mk_c(c)->recfun().get_family_id() == _d->get_family_id())
+            return Z3_OP_RECURSIVE;
 
         return Z3_OP_UNINTERPRETED;
         Z3_CATCH_RETURN(Z3_OP_UNINTERPRETED);

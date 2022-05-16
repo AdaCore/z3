@@ -29,6 +29,7 @@ Revision History:
 #include "ast/proofs/proof_checker.h"
 #include "ast/ast_util.h"
 #include "ast/well_sorted.h"
+#include "model/model_params.hpp"
 #include "model/model.h"
 #include "model/model_pp.h"
 #include "smt/smt_context.h"
@@ -205,7 +206,7 @@ namespace smt {
         ast_translation tr(src_ctx.m, m, false);
         for (unsigned i = 0; i < src_ctx.m_user_propagator->get_num_vars(); ++i) {
             app* e = src_ctx.m_user_propagator->get_expr(i);
-            m_user_propagator->add_expr(tr(e));
+            m_user_propagator->add_expr(tr(e), true);
         }
     }
 
@@ -1766,6 +1767,70 @@ namespace smt {
     }
 
     /**
+       \brief Returns a truth value for the given variable
+    */
+    bool context::guess(bool_var var, lbool phase) {
+        if (is_quantifier(m_bool_var2expr[var])) {
+            // Overriding any decision on how to assign the quantifier.
+            // assigning a quantifier to false is equivalent to make it irrelevant.
+            phase = l_false;
+        }
+        literal l(var, false);
+
+        if (phase != l_undef)
+            return phase == l_true;
+
+        bool_var_data & d = m_bdata[var];
+        if (d.try_true_first())
+            return true;
+        switch (m_fparams.m_phase_selection) {
+        case PS_THEORY:
+            if (m_phase_cache_on && d.m_phase_available) {
+                return m_bdata[var].m_phase;
+            }
+            if (!m_phase_cache_on && d.is_theory_atom()) {
+                theory * th = m_theories.get_plugin(d.get_theory());
+                lbool th_phase = th->get_phase(var);
+                if (th_phase != l_undef) {
+                    return th_phase == l_true;
+                }
+            }
+            if (track_occs()) {
+                if (m_lit_occs[l.index()] == 0) {
+                    return false;
+                }
+                if (m_lit_occs[(~l).index()] == 0) {
+                    return true;
+                }
+            }
+            return m_phase_default;
+        case PS_CACHING:
+        case PS_CACHING_CONSERVATIVE:
+        case PS_CACHING_CONSERVATIVE2:
+            if (m_phase_cache_on && d.m_phase_available) {
+                TRACE("phase_selection", tout << "using cached value, is_pos: " << m_bdata[var].m_phase << ", var: p" << var << "\n";);
+                return m_bdata[var].m_phase;
+            }
+            else {
+                TRACE("phase_selection", tout << "setting to false\n";);
+                return m_phase_default;
+            }
+        case PS_ALWAYS_FALSE:
+            return false;
+        case PS_ALWAYS_TRUE:
+            return true;
+        case PS_RANDOM:
+            return m_random() % 2 == 0;
+        case PS_OCCURRENCE: {
+            return m_lit_occs[l.index()] > m_lit_occs[(~l).index()];
+        }
+        default:
+            UNREACHABLE();
+            return false;
+        }
+    }
+
+    /**
        \brief Execute next case split, return false if there are no
        more case splits to be performed.
     */
@@ -1806,81 +1871,15 @@ namespace smt {
         TRACE("decide", tout << "splitting, lvl: " << m_scope_lvl << "\n";);
 
         TRACE("decide_detail", tout << mk_pp(bool_var2expr(var), m) << "\n";);
-
-        bool is_pos;
-
-        if (is_quantifier(m_bool_var2expr[var])) {
-            // Overriding any decision on how to assign the quantifier.
-            // assigning a quantifier to false is equivalent to make it irrelevant.
-            phase = l_false;
-        }
+        
+        bool is_pos = guess(var, phase);
         literal l(var, false);
 
-        if (phase != l_undef) {
-            is_pos = phase == l_true;
-        }
-        else {
-            bool_var_data & d = m_bdata[var];
-            if (d.try_true_first()) {
-                is_pos = true;
-            }
-            else {
-                switch (m_fparams.m_phase_selection) {
-                case PS_THEORY: 
-                    if (m_phase_cache_on && d.m_phase_available) {
-                        is_pos = m_bdata[var].m_phase;
-                        break;
-                    }
-                    if (!m_phase_cache_on && d.is_theory_atom()) {
-                        theory * th = m_theories.get_plugin(d.get_theory());
-                        lbool th_phase = th->get_phase(var);
-                        if (th_phase != l_undef) {
-                            is_pos = th_phase == l_true;
-                            break;
-                        }
-                    }
-                    if (track_occs()) {
-                        if (m_lit_occs[l.index()] == 0) {
-                            is_pos = false;
-                            break;
-                        }
-                        if (m_lit_occs[(~l).index()] == 0) {
-                            is_pos = true;
-                            break;
-                        }
-                    }
-                    is_pos = m_phase_default;                    
-                    break;
-                case PS_CACHING:
-                case PS_CACHING_CONSERVATIVE:
-                case PS_CACHING_CONSERVATIVE2:
-                    if (m_phase_cache_on && d.m_phase_available) {
-                        TRACE("phase_selection", tout << "using cached value, is_pos: " << m_bdata[var].m_phase << ", var: p" << var << "\n";);
-                        is_pos = m_bdata[var].m_phase;
-                    }
-                    else {
-                        TRACE("phase_selection", tout << "setting to false\n";);
-                        is_pos = m_phase_default;
-                    }
-                    break;
-                case PS_ALWAYS_FALSE:
-                    is_pos = false;
-                    break;
-                case PS_ALWAYS_TRUE:
-                    is_pos = true;
-                    break;
-                case PS_RANDOM:
-                    is_pos = (m_random() % 2 == 0);
-                    break;
-                case PS_OCCURRENCE: {
-                    is_pos = m_lit_occs[l.index()] > m_lit_occs[(~l).index()];
-                    break;
-                }
-                default:
-                    is_pos = false;
-                    UNREACHABLE();
-                }
-            }
+        bool_var original_choice = var;
+
+        if (decide_user_interference(var, is_pos)) {
+            m_case_split_queue->unassign_var_eh(original_choice);
+            l = literal(var, false);
         }
 
         if (!is_pos) l.neg();
@@ -1888,7 +1887,7 @@ namespace smt {
         assign(l, b_justification::mk_axiom(), true);
         return true;
     }
-
+    
     /**
        \brief Update counter that is used to enable/disable phase caching.
     */
@@ -2905,6 +2904,14 @@ namespace smt {
         return m_user_propagator && m_user_propagator->has_fixed() && n->get_th_var(m_user_propagator->get_family_id()) != null_theory_var;
     }
 
+    bool context::decide_user_interference(bool_var& var, bool& is_pos) {
+        if (!m_user_propagator || !m_user_propagator->has_decide())
+            return false;
+        bool_var old = var;
+        m_user_propagator->decide(var, is_pos);
+        return old != var;
+    }
+
     void context::assign_fixed(enode* n, expr* val, unsigned sz, literal const* explain) {
         theory_var v = n->get_th_var(m_user_propagator->get_family_id());
         m_user_propagator->new_fixed_eh(v, val, sz, explain);
@@ -3041,7 +3048,8 @@ namespace smt {
                     }
                 }
             }
-        } else {
+        }
+        else {
             literal_vector new_case_split;
             for (unsigned i = 0; i < num_lits; ++i) {
                 literal l = lits[i];
@@ -4611,9 +4619,15 @@ namespace smt {
         }
     }
 
-    expr_ref_vector context::get_trail() {        
+    expr_ref_vector context::get_trail(unsigned max_level) {        
         expr_ref_vector result(get_manager());
-        get_assignments(result);
+        for (literal lit : m_assigned_literals) {
+            if (get_assign_level(lit) > max_level + m_base_lvl)
+                continue;
+            expr_ref e(m);
+            literal2expr(lit, e);
+            result.push_back(std::move(e));
+        }
         return result;
     }
 
@@ -4621,15 +4635,10 @@ namespace smt {
         expr_mark visited;
         for (expr* fml : result)
             visited.mark(fml);
-        for (literal lit : m_assigned_literals) {
-            if (get_assign_level(lit) > m_base_lvl)
-                break;
-            expr_ref e(m);
-            literal2expr(lit, e);
-            if (visited.is_marked(e))
-                continue;
-            result.push_back(std::move(e));
-        }
+        expr_ref_vector trail = get_trail(0);
+        for (expr* t : trail) 
+            if (!visited.is_marked(t))
+                result.push_back(t);
     }
 
 
@@ -4638,7 +4647,8 @@ namespace smt {
     }
 
     void context::add_rec_funs_to_model() {
-        if (m_model)
+        model_params p;
+        if (m_model && p.user_functions())
             m_model->add_rec_funs();
     }
 

@@ -37,6 +37,7 @@ void bv_rewriter::updt_local_params(params_ref const & _p) {
     m_extract_prop = p.bv_extract_prop();
     m_ite2id = p.bv_ite2id();
     m_le_extra = p.bv_le_extra();
+    m_le2extract = p.bv_le2extract();
     set_sort_sums(p.bv_sort_ac());
 }
 
@@ -577,7 +578,7 @@ br_status bv_rewriter::mk_leq_core(bool is_signed, expr * a, expr * b, expr_ref 
             result = m().mk_eq(a, m_util.mk_numeral(numeral(0), bv_sz));
             return BR_REWRITE1;
         }
-        else if (first_non_zero < bv_sz - 1) {
+        else if (first_non_zero < bv_sz - 1 && m_le2extract) {
             result = m().mk_and(m().mk_eq(m_mk_extract(bv_sz - 1, first_non_zero + 1, a), m_util.mk_numeral(numeral(0), bv_sz - first_non_zero - 1)),
                                 m_util.mk_ule(m_mk_extract(first_non_zero, 0, a), m_mk_extract(first_non_zero, 0, b)));
             return BR_REWRITE3;
@@ -2800,6 +2801,21 @@ br_status bv_rewriter::mk_ite_core(expr * c, expr * t, expr * e, expr_ref & resu
     }
     
     return BR_FAILED;
+}
+
+br_status bv_rewriter::mk_distinct(unsigned num_args, expr * const * args, expr_ref & result) {
+    if (num_args <= 1) {
+        result = m().mk_true();
+        return BR_DONE;
+    }
+    unsigned sz = get_bv_size(args[0]);
+    // check if num_args > 2^sz
+    if (sz >= 32) 
+        return BR_FAILED;
+    if (num_args <= 1u << sz)
+        return BR_FAILED;
+    result = m().mk_false();
+    return BR_DONE;     
 }
 
 br_status bv_rewriter::mk_bvsmul_no_overflow(unsigned num, expr * const * args, bool is_overflow, expr_ref & result) {

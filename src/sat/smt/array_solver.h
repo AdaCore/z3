@@ -83,6 +83,8 @@ namespace array {
                 is_store,
                 is_select,
                 is_extensionality,
+                is_diff,
+                is_diffselect,
                 is_default,
                 is_congruence
             };
@@ -145,9 +147,9 @@ namespace array {
         axiom_record::eq      m_eq;
         axiom_table_t         m_axioms;
         svector<axiom_record> m_axiom_trail;
-        unsigned              m_qhead { 0 };
-        unsigned              m_delay_qhead { 0 };
-        bool                  m_enable_delay { true };
+        unsigned              m_qhead = 0;
+        unsigned              m_delay_qhead = 0;
+        bool                  m_enable_delay = true;
         struct reset_new;
         void push_axiom(axiom_record const& r);
         bool propagate_axiom(unsigned idx);
@@ -163,6 +165,9 @@ namespace array {
         axiom_record store_axiom(euf::enode* n) { return axiom_record(axiom_record::kind_t::is_store, n); }
         axiom_record extensionality_axiom(euf::enode* x, euf::enode* y) { return axiom_record(axiom_record::kind_t::is_extensionality, x, y); }
         axiom_record congruence_axiom(euf::enode* a, euf::enode* b) { return axiom_record(axiom_record::kind_t::is_congruence, a, b); }
+        axiom_record diff_axiom(euf::enode* md) { return axiom_record(axiom_record::kind_t::is_diff, md); }
+        euf::enode_vector m_minmaxdiffs;
+        axiom_record diff_select_axiom(euf::enode* md, euf::enode* ai) { return axiom_record(axiom_record::kind_t::is_diffselect, md, ai); }
 
         scoped_ptr<sat::constraint_base> m_constraint;
 
@@ -175,12 +180,15 @@ namespace array {
         bool assert_select_map_axiom(app* select, app* map);
         bool assert_select_lambda_axiom(app* select, expr* lambda);
         bool assert_extensionality(expr* e1, expr* e2);
+        bool assert_diff(expr* md);
+        bool assert_diff_select(app* ai, app* md);
         bool assert_default_map_axiom(app* map);
         bool assert_default_const_axiom(app* cnst);
         bool assert_default_store_axiom(app* store);
         bool assert_congruent_axiom(expr* e1, expr* e2);
         bool add_delayed_axioms();
         bool add_as_array_eqs(euf::enode* n);
+        bool add_diff_select_axioms();
         expr_ref apply_map(app* map, unsigned n, expr* const* args);
         bool is_map_combinator(expr* e) const;
 
@@ -218,11 +226,39 @@ namespace array {
         void pop_core(unsigned n) override;
         
         // models
+        // I need a set of select enodes where select(A,i) = select(B,j) if i->get_root() == j->get_root()
+        struct sel_khasher {
+            unsigned operator()(euf::enode const * n) const { return 0; }
+        };
+
+        struct sel_chasher {
+            unsigned operator()(euf::enode const * n, unsigned idx) const { 
+                return n->get_arg(idx+1)->get_root()->hash();
+            }
+        };
+        
+        struct sel_hash {
+            unsigned operator()(euf::enode * n) const;
+        };
+
+        struct sel_eq {
+            bool operator()(euf::enode * n1, euf::enode * n2) const;
+        };
+        
+        typedef ptr_hashtable<euf::enode, sel_hash, sel_eq> select_set;
         euf::enode_vector   m_defaults;       // temporary field for model construction
         ptr_vector<expr>    m_else_values;    // 
         svector<int>        m_parents;        // temporary field for model construction
+        obj_map<euf::enode, select_set*>  m_selects;        // mapping from array -> relevant selects
+        ptr_vector<euf::enode>            m_selects_domain; 
+        ptr_vector<select_set>            m_selects_range;
+
         bool must_have_different_model_values(theory_var v1, theory_var v2);
+        select_set* get_select_set(euf::enode* n);
         void collect_defaults();
+        void collect_selects();               // mapping from array -> relevant selects
+        void propagate_select_to_store_parents(euf::enode* r, euf::enode* sel, euf::enode_pair_vector& todo);
+
         void mg_merge(theory_var u, theory_var v);
         theory_var mg_find(theory_var n);
         void set_default(theory_var v, euf::enode* n);
@@ -254,6 +290,7 @@ namespace array {
         void new_diseq_eh(euf::th_eq const& eq) override;
         bool unit_propagate() override;
         void init_model() override;
+        void finalize_model(model& mdl) override;
         bool include_func_interp(func_decl* f) const override { return a.is_ext(f); }
         void add_value(euf::enode* n, model& mdl, expr_ref_vector& values) override;
         bool add_dep(euf::enode* n, top_sort<euf::enode>& dep) override;

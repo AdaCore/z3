@@ -564,7 +564,7 @@ extern "C" {
         init_solver(c, s);
         Z3_ast_vector_ref * v = alloc(Z3_ast_vector_ref, *mk_c(c), mk_c(c)->m());
         mk_c(c)->save_object(v);
-        expr_ref_vector trail = to_solver_ref(s)->get_trail();
+        expr_ref_vector trail = to_solver_ref(s)->get_trail(UINT_MAX);
         for (expr* f : trail) {
             v->m_ast_vector.push_back(f);
         }
@@ -883,8 +883,8 @@ extern "C" {
         Z3_TRY;
         RESET_ERROR_CODE();
         init_solver(c, s);
-        user_propagator::push_eh_t _push = push_eh;
-        user_propagator::pop_eh_t _pop = pop_eh;
+        user_propagator::push_eh_t _push = (void(*)(void*,user_propagator::callback*)) push_eh;
+        user_propagator::pop_eh_t _pop = (void(*)(void*,user_propagator::callback*,unsigned)) pop_eh;
         user_propagator::fresh_eh_t _fresh = [=](void * user_ctx, ast_manager& m, user_propagator::context_obj*& _ctx) {
             ast_context_params params;
             params.set_foreign_manager(&m);
@@ -972,6 +972,14 @@ extern "C" {
         RESET_ERROR_CODE();
         user_propagator::created_eh_t c = (void(*)(void*, user_propagator::callback*, expr*))created_eh;
         to_solver_ref(s)->user_propagate_register_created(c);
+        Z3_CATCH;
+    }
+
+    void Z3_API Z3_solver_propagate_decide(Z3_context c, Z3_solver s, Z3_decide_eh decide_eh) {
+        Z3_TRY;
+        RESET_ERROR_CODE();
+        user_propagator::decide_eh_t c = (void(*)(void*, user_propagator::callback*, expr**, unsigned*, lbool*))decide_eh;
+        to_solver_ref(s)->user_propagate_register_decide(c);
         Z3_CATCH;
     }
 
