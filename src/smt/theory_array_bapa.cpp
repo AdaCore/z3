@@ -272,12 +272,14 @@ namespace smt {
             std::cout << smt << "\n";
             std::cout << tns << "\n";
 #endif
+#if 0
             if (tns == sz1) {
                 std::cout << "SEEN " << tms << "\n";
             }
             if (tns == sz2) {
                 std::cout << "SEEN " << smt << "\n";                
             }
+#endif
             ctx().push_trail(value_trail<bool>(i1.m_is_leaf, false));
             ctx().push_trail(value_trail<bool>(i2.m_is_leaf, false));
             expr_ref k1(m), k2(m), k3(m);
@@ -448,7 +450,6 @@ namespace smt {
             app*                     m_obj;
         public:
             remove_sz(ast_manager& m, obj_map<app, sz_info*>& tab, app* t): m(m), m_table(tab), m_obj(t) { }
-            ~remove_sz() override {}
             void undo() override { m.dec_ref(m_obj); dealloc(m_table[m_obj]); m_table.remove(m_obj); }
         };
 

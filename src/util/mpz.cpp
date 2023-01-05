@@ -41,7 +41,6 @@ Revision History:
 
 #if defined(_MP_GMP)
 // Use LEHMER only if not using GMP
-// LEHMER assumes 32-bit digits, so it cannot be used with MSBIGNUM library + 64-bit binary
 #define EUCLID_GCD
 #else
 #define LEHMER_GCD
@@ -50,7 +49,7 @@ Revision History:
 
 #if defined(__GNUC__)
 #define _trailing_zeros32(X) __builtin_ctz(X)
-#elif defined(_WINDOWS) && !defined(_M_ARM) && !defined(_M_ARM64) && !defined(__MINGW32__)
+#elif defined(_WINDOWS) && (defined(_M_X86) || (defined(_M_X64) && !defined(_M_ARM64EC)))
 // This is needed for _tzcnt_u32 and friends.
 #include <immintrin.h>
 #define _trailing_zeros32(X) _tzcnt_u32(X)
@@ -62,7 +61,7 @@ static uint32_t _trailing_zeros32(uint32_t x) {
 }
 #endif
 
-#if (defined(__LP64__) || defined(_WIN64)) && !defined(_M_ARM) && !defined(_M_ARM64)
+#if (defined(__LP64__) || defined(_WIN64)) && defined(_M_X64) && !defined(_M_ARM64EC)
  #if defined(__GNUC__)
  #define _trailing_zeros64(X) __builtin_ctzll(X)
  #else
@@ -76,6 +75,13 @@ static uint64_t _trailing_zeros64(uint64_t x) {
 }
 #endif
 
+unsigned trailing_zeros(uint32_t x) {
+    return static_cast<unsigned>(_trailing_zeros32(x));
+}
+
+unsigned trailing_zeros(uint64_t x) {
+    return static_cast<unsigned>(_trailing_zeros64(x));
+}
 
 #define _bit_min(x, y) (y + ((x - y) & ((int)(x - y) >> 31)))
 #define _bit_max(x, y) (x - ((x - y) & ((int)(x - y) >> 31)))
@@ -1842,7 +1848,7 @@ std::string mpz_manager<SYNCH>::to_string(mpz const & a) const {
 template<bool SYNCH>
 unsigned mpz_manager<SYNCH>::hash(mpz const & a) {
     if (is_small(a))
-        return a.m_val;
+        return ::abs(a.m_val);
 #ifndef _MP_GMP
     unsigned sz = size(a);
     if (sz == 1)
@@ -2248,6 +2254,9 @@ template<bool SYNCH>
 unsigned mpz_manager<SYNCH>::mlog2(mpz const & a) {
     if (is_nonneg(a))
         return 0;
+    if (is_small(a) && a.m_val == INT_MIN)
+        return ::log2((unsigned)a.m_val);
+        
     if (is_small(a))
         return ::log2((unsigned)-a.m_val);
 #ifndef _MP_GMP

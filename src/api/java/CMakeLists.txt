@@ -19,6 +19,8 @@ add_custom_command(OUTPUT "${Z3_JAVA_NATIVE_JAVA}" "${Z3_JAVA_NATIVE_CPP}"
   COMMAND "${PYTHON_EXECUTABLE}"
     "${PROJECT_SOURCE_DIR}/scripts/update_api.py"
     ${Z3_FULL_PATH_API_HEADER_FILES_TO_SCAN}
+    "--java-input-dir"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     "--java-output-dir"
     "${CMAKE_CURRENT_BINARY_DIR}"
     "--java-package-name"
@@ -27,10 +29,8 @@ add_custom_command(OUTPUT "${Z3_JAVA_NATIVE_JAVA}" "${Z3_JAVA_NATIVE_CPP}"
     ${Z3_FULL_PATH_API_HEADER_FILES_TO_SCAN}
     "${PROJECT_SOURCE_DIR}/scripts/update_api.py"
     ${Z3_GENERATED_FILE_EXTRA_DEPENDENCIES}
-    # FIXME: When update_api.py no longer uses ``mk_util`` drop this dependency
-    "${PROJECT_SOURCE_DIR}/scripts/mk_util.py"
   COMMENT "Generating \"${Z3_JAVA_NATIVE_JAVA}\" and \"${Z3_JAVA_NATIVE_CPP}\""
-  ${ADD_CUSTOM_COMMAND_USES_TERMINAL_ARG}
+  USES_TERMINAL
 )
 
 # Add rule to build native code that provides a bridge between
@@ -86,7 +86,7 @@ add_custom_command(OUTPUT ${Z3_JAVA_ENUMERATION_PACKAGE_FILES_FULL_PATH}
     "${PROJECT_SOURCE_DIR}/scripts/mk_consts_files.py"
     ${Z3_GENERATED_FILE_EXTRA_DEPENDENCIES}
   COMMENT "Generating ${Z3_JAVA_PACKAGE_NAME}.enumerations package"
-  ${ADD_CUSTOM_COMMAND_USES_TERMINAL_ARG}
+  USES_TERMINAL
 )
 
 set(Z3_JAVA_JAR_SOURCE_FILES

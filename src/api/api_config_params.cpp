@@ -47,7 +47,7 @@ extern "C" {
         env_params::updt_params();
     }
     
-    Z3_bool Z3_API Z3_global_param_get(Z3_string param_id, Z3_string_ptr param_value) {
+    bool Z3_API Z3_global_param_get(Z3_string param_id, Z3_string_ptr param_value) {
         memory::initialize(UINT_MAX);
         LOG_Z3_global_param_get(param_id, param_value);
         *param_value = nullptr;
@@ -62,6 +62,17 @@ extern "C" {
             warning_msg("%s", ex.msg());
             return false;
         }
+    }
+
+    Z3_param_descrs Z3_API Z3_get_global_param_descrs(Z3_context c) {
+        Z3_TRY;
+        LOG_Z3_get_global_param_descrs(c);
+        Z3_param_descrs_ref * d = alloc(Z3_param_descrs_ref, *mk_c(c));
+        mk_c(c)->save_object(d);
+        d->m_descrs = gparams::get_global_param_descrs();
+        auto r = of_param_descrs(d);
+        RETURN_Z3(r);
+        Z3_CATCH_RETURN(nullptr);
     }
 
     Z3_config Z3_API Z3_mk_config(void) {

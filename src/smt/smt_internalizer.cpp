@@ -24,6 +24,8 @@ Revision History:
 #include "smt/smt_model_finder.h"
 #include "ast/for_each_expr.h"
 
+#include <iostream>
+
 namespace smt {
 
     /**
@@ -578,20 +580,19 @@ namespace smt {
         m_qmanager->add(q, generation);
     }
 
+
     void context::internalize_lambda(quantifier * q) {
         TRACE("internalize_quantifier", tout << mk_pp(q, m) << "\n";);
         SASSERT(is_lambda(q));
-        if (e_internalized(q)) {
+        if (e_internalized(q)) 
             return;
-        }
         app_ref lam_name(m.mk_fresh_const("lambda", q->get_sort()), m);
         app_ref eq(m), lam_app(m);
         expr_ref_vector vars(m);
         vars.push_back(lam_name);
         unsigned sz = q->get_num_decls();
-        for (unsigned i = 0; i < sz; ++i) {
+        for (unsigned i = 0; i < sz; ++i) 
             vars.push_back(m.mk_var(sz - i - 1, q->get_decl_sort(i)));
-        }
         array_util autil(m);
         lam_app = autil.mk_select(vars.size(), vars.data());
         eq = m.mk_eq(lam_app, q->get_expr());
@@ -599,15 +600,28 @@ namespace smt {
         expr * patterns[1] = { m.mk_pattern(lam_app) };
         fa = m.mk_forall(sz, q->get_decl_sorts(), q->get_decl_names(), eq, 0, m.lambda_def_qid(), symbol::null, 1, patterns);
         internalize_quantifier(fa, true);
-        if (!e_internalized(lam_name)) internalize_uninterpreted(lam_name);
-        m_app2enode.setx(q->get_id(), get_enode(lam_name), nullptr);
+        if (!e_internalized(lam_name)) 
+            internalize_uninterpreted(lam_name);
+        enode* lam_node = get_enode(lam_name);
+        push_trail(insert_obj_map<enode, quantifier*>(m_lambdas, lam_node));
+        m_lambdas.insert(lam_node, q);
+        m_app2enode.setx(q->get_id(), lam_node, nullptr);
         m_l_internalized_stack.push_back(q);
         m_trail_stack.push_back(&m_mk_lambda_trail);
         bool_var bv = get_bool_var(fa);
         assign(literal(bv, false), nullptr);
         mark_as_relevant(bv);
-        push_trail(value_trail<bool>(m_has_lambda));
-        m_has_lambda = true;
+    }
+
+    bool context::has_lambda() {
+        for (auto const & [n, q] : m_lambdas) {
+            if (n->get_class_size() != 1) 
+                return true;
+            for (enode* p : enode::parents(n)) 
+                if (!is_beta_redex(p, n)) 
+                    return true;
+        }
+        return false;
     }
 
     /**
@@ -1010,7 +1024,7 @@ namespace smt {
                 }
             }
             if (!e->is_eq()) {
-                unsigned decl_id = n->get_decl()->get_decl_id();
+                unsigned decl_id = n->get_decl()->get_small_id();
                 if (decl_id >= m_decl2enodes.size())
                     m_decl2enodes.resize(decl_id+1);
                 m_decl2enodes[decl_id].push_back(e);
@@ -1054,7 +1068,7 @@ namespace smt {
             m_cg_table.erase(e);
         }
         if (e->get_num_args() > 0 && !e->is_eq()) {
-            unsigned decl_id = to_app(n)->get_decl()->get_decl_id();
+            unsigned decl_id = to_app(n)->get_decl()->get_small_id();
             SASSERT(decl_id < m_decl2enodes.size());
             SASSERT(m_decl2enodes[decl_id].back() == e);
             m_decl2enodes[decl_id].pop_back();
@@ -1360,8 +1374,10 @@ namespace smt {
         TRACE("mk_clause", display_literals_verbose(tout << "creating clause: " << literal_vector(num_lits, lits) << "\n", num_lits, lits) << "\n";);
         m_clause_proof.add(num_lits, lits, k, j);
         switch (k) {
-        case CLS_AUX: 
-        case CLS_TH_AXIOM: {
+        case CLS_TH_AXIOM:
+            dump_axiom(num_lits, lits);
+            Z3_fallthrough;
+        case CLS_AUX: {
             literal_buffer simp_lits;
             if (!simplify_aux_clause_literals(num_lits, lits, simp_lits)) {
                 if (j && !j->in_region()) {
@@ -1372,11 +1388,12 @@ namespace smt {
             }
             DEBUG_CODE(for (literal lit : simp_lits) SASSERT(get_assignment(lit) == l_true););
             if (!simp_lits.empty()) {
-                j = mk_justification(unit_resolution_justification(m_region, j, simp_lits.size(), simp_lits.data()));
+                j = mk_justification(unit_resolution_justification(*this, j, simp_lits.size(), simp_lits.data()));
             }
             break;
         }
-        case CLS_TH_LEMMA: 
+        case CLS_TH_LEMMA:
+            dump_lemma(num_lits, lits);
             if (!simplify_aux_lemma_literals(num_lits, lits)) {
                 if (j && !j->in_region()) {
                     j->del_eh(m);
@@ -1386,7 +1403,10 @@ namespace smt {
             }
             // simplify_aux_lemma_literals does not delete literals assigned to false, so
             // it is not necessary to create a unit_resolution_justification
-            break;        
+            break;
+        case CLS_LEARNED:
+            dump_lemma(num_lits, lits);
+            break;
         default:
             break;
         }
@@ -1417,7 +1437,10 @@ namespace smt {
                 inc_ref(l2);
                 m_watches[(~l1).index()].insert_literal(l2);
                 m_watches[(~l2).index()].insert_literal(l1);
-                if (get_assignment(l2) == l_false) {
+                if (get_assignment(l1) == l_false) {
+                    assign(l2, b_justification(~l1));
+                }
+                else if (get_assignment(l2) == l_false) {
                     assign(l1, b_justification(~l2));
                 }
                 m_clause_proof.add(l1, l2, k, j);
@@ -1488,6 +1511,30 @@ namespace smt {
         }} 
     }
 
+    void context::dump_axiom(unsigned n, literal const* lits) {
+        if (m_fparams.m_axioms2files) {
+            literal_buffer tmp;
+            neg_literals(n, lits, tmp);
+            SASSERT(tmp.size() == n);
+            display_lemma_as_smt_problem(tmp.size(), tmp.data(), false_literal, m_fparams.m_logic);
+        }
+    }
+
+    void context::dump_lemma(unsigned n, literal const* lits) {
+        
+        if (m_fparams.m_lemmas2console) {
+            expr_ref fml(m);
+            expr_ref_vector fmls(m);
+            for (unsigned i = 0; i < n; ++i)
+                fmls.push_back(literal2expr(lits[i]));
+            fml = mk_or(fmls);
+            m_lemma_visitor.collect(fml);
+            m_lemma_visitor.display_skolem_decls(std::cout);
+            m_lemma_visitor.display_assert(std::cout, fml.get(), true);
+        }
+
+    }
+
     void context::mk_clause(literal l1, literal l2, justification * j) {
         literal ls[2] = { l1, l2 };
         mk_clause(2, ls, j);
@@ -1503,13 +1550,7 @@ namespace smt {
         TRACE("mk_th_axiom", display_literals_verbose(tout, num_lits, lits) << "\n";);
 
         if (m.proofs_enabled()) {
-            js = mk_justification(theory_axiom_justification(tid, m_region, num_lits, lits, num_params, params));
-        }
-        if (m_fparams.m_smtlib_dump_lemmas) {
-            literal_buffer tmp;
-            neg_literals(num_lits, lits, tmp);
-            SASSERT(tmp.size() == num_lits);
-            display_lemma_as_smt_problem(tmp.size(), tmp.data(), false_literal, m_fparams.m_logic);
+            js = mk_justification(theory_axiom_justification(tid, *this, num_lits, lits, num_params, params));
         }
         mk_clause(num_lits, lits, js, k);
     }

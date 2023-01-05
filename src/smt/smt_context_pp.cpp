@@ -415,6 +415,7 @@ namespace smt {
         st.update("final checks", m_stats.m_num_final_checks);
         st.update("added eqs", m_stats.m_num_add_eq);
         st.update("mk clause", m_stats.m_num_mk_clause);
+        st.update("mk clause binary", m_stats.m_num_mk_bin_clause);        
         st.update("del clause", m_stats.m_num_del_clause);
         st.update("dyn ack", m_stats.m_num_dyn_ack);
         st.update("interface eqs", m_stats.m_num_interface_eqs);
@@ -765,11 +766,11 @@ namespace smt {
             for (; p2 + 2 < str.size(); ++p2) l2 << " ";            
             l1 << ")\n";
             l2 << ")\n";
-            IF_VERBOSE(1, verbose_stream() << l1.str() << l2.str());
+            IF_VERBOSE(2, verbose_stream() << l1.str() << l2.str());
             m_last_positions.reset();
             m_last_positions.append(offsets);
         }
-        IF_VERBOSE(1, verbose_stream() << str);
+        IF_VERBOSE(2, verbose_stream() << str);
     }
 
 };

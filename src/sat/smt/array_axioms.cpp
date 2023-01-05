@@ -265,7 +265,8 @@ namespace array {
         args1.push_back(e1);
         args2.push_back(e2);
         for (func_decl* f : funcs) {
-            expr* k = m.mk_app(f, e1, e2);
+            expr_ref k(m.mk_app(f, e1, e2), m);
+            rewrite(k);
             args1.push_back(k);
             args2.push_back(k);
         }
@@ -281,8 +282,8 @@ namespace array {
      * a = b or default(a) != default(b) or a[md(a,b)] != b[md(a,b)]
      */
     bool solver::assert_diff(expr* md) {
-        expr* x, *y;
-        SASSERT(a.is_maxdiff(md, x, y) || a.is_mindiff(md, x, y));
+        expr* x = nullptr, *y = nullptr;
+        VERIFY(a.is_maxdiff(md, x, y) || a.is_mindiff(md, x, y));
         expr* args1[2] = { x, md };
         expr* args2[2] = { y, md };
         literal eq = eq_internalize(x, y);

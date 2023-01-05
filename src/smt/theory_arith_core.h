@@ -492,6 +492,7 @@ namespace smt {
     void theory_arith<Ext>::mk_axiom(expr * ante, expr * conseq, bool simplify_conseq) {
         th_rewriter & s  = ctx.get_rewriter();
         expr_ref s_ante(m), s_conseq(m);
+        expr_ref p_ante(ante, m), p_conseq(conseq, m); // pinned versions
         expr* s_conseq_n, * s_ante_n;
         bool negated;
 
@@ -562,7 +563,7 @@ namespace smt {
         if (!m_util.is_zero(divisor)) {
             // if divisor is zero, then idiv and mod are uninterpreted functions.
             expr_ref div(m), mod(m), zero(m), abs_divisor(m), one(m);
-            expr_ref eqz(m), eq(m), lower(m), upper(m);
+            expr_ref eqz(m), eq(m), lower(m), upper(m), qr(m), qr1(m), le(m), ge(m);
             div         = m_util.mk_idiv(dividend, divisor);
             mod         = m_util.mk_mod(dividend, divisor);
             zero        = m_util.mk_int(0);
@@ -570,27 +571,50 @@ namespace smt {
             abs_divisor = m_util.mk_sub(m.mk_ite(m_util.mk_lt(divisor, zero), m_util.mk_sub(zero, divisor), divisor), one);
             s(abs_divisor);
             eqz         = m.mk_eq(divisor, zero);
-            eq          = m.mk_eq(m_util.mk_add(m_util.mk_mul(divisor, div), mod), dividend);
+            qr          = m_util.mk_add(m_util.mk_mul(divisor, div), mod);
+            eq          = m.mk_eq(qr, dividend);
             lower       = m_util.mk_ge(mod, zero);
             upper       = m_util.mk_le(mod, abs_divisor);
             TRACE("div_axiom_bug",
-                  tout << "eqz:   " << eqz << " neq: " << eq << "\n";
+                  tout << "eqz:   " << eqz << "\n";
+                  tout << "neq:   " << eq << "\n";
                   tout << "lower: " << lower << "\n";
                   tout << "upper: " << upper << "\n";);
 
             mk_axiom(eqz, eq,    false);
             mk_axiom(eqz, lower, false);
             mk_axiom(eqz, upper, !m_util.is_numeral(abs_divisor));
+
             rational k;
 
-            if (!m_util.is_numeral(divisor)) {
-                // (=> (> y 0) (<= (* y (div x y)) x))
-                // (=> (< y 0) ???)
-                expr_ref div_ge(m), div_non_pos(m);
+            m_arith_eq_adapter.mk_axioms(ensure_enode(qr), ensure_enode(dividend));
+
+            // non-linear divisors/mod have to be flattened for the non-linear solver to understand the terms.
+            // to ensure this use the rewriter. This is a hack required to fix a latent bug that affects the
+            // legacy arithmetic solver broadly. It is not something that the newer arithmetic solver suffers from.
+            qr1 = qr;
+            s(qr1);
+            if (qr != qr1) {
+                expr_ref eq(m.mk_eq(qr, qr1), m);
+                ctx.internalize(eq, false);
+                literal qeq = ctx.get_literal(eq);
+                ctx.mark_as_relevant(qeq);
+                ctx.mk_th_axiom(get_id(), 1, &qeq);
+                m_arith_eq_adapter.mk_axioms(ensure_enode(qr), ensure_enode(qr1));                
+            }
+
+            if (m_util.is_zero(dividend)) {
+                mk_axiom(eqz, m.mk_eq(div, zero));
+                mk_axiom(eqz, m.mk_eq(mod, zero));
+            }
+
+            // (or (= y 0)  (<= (* y (div x y)) x))
+            else if (!m_util.is_numeral(divisor)) {
+                expr_ref div_ge(m);
                 div_ge = m_util.mk_ge(m_util.mk_sub(dividend, m_util.mk_mul(divisor, div)), zero);
-                s(div_ge);
-                div_non_pos = m_util.mk_le(divisor, zero);
-                mk_axiom(div_non_pos, div_ge, false);
+                s(div_ge);                
+                mk_axiom(eqz, div_ge, false);
+                TRACE("arith", tout << eqz << " " << div_ge << "\n");
             }
 
             if (m_params.m_arith_enum_const_mod && m_util.is_numeral(divisor, k) &&
@@ -1020,13 +1044,14 @@ namespace smt {
         inf_numeral const & k1(a1->get_k());
         atom_kind kind1 = a1->get_atom_kind();
         TRACE("mk_bound_axioms", display_atom(tout << "making bound axioms for " << a1 << " ", a1, true); tout << "\n";);
+
         typename atoms::iterator it  = occs.begin();
         typename atoms::iterator end = occs.end();
-
         typename atoms::iterator lo_inf = end, lo_sup = end;
         typename atoms::iterator hi_inf = end, hi_sup = end;
+
         for (; it != end; ++it) {
-            atom * a2 = *it;
+            atom* a2 = *it;
             inf_numeral const & k2(a2->get_k());
             atom_kind kind2 = a2->get_atom_kind();
             TRACE("mk_bound_axioms", display_atom(tout << "compare " << a2 << " ", a2, true); tout << "\n";);
@@ -2969,23 +2994,7 @@ namespace smt {
         }
     }
 
-    template<typename Ext>
-    void theory_arith<Ext>::dump_lemmas(literal l, antecedents const& ante) {
-        if (dump_lemmas()) {
-            TRACE("arith", ante.display(tout) << " --> "; ctx.display_detailed_literal(tout, l); tout << "\n";);
-            ctx.display_lemma_as_smt_problem(ante.lits().size(), ante.lits().data(),
-                                             ante.eqs().size(), ante.eqs().data(), l);
 
-        }
-    }
-
-    template<typename Ext>
-    void theory_arith<Ext>::dump_lemmas(literal l, derived_bound const& ante) {
-        if (dump_lemmas()) {
-            ctx.display_lemma_as_smt_problem(ante.lits().size(), ante.lits().data(),
-                                             ante.eqs().size(), ante.eqs().data(), l);
-        }
-    }
 
     template<typename Ext>
     void theory_arith<Ext>::assign_bound_literal(literal l, row const & r, unsigned idx, bool is_lower, inf_numeral & delta) {
@@ -2997,28 +3006,23 @@ namespace smt {
               ante.display(tout) << " --> ";
               ctx.display_detailed_literal(tout, l);
               tout << "\n";);
-        dump_lemmas(l, ante);
 
         if (ante.lits().size() < small_lemma_size() && ante.eqs().empty()) {
             literal_vector & lits = m_tmp_literal_vector2;
             lits.reset();
             lits.push_back(l);
-            literal_vector::const_iterator it  = ante.lits().begin();
-            literal_vector::const_iterator end = ante.lits().end();
-            for (; it != end; ++it)
-                lits.push_back(~(*it));
+            for (auto const& lit : ante.lits())
+                lits.push_back(~lit);
             justification * js = nullptr;
-            if (proofs_enabled()) {
+            if (proofs_enabled()) 
                 js = alloc(theory_lemma_justification, get_id(), ctx, lits.size(), lits.data(),
                            ante.num_params(), ante.params("assign-bounds"));
-            }
             ctx.mk_clause(lits.size(), lits.data(), js, CLS_TH_LEMMA, nullptr);
         }
         else {
-            region & r = ctx.get_region();
             ctx.assign(l, ctx.mk_justification(
                            ext_theory_propagation_justification(
-                               get_id(), r, ante.lits().size(), ante.lits().data(),
+                               get_id(), ctx, ante.lits().size(), ante.lits().data(),
                                ante.eqs().size(), ante.eqs().data(), l,
                                ante.num_params(), ante.params("assign-bounds"))));
         }
@@ -3039,19 +3043,15 @@ namespace smt {
                     int upper_idx;
                     is_row_useful_for_bound_prop(r, lower_idx, upper_idx);
 
-                    if (lower_idx >= 0) {
+                    if (lower_idx >= 0) 
                         imply_bound_for_monomial(r, lower_idx, true);
-                    }
-                    else if (lower_idx == -1) {
+                    else if (lower_idx == -1) 
                         imply_bound_for_all_monomials(r, true);
-                    }
 
-                    if (upper_idx >= 0) {
+                    if (upper_idx >= 0) 
                         imply_bound_for_monomial(r, upper_idx, false);
-                    }
-                    else if (upper_idx == -1) {
+                    else if (upper_idx == -1) 
                         imply_bound_for_all_monomials(r, false);
-                    }
 
                     // sneaking cheap eq detection in this loop
                     propagate_cheap_eq(r_idx);
@@ -3081,13 +3081,11 @@ namespace smt {
     template<typename Ext>
     void theory_arith<Ext>::set_conflict(antecedents const& ante, antecedents& bounds, char const* proof_rule) {
         set_conflict(ante.lits().size(), ante.lits().data(), ante.eqs().size(), ante.eqs().data(), bounds, proof_rule);
-        dump_lemmas(false_literal, ante);
     }
 
     template<typename Ext>
     void theory_arith<Ext>::set_conflict(derived_bound const& ante, antecedents& bounds, char const* proof_rule) {
         set_conflict(ante.lits().size(), ante.lits().data(), ante.eqs().size(), ante.eqs().data(), bounds, proof_rule);
-        dump_lemmas(false_literal, ante);
     }
 
     template<typename Ext>
@@ -3097,6 +3095,8 @@ namespace smt {
         m_stats.m_conflicts++;
         m_num_conflicts++;
         TRACE("arith_conflict",
+              if (proof_rule)
+                  tout << proof_rule << "\n";
               tout << "scope: " << ctx.get_scope_level() << "\n";
               for (unsigned i = 0; i < num_literals; i++) {
                   ctx.display_detailed_literal(tout, lits[i]);
@@ -3119,7 +3119,7 @@ namespace smt {
         record_conflict(num_literals, lits, num_eqs, eqs, bounds.num_params(), bounds.params(proof_rule));
         ctx.set_conflict(
             ctx.mk_justification(
-                ext_theory_conflict_justification(get_id(), ctx.get_region(), num_literals, lits, num_eqs, eqs,
+                ext_theory_conflict_justification(get_id(), ctx, num_literals, lits, num_eqs, eqs,
                                                   bounds.num_params(), bounds.params(proof_rule))));
     }
 

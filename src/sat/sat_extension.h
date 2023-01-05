@@ -70,7 +70,7 @@ namespace sat {
         solver* m_solver { nullptr };
     public:        
         extension(symbol const& name, int id): m_id(id), m_name(name) { }
-        virtual ~extension() {}
+        virtual ~extension() = default;
         int get_id() const { return m_id; }
         void set_solver(solver* s) { m_solver = s; }        
         solver& s() { return *m_solver; }
@@ -91,8 +91,10 @@ namespace sat {
         virtual double get_reward(literal l, ext_constraint_idx idx, literal_occs_fun& occs) const { return 0; }
         virtual void get_antecedents(literal l, ext_justification_idx idx, literal_vector & r, bool probing) = 0;
         virtual bool is_extended_binary(ext_justification_idx idx, literal_vector & r) { return false; }
-        virtual void asserted(literal l) {};
-        virtual void set_eliminated(bool_var v) {};
+        virtual bool decide(bool_var& var, lbool& phase) { return false; }
+        virtual bool get_case_split(bool_var& var, lbool& phase) { return false; }
+        virtual void asserted(literal l) {}
+        virtual void set_eliminated(bool_var v) {}
         virtual check_result check() = 0;
         virtual lbool resolve_conflict() { return l_undef; } // stores result in sat::solver::m_lemma
         virtual void push() = 0;

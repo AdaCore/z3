@@ -1,14 +1,13 @@
 variables:
-
   Major: '4'
-  Minor: '8'
-  Patch: '17'
-  NightlyVersion: $(Major).$(Minor).$(Patch).$(Build.BuildId)-$(Build.DefinitionName)
+  Minor: '11'
+  Patch: '2'
+  AssemblyVersion: $(Major).$(Minor).$(Patch).$(Build.BuildId)
+  NightlyVersion: $(AssemblyVersion)-$(Build.DefinitionName)
 
 stages:
 - stage: Build
   jobs:
-
   - job: Mac
     displayName: "Mac Build"
     pool:
@@ -23,20 +22,18 @@ stages:
         artifactName: 'Mac'
         targetPath: $(Build.ArtifactStagingDirectory)
 
-
   - job: MacArm64
     displayName: "Mac ARM64 Build"
     pool:
       vmImage: "macOS-latest"
     steps:
-    - script: python scripts/mk_unix_dist.py --dotnet-key=$(Build.SourcesDirectory)/resources/z3.snk --arch=arm64 --nojava
+    - script: python scripts/mk_unix_dist.py --dotnet-key=$(Build.SourcesDirectory)/resources/z3.snk --arch=arm64 --os=osx-11.0
     - script: git clone https://github.com/z3prover/z3test z3test
     - script: cp dist/*.zip $(Build.ArtifactStagingDirectory)/.
     - task: PublishPipelineArtifact@1
       inputs:
         artifactName: 'MacArm64'
         targetPath: $(Build.ArtifactStagingDirectory)
-
 
   - job: Ubuntu
     displayName: "Ubuntu build"
@@ -55,7 +52,7 @@ stages:
   - job: UbuntuDoc
     displayName: "Ubuntu Doc build"
     pool:
-      vmImage: "Ubuntu-latest"
+      vmImage: "ubuntu-latest"
     steps:
     - script: sudo apt-get install ocaml opam libgmp-dev
     - script: opam init -y
@@ -76,6 +73,7 @@ stages:
         eval `opam config env` 
         cd doc
         python mk_api_doc.py --mld --z3py-package-path=../build/python/z3
+        python mk_params_doc.py 
         mkdir api/html/ml
         ocamldoc -html -d api/html/ml -sort -hide Z3 -I $( ocamlfind query zarith ) -I ../build/api/ml ../build/api/ml/z3enums.mli ../build/api/ml/z3.mli
         cd ..
@@ -86,13 +84,14 @@ stages:
         artifactName: 'UbuntuDoc'
         targetPath: $(Build.ArtifactStagingDirectory)
 
-  - job: Manylinux
-    displayName: "Manylinux build"
-    pool:
-      vmImage: "Ubuntu-18.04"
-    container: "quay.io/pypa/manylinux2010_x86_64:latest"
+  - job: ManyLinuxBuild
     variables:
       python: "/opt/python/cp37-cp37m/bin/python"
+      name: ManyLinux
+    displayName: "ManyLinux build"
+    pool:
+      vmImage: "ubuntu-latest"
+    container: "quay.io/pypa/manylinux2010_x86_64:latest"
     steps:
     - script: $(python) scripts/mk_unix_dist.py --nodotnet --nojava
     - script: git clone https://github.com/z3prover/z3test z3test
@@ -100,8 +99,27 @@ stages:
     - script: cp dist/*.zip $(Build.ArtifactStagingDirectory)/
     - task: PublishPipelineArtifact@0
       inputs:
-        artifactName: 'Manylinux'
+        artifactName: '$(name)Build'
         targetPath: $(Build.ArtifactStagingDirectory)
+
+#  - job: MuslLinuxBuild
+#    condition: eq(0,1)
+#    variables:
+#      python: "/opt/python/cp310-cp310/bin/python"
+#      name: MuslLinux
+#    displayName: "MuslLinux build"
+#    pool:
+#      vmImage: "ubuntu-latest"
+#    container: "quay.io/pypa/musllinux_1_1_x86_64:latest"
+#    steps:
+#    - script: $(python) scripts/mk_unix_dist.py --nodotnet --nojava
+#    - script: git clone https://github.com/z3prover/z3test z3test
+#    - script: $(python) z3test/scripts/test_benchmarks.py build-dist/z3 z3test/regressions/smt2
+#    - script: cp dist/*.zip $(Build.ArtifactStagingDirectory)/
+#    - task: PublishPipelineArtifact@0
+#      inputs:
+#        artifactName: '$(name)Build'
+#        targetPath: $(Build.ArtifactStagingDirectory)
 
   - job: Windows32
     displayName: "Windows 32-bit build"
@@ -113,6 +131,7 @@ stages:
         script:
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86 &
           python scripts\mk_win_dist.py
+            --assembly-version=$(AssemblyVersion)
             --x86-only
             --dotnet-key=$(Build.SourcesDirectory)/resources/z3.snk
             --zip
@@ -125,6 +144,22 @@ stages:
       inputs:
         targetPath: $(Build.ArtifactStagingDirectory)
         artifactName: 'Windows32'
+    - task: CopyFiles@2
+      displayName: 'Collect Symbols'
+      inputs:
+        sourceFolder: dist
+        contents: '**/*.pdb'
+        targetFolder: '$(Build.ArtifactStagingDirectory)/symbols'
+    # Publish symbol archive to match nuget package
+    # Index your source code and publish symbols to a file share or Azure Artifacts symbol server
+    - task: PublishSymbols@2
+      inputs:
+        symbolsFolder: '$(Build.ArtifactStagingDirectory)/symbols'
+        searchPattern: '**/*.pdb' 
+        indexSources: false # Github not supported
+        publishSymbols: true
+        symbolServerType: TeamServices
+        detailedLog: true
 
   - job: Windows64
     displayName: "Windows 64-bit build"
@@ -136,6 +171,7 @@ stages:
         script:
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64 &
           python scripts\mk_win_dist.py
+            --assembly-version=$(AssemblyVersion)
             --x64-only
             --dotnet-key=$(Build.SourcesDirectory)/resources/z3.snk
             --zip
@@ -148,8 +184,22 @@ stages:
       inputs:
         targetPath: $(Build.ArtifactStagingDirectory)
         artifactName: 'Windows64'
-
-        
+    - task: CopyFiles@2
+      displayName: 'Collect Symbols'
+      inputs:
+        sourceFolder: dist
+        contents: '**/*.pdb'
+        targetFolder: '$(Build.ArtifactStagingDirectory)/symbols'
+    # Publish symbol archive to match nuget package
+    # Index your source code and publish symbols to a file share or Azure Artifacts symbol server
+    - task: PublishSymbols@2
+      inputs:
+        symbolsFolder: '$(Build.ArtifactStagingDirectory)/symbols'
+        searchPattern: '**/*.pdb' 
+        indexSources: false # Github not supported
+        publishSymbols: true
+        symbolServerType: TeamServices
+        detailedLog: true
 
 - stage: Package
   jobs:
@@ -393,8 +443,13 @@ stages:
         targetPath: $(Agent.TempDirectory)
     - task: DownloadPipelineArtifact@2
       inputs:
-        artifactName: 'Manylinux'
+        artifactName: 'ManyLinuxBuild'
         targetPath: $(Agent.TempDirectory)
+#    - task: DownloadPipelineArtifact@2
+#      displayName: 'Download MuslLinux Build'
+#      inputs:
+#        artifact: 'MuslLinuxBuild'
+#        path: $(Agent.TempDirectory)	
     - task: DownloadPipelineArtifact@2
       inputs:
         artifactName: 'Mac'
@@ -405,13 +460,15 @@ stages:
         targetPath: $(Agent.TempDirectory)
     - script: cd $(Agent.TempDirectory); mkdir osx-x64-bin; cd osx-x64-bin; unzip ../*x64-osx*.zip
     - script: cd $(Agent.TempDirectory); mkdir osx-arm64-bin; cd osx-arm64-bin; unzip ../*arm64-osx*.zip
-    - script: cd $(Agent.TempDirectory); mkdir linux-bin; cd linux-bin; unzip ../*glibc*.zip
+    - script: cd $(Agent.TempDirectory); mkdir libc-bin; cd libc-bin; unzip ../*glibc*.zip
+#    - script: cd $(Agent.TempDirectory); mkdir musl-bin; cd musl-bin; unzip ../*-linux.zip
     - script: cd $(Agent.TempDirectory); mkdir win32-bin; cd win32-bin; unzip ../*x86-win*.zip
     - script: cd $(Agent.TempDirectory); mkdir win64-bin; cd win64-bin; unzip ../*x64-win*.zip
     - script: python3 -m pip install --user -U setuptools wheel
     - script: cd src/api/python; python3 setup.py sdist
     # take a look at this PREMIUM HACK I came up with to get around the fact that the azure variable syntax overloads the bash syntax for subshells
-    - script: cd src/api/python; echo $(Agent.TempDirectory)/linux-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
+    - script: cd src/api/python; echo $(Agent.TempDirectory)/libc-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
+#   - script: cd src/api/python; echo $(Agent.TempDirectory)/musl-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
     - script: cd src/api/python; echo $(Agent.TempDirectory)/win32-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
     - script: cd src/api/python; echo $(Agent.TempDirectory)/win64-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
     - script: cd src/api/python; echo $(Agent.TempDirectory)/osx-x64-bin/* | xargs printf 'PACKAGE_FROM_RELEASE=%s\n' | xargs -I '{}' env '{}' python3 setup.py bdist_wheel
@@ -478,7 +535,7 @@ stages:
     - task: GitHubRelease@0
       continueOnError: true 
       inputs:
-        gitHubConnection: Z3GitHub
+        gitHubConnection: Z3Prover
         repositoryName: 'Z3Prover/z3'
         action: 'delete'
 #     target: '$(Build.SourceVersion)'
@@ -487,7 +544,7 @@ stages:
     - task: GitHubRelease@0
       continueOnError: true 
       inputs:
-        gitHubConnection: Z3GitHub
+        gitHubConnection: Z3Prover
         repositoryName: 'Z3Prover/z3'
         action: 'create'
 #     target: '$(Build.SourceVersion)'
@@ -527,15 +584,16 @@ stages:
       displayName: 'NuGet Nightly x64 push'
       inputs:
         command: push
-        publishVstsFeed: 'Z3Nightly'
+        publishVstsFeed: 'Z3Build/Z3-Nightly-Builds'
         packagesToPush: $(Agent.TempDirectory)/x64/*.nupkg
         allowPackageConflicts: true
     - task: NuGetCommand@2
       displayName: 'NuGet Nightly x86 push'
       inputs:
         command: push
-        publishVstsFeed: 'Z3Nightly'
+        publishVstsFeed: 'Z3Build/Z3-Nightly-Builds'
         packagesToPush: $(Agent.TempDirectory)/x86/*.nupkg
         allowPackageConflicts: true
-
+    
+       
 # TBD: run regression tests on generated binaries.

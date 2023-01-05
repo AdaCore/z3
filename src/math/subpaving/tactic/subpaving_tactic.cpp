@@ -26,6 +26,7 @@ Revision History:
 #include "util/mpff.h"
 #include "util/mpfx.h"
 #include "util/f2n.h"
+#include <iostream>
 
 class subpaving_tactic : public tactic {
 
@@ -36,8 +37,6 @@ class subpaving_tactic : public tactic {
             e2v.mk_inv(m_inv);
         }
 
-        virtual ~display_var_proc() {}
-        
         ast_manager & m() const { return m_inv.get_manager(); }
         
         void operator()(std::ostream & out, subpaving::var x) const override {

@@ -25,6 +25,8 @@ using System.Runtime.InteropServices;
 
 namespace Microsoft.Z3
 {
+
+    using Z3_context = System.IntPtr;
     /// <summary>
     /// The main interaction with Z3 happens via the Context.
     /// </summary>
@@ -77,6 +79,23 @@ namespace Microsoft.Z3
                 InitContext();
             }
         }
+
+        /// <summary>
+        /// Internal Constructor. It is used from UserPropagator
+        /// </summary>
+        internal Context(Z3_context ctx)
+            : base()
+        {
+            lock (creation_lock)
+            {
+                is_external = true;
+                m_ctx = ctx;
+                InitContext();
+            }
+        }
+
+        bool is_external = false;
+
         #endregion
 
         #region Symbols
@@ -105,7 +124,7 @@ namespace Microsoft.Z3
         /// </summary>
         internal Symbol[] MkSymbols(string[] names)
         {
-            if (names == null) return null;
+            if (names == null) return new Symbol[0];
             Symbol[] result = new Symbol[names.Length];
             for (int i = 0; i < names.Length; ++i) result[i] = MkSymbol(names[i]);
             return result;
@@ -669,6 +688,16 @@ namespace Microsoft.Z3
             CheckContextMatch(range);
             return new FuncDecl(this, prefix, null, range);
         }
+
+	/// <summary>
+	/// Declare a function to be processed by the user propagator plugin.
+	/// </summary>               
+	public FuncDecl MkUserPropagatorFuncDecl(string name, Sort[] domain, Sort range) 
+	{
+             using var _name = MkSymbol(name);
+             var fn = Native.Z3_solver_propagate_declare(nCtx, _name.NativeObject, AST.ArrayLength(domain), AST.ArrayToNative(domain), range.NativeObject);
+             return new FuncDecl(this, fn);
+	}
         #endregion
 
         #region Bound Variables
@@ -907,6 +936,15 @@ namespace Microsoft.Z3
 
             CheckContextMatch<Expr>(args);
             return new BoolExpr(this, Native.Z3_mk_distinct(nCtx, (uint)args.Length, AST.ArrayToNative(args)));
+        }
+
+        /// <summary>
+        /// Creates a <c>distinct</c> term.
+        /// </summary>
+        public BoolExpr MkDistinct(IEnumerable<Expr> args)
+        {
+            Debug.Assert(args != null);
+            return MkDistinct(args.ToArray());
         }
 
         /// <summary>
@@ -4591,16 +4629,16 @@ namespace Microsoft.Z3
         /// </summary>
         /// <remarks>
         /// Produces a term that represents the conversion of the floating-point term t into a
-        /// bit-vector term of size sz in 2's complement format (signed when signed==true). If necessary,
+        /// bit-vector term of size sz in 2's complement format (signed when sign==true). If necessary,
         /// the result will be rounded according to rounding mode rm.
         /// </remarks>
         /// <param name="rm">RoundingMode term.</param>
         /// <param name="t">FloatingPoint term</param>
         /// <param name="sz">Size of the resulting bit-vector.</param>
-        /// <param name="signed">Indicates whether the result is a signed or unsigned bit-vector.</param>
-        public BitVecExpr MkFPToBV(FPRMExpr rm, FPExpr t, uint sz, bool signed)
+        /// <param name="sign">Indicates whether the result is a signed or unsigned bit-vector.</param>
+        public BitVecExpr MkFPToBV(FPRMExpr rm, FPExpr t, uint sz, bool sign)
         {
-            if (signed)
+            if (sign)
                 return new BitVecExpr(this, Native.Z3_mk_fpa_to_sbv(this.nCtx, rm.NativeObject, t.NativeObject, sz));
             else
                 return new BitVecExpr(this, Native.Z3_mk_fpa_to_ubv(this.nCtx, rm.NativeObject, t.NativeObject, sz));
@@ -4978,11 +5016,14 @@ namespace Microsoft.Z3
                 m_n_err_handler = null;
                 IntPtr ctx = m_ctx;
                 m_ctx = IntPtr.Zero;
-                Native.Z3_del_context(ctx);
+                if (!is_external) 
+                   Native.Z3_del_context(ctx);
             }
             else
                 GC.ReRegisterForFinalize(this);
         }
+
+
         #endregion
     }
 }

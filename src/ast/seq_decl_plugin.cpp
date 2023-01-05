@@ -532,7 +532,12 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
     case _OP_STRING_FROM_CHAR: {
         if (!(num_parameters == 1 && parameters[0].is_int())) 
             m.raise_exception("character literal expects integer parameter");
-        zstring zs(parameters[0].get_int());        
+        int i = parameters[0].get_int();
+        if (i < 0)
+            m.raise_exception("character literal expects a non-negative integer parameter");
+        if (i > (int)m_char_plugin->max_char())
+            m.raise_exception("character literal is out of bounds");
+        zstring zs(i);        
         parameter p(zs);
         return m.mk_const_decl(m_stringc_sym, m_string,func_decl_info(m_family_id, OP_STRING_CONST, 1, &p));
     }
@@ -966,6 +971,22 @@ bool seq_util::str::is_len_sub(expr const* s, expr*& l, expr*& u, rational& k) c
         return false;
 }
 
+bool seq_util::str::is_concat_of_units(expr* s) const {
+    ptr_vector<expr> todo;
+    todo.push_back(s);
+    while (!todo.empty()) {
+        expr* e = todo.back();
+        todo.pop_back();
+        if (is_empty(e) || is_unit(e))
+            continue;
+        if (is_concat(e))
+            todo.append(to_app(e)->get_num_args(), to_app(e)->get_args());
+        else
+            return false;
+    }
+    return true;
+}
+
 bool seq_util::str::is_unit_string(expr const* s, expr_ref& c) const {
     zstring z;
     expr* ch = nullptr;
@@ -1085,6 +1106,31 @@ unsigned seq_util::rex::max_length(expr* r) const {
     // Else: star, plus, complement, full_seq, loop(r,r1,lo), derivative
     return UINT_MAX;
 }
+
+/**
+   \brief determine if \c n is a range regular expression where the lower and upper bounds
+   are given by single characters.
+   Range expressions where lower and upper bounds are not single characters are either 
+   the empty language (when a bound is a string but not a single character) or symbolic
+   (when both bounds are not ground strings). The general is_range can be used to process
+   range expressions for these cases, but they don't correspond to mainstream regex usage.   
+ */
+bool seq_util::rex::is_range(expr const* n, unsigned& lo, unsigned& hi) const {
+    expr* _lo, *_hi;
+    zstring los, his;
+    if (!is_range(n, _lo, _hi))
+        return false;
+    if (!u.str.is_string(_lo, los))
+        return false;
+    if (!u.str.is_string(_hi, his))
+        return false;
+    if (los.length() != 1 || his.length() != 1)
+        return false;
+    lo = los[0];
+    hi = his[0];
+    return true;
+}
+
 
 sort* seq_util::rex::to_seq(sort* re) {
     (void)u;

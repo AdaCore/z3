@@ -25,7 +25,8 @@ Revision History:
 #include "muz/base/dl_context.h"
 #include "ast/scoped_proof.h"
 #include "ast/bv_decl_plugin.h"
-#include "muz/rel/tbv.h"
+#include "util/tbv.h"
+#include <iostream>
 
 namespace datalog {
 
@@ -224,9 +225,9 @@ namespace datalog {
         }
 
         void display_statistics(std::ostream& out) const {            
-            std::cout << "Number of insertions:  " << m_stats.m_num_inserts << "\n";
-            std::cout << "Number of comparisons: " << m_stats.m_num_comparisons << "\n";
-            std::cout << "Number of nodes:       " << size() << "\n";
+            out << "Number of insertions:  " << m_stats.m_num_inserts << "\n"
+                   "Number of comparisons: " << m_stats.m_num_comparisons << "\n"
+                   "Number of nodes:       " << size() << "\n";
         }
 
         void display(std::ostream& out) const {            

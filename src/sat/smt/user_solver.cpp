@@ -56,6 +56,18 @@ namespace user_solver {
     void solver::register_cb(expr* e) {
         add_expr(e);
     }
+    
+    void solver::next_split_cb(expr* e, unsigned idx, lbool phase) {
+        if (e == nullptr) {
+            m_next_split_expr = nullptr;
+            return;
+        }
+        force_push();
+        ctx.internalize(e, false);
+        m_next_split_expr = e;
+        m_next_split_idx = idx;
+        m_next_split_phase = phase;
+    }
 
     sat::check_result solver::check() {
         if (!(bool)m_final_eh)
@@ -72,6 +84,41 @@ namespace user_solver {
         m_id2justification.setx(v, sat::literal_vector(num_lits, jlits), sat::literal_vector());
         m_fixed_eh(m_user_context, this, var2expr(v), value);
     }
+    
+    bool solver::decide(sat::bool_var& var, lbool& phase) {
+        
+        if (!m_decide_eh)
+            return false;
+        
+        euf::enode* original_enode = bool_var2enode(var);
+        
+        if (!is_attached_to_var(original_enode))
+            return false;
+        
+        unsigned new_bit = 0; // ignored; currently no bv-support
+        expr* e = bool_var2expr(var);
+        
+        m_decide_eh(m_user_context, this, &e, &new_bit, &phase);
+        
+        euf::enode* new_enode = ctx.get_enode(e);
+    
+        if (original_enode == new_enode)
+            return false;
+        
+        var = new_enode->bool_var();
+        return true;
+    }
+    
+    bool solver::get_case_split(sat::bool_var& var, lbool &phase){
+        if (!m_next_split_expr)
+            return false;
+        
+        euf::enode* n = ctx.get_enode(m_next_split_expr);
+        var = n->bool_var();
+        phase = m_next_split_phase;
+        m_next_split_expr = nullptr;
+        return true;
+    }
 
     void solver::asserted(sat::literal lit) {
         if (!m_fixed_eh)
@@ -84,6 +131,21 @@ namespace user_solver {
         m_id2justification.setx(v, lits, sat::literal_vector());
         m_fixed_eh(m_user_context, this, var2expr(v), lit.sign() ? m.mk_false() : m.mk_true());
     }
+    
+    void solver::new_eq_eh(euf::th_eq const& eq) {
+        if (!m_eq_eh)
+            return;
+        force_push();
+        m_eq_eh(m_user_context, this, var2expr(eq.v1()), var2expr(eq.v2()));
+    }
+    
+    void solver::new_diseq_eh(euf::th_eq const& de) {
+        if (!m_diseq_eh)
+            return;
+        force_push();
+        m_diseq_eh(m_user_context, this, var2expr(de.v1()), var2expr(de.v2()));
+    }
+
 
     void solver::push_core() {
         th_euf_solver::push_core();

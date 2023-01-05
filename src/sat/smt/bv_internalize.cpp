@@ -137,7 +137,9 @@ namespace bv {
             return true;
 
         SASSERT(!n || !n->is_attached_to(get_id()));
-        bool suppress_args = !reflect() && !m.is_considered_uninterpreted(a->get_decl());
+        bool suppress_args = !reflect() 
+            && !m.is_considered_uninterpreted(a->get_decl())
+            && !bv.is_int2bv(e) && !bv.is_bv2int(e);
         if (!n)
             n = mk_enode(e, suppress_args);
 
@@ -427,13 +429,16 @@ namespace bv {
             args.push_back(m.mk_ite(b, m_autil.mk_int(power2(i++)), zero));        
         expr_ref sum(m_autil.mk_add(sz, args.data()), m);
         sat::literal lit = eq_internalize(n, sum);
-	add_unit(lit);
+        m_bv2ints.push_back(expr2enode(n));
+        ctx.push(push_back_vector<euf::enode_vector>(m_bv2ints));
+	    add_unit(lit);
     }
 
     void solver::internalize_int2bv(app* n) {
         SASSERT(bv.is_int2bv(n));
         euf::enode* e = expr2enode(n);
         mk_bits(e->get_th_var(get_id()));
+        get_var(e->get_arg(0));
         assert_int2bv_axiom(n);
     }
 
@@ -445,6 +450,10 @@ namespace bv {
      * Create the axioms:
      *   bit2bool(i,n) == ((e div 2^i) mod 2 != 0)
      * for i = 0,.., sz-1
+     *
+     * Alternative axiomatization:
+     * e = sum bit2bool(i,n)*2^i + 2^n * (div(e, 2^n))
+     * possibly term div(e,2^n) is not 
      */
     void solver::assert_int2bv_axiom(app* n) {
         expr* e = nullptr;
@@ -455,8 +464,8 @@ namespace bv {
         unsigned sz = bv.get_bv_size(n);
         numeral mod = power(numeral(2), sz);
         rhs = m_autil.mk_mod(e, m_autil.mk_int(mod));
-	sat::literal eq_lit = eq_internalize(lhs, rhs);
-	add_unit(eq_lit);
+        sat::literal eq_lit = eq_internalize(lhs, rhs);
+        add_unit(eq_lit);
        
         expr_ref_vector n_bits(m);
         get_bits(n_enode, n_bits);
@@ -467,8 +476,8 @@ namespace bv {
             rhs = m_autil.mk_mod(rhs, m_autil.mk_int(2));
             rhs = mk_eq(rhs, m_autil.mk_int(1));
             lhs = n_bits.get(i);
-	    eq_lit = eq_internalize(lhs, rhs);
-	    add_unit(eq_lit);
+            eq_lit = eq_internalize(lhs, rhs);
+	        add_unit(eq_lit);
         }
     }
 

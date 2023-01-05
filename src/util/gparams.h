@@ -119,7 +119,9 @@ public:
     // Auxiliary APIs for better command line support
     static void display_modules(std::ostream & out);
     static void display_module(std::ostream & out, char const * module_name);
+    static void display_module_markdown(std::ostream & out, char const * module_name);
     static void display_parameter(std::ostream & out, char const * name);
+    static param_descrs const& get_global_param_descrs();
 
     /**
        \brief Initialize the global parameter management module.

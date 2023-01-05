@@ -93,7 +93,7 @@ class lar_solver : public column_namer {
     unsigned_vector                                     m_row_bounds_to_replay;
     
     u_set                                               m_basic_columns_with_changed_cost;
-    // these are basic columns with the value changed, so the the corresponding row in the tableau
+    // these are basic columns with the value changed, so the corresponding row in the tableau
     // does not sum to zero anymore
     u_set                                               m_incorrect_columns;
     // copy of m_r_solver.inf_set()
@@ -275,9 +275,6 @@ class lar_solver : public column_namer {
         return m_column_buffer;
     }
     bool bound_is_integer_for_integer_column(unsigned j, const mpq & right_side) const;
-    inline unsigned get_base_column_in_row(unsigned row_index) const {
-        return m_mpq_lar_core_solver.m_r_solver.get_base_column_in_row(row_index);
-    }
     inline lar_core_solver & get_core_solver() { return m_mpq_lar_core_solver; }
     void catch_up_in_updating_int_solver();
     var_index to_column(unsigned ext_j) const;
@@ -357,6 +354,10 @@ public:
     }
 
     void set_value_for_nbasic_column(unsigned j, const impq& new_val);
+    inline unsigned get_base_column_in_row(unsigned row_index) const {
+        return m_mpq_lar_core_solver.m_r_solver.get_base_column_in_row(row_index);
+    }
+
 
     // lp_assert(implied_bound_is_correctly_explained(ib, explanation)); }
     constraint_index mk_var_bound(var_index j, lconstraint_kind kind, const mpq & right_side);
@@ -542,7 +543,7 @@ public:
     void get_model(std::unordered_map<var_index, mpq> & variable_values) const;
     void get_rid_of_inf_eps();
     void get_model_do_not_care_about_diff_vars(std::unordered_map<var_index, mpq> & variable_values) const;
-    std::string get_variable_name(var_index vi) const;
+    std::string get_variable_name(var_index vi) const override;
     void set_variable_name(var_index vi, std::string);
     inline unsigned number_of_vars() const { return m_var_register.size(); }
     inline bool is_base(unsigned j) const { return m_mpq_lar_core_solver.m_r_heading[j] >= 0; }
@@ -630,6 +631,7 @@ public:
     }
     void round_to_integer_solution();
     inline const row_strip<mpq> &  get_row(unsigned i) const { return A_r().m_rows[i]; }
+    inline const row_strip<mpq> &  basic2row(unsigned i) const { return A_r().m_rows[row_of_basic_column(i)]; }
     inline const column_strip &  get_column(unsigned i) const { return A_r().m_columns[i]; }
     bool row_is_correct(unsigned i) const;
     bool ax_is_correct() const;
@@ -649,7 +651,7 @@ public:
     lar_solver();
     void set_track_pivoted_rows(bool v);
     bool get_track_pivoted_rows() const;    
-    virtual ~lar_solver();
+    ~lar_solver() override;
     const vector<impq>& r_x() const { return m_mpq_lar_core_solver.m_r_x; }
     bool column_is_int(unsigned j) const;
     inline bool column_value_is_int(unsigned j) const { return m_mpq_lar_core_solver.m_r_x[j].is_int(); }

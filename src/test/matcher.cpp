@@ -16,11 +16,10 @@ Author:
 Revision History:
 
 --*/
-#ifdef _WINDOWS
 #include "ast/substitution/matcher.h"
 #include "ast/ast_pp.h"
 #include "ast/reg_decl_plugins.h"
-
+#include <iostream>
 
 void tst_match(ast_manager & m, app * t, app * i) {
     substitution s(m);
@@ -110,7 +109,3 @@ void tst1() {
 void tst_matcher() {
     tst1();
 }
-#else
-void tst_matcher() {
-}
-#endif

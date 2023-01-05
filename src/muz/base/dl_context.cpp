@@ -17,6 +17,7 @@ Revision History:
 
 --*/
 
+#include<iostream>
 #include<sstream>
 #include<limits>
 #include "ast/arith_decl_plugin.h"
@@ -52,7 +53,7 @@ namespace datalog {
                 m_limited_size = ctx.get_decl_util().try_get_size(s, m_size);
         }
     public:
-        virtual ~sort_domain() {}
+        virtual ~sort_domain() = default;
 
         sort_kind get_kind() const { return m_kind; }
         virtual unsigned get_constant_count() const = 0;
@@ -158,8 +159,6 @@ namespace datalog {
     public:
         restore_rules(context& ctx, rule_set& r): ctx(ctx), m_old_rules(alloc(rule_set, r)) {}
 
-        ~restore_rules() override {}
-
         void undo() override {
             ctx.replace_rules(*m_old_rules);
             reset();
@@ -172,7 +171,6 @@ namespace datalog {
         unsigned m_old_size;
     public:
         restore_vec_size_trail(Vec& v): m_vector(v), m_old_size(v.size()) {}
-        ~restore_vec_size_trail() override {}
         void undo() override { m_vector.shrink(m_old_size); }
     };
 

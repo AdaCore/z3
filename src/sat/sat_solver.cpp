@@ -402,6 +402,7 @@ namespace sat {
         extension::scoped_drating _sd(*m_ext.get());
         if (j.get_kind() == justification::EXT_JUSTIFICATION) 
             fill_ext_antecedents(lit, j, false);
+        TRACE("sat", tout << "drat-unit\n");
         m_drat.add(lit, m_searching);
     }
 
@@ -412,6 +413,7 @@ namespace sat {
     clause * solver::mk_clause_core(unsigned num_lits, literal * lits, sat::status st) {
         bool redundant = st.is_redundant();
         TRACE("sat", tout << "mk_clause: "  << mk_lits_pp(num_lits, lits) << (redundant?" learned":" aux") << "\n";);
+        bool logged = false;
         if (!redundant || !st.is_sat()) {
             unsigned old_sz = num_lits;
             bool keep = simplify_clause(num_lits, lits);
@@ -420,8 +422,10 @@ namespace sat {
                 return nullptr; // clause is equivalent to true.
             }
             // if an input clause is simplified, then log the simplified version as learned
-            if (m_config.m_drat && old_sz > num_lits)
+            if (m_config.m_drat && old_sz > num_lits) {
                 drat_log_clause(num_lits, lits, st);
+                logged = true;
+            }
 
             ++m_stats.m_non_learned_generation;
             if (!m_searching) {
@@ -435,7 +439,7 @@ namespace sat {
             set_conflict();
             return nullptr;
         case 1:
-            if (m_config.m_drat && (!st.is_sat() || st.is_input()))
+            if (!logged && m_config.m_drat && (!st.is_sat() || st.is_input()))
                 drat_log_clause(num_lits, lits, st);
             assign_unit(lits[0]);
             return nullptr;
@@ -600,9 +604,8 @@ namespace sat {
         else {
             m_clauses.push_back(r);
         }
-        if (m_config.m_drat) {
+        if (m_config.m_drat) 
             m_drat.add(*r, st);
-        }
         for (literal l : *r) {
             m_touched[l.var()] = m_touch_index;
         }
@@ -946,7 +949,6 @@ namespace sat {
         if (j.level() == 0) {
             if (m_config.m_drat) 
                 drat_log_unit(l, j);
-            
             j = justification(0); // erase justification for level 0
         }
         else {
@@ -1662,49 +1664,66 @@ namespace sat {
 
         return null_bool_var;
     }
-
-    bool solver::decide() {
-        bool_var next = next_var();
-        if (next == null_bool_var)
-            return false;
-        push();
-        m_stats.m_decision++;
+    
+    bool solver::guess(bool_var next) {
         lbool lphase = m_ext ? m_ext->get_phase(next) : l_undef;
-        bool phase = lphase == l_true;
 
-        if (lphase == l_undef) {
-            switch (m_config.m_phase) {
+        if (lphase != l_undef)
+            return lphase == l_true;
+        switch (m_config.m_phase) {
             case PS_ALWAYS_TRUE:
-                phase = true;
-                break;
+                return true;
             case PS_ALWAYS_FALSE:
-                phase = false;
-                break;
+                return false;
             case PS_BASIC_CACHING:
-                phase = m_phase[next];
-                break;
+                return m_phase[next];
             case PS_FROZEN:
-                phase = m_best_phase[next];
-                break;
+                return m_best_phase[next];
             case PS_SAT_CACHING:
-                if (m_search_state == s_unsat) {
-                    phase = m_phase[next];
-                }
-                else {
-                    phase = m_best_phase[next];
-                }
-                break;
+                if (m_search_state == s_unsat)
+                    return m_phase[next];
+                return m_best_phase[next];
             case PS_RANDOM:
-                phase = (m_rand() % 2) == 0;
-                break;
+                return (m_rand() % 2) == 0;
             default:
                 UNREACHABLE();
-                phase = false;
-                break;
-            }
+                return false;
         }
+    }
 
-        literal next_lit(next, !phase);
+    bool solver::decide() {
+        bool_var next;
+        lbool phase = l_undef;
+        bool is_pos;
+        bool used_queue = false;
+        if (!m_ext || !m_ext->get_case_split(next, phase)) {
+            used_queue = true;
+            next = next_var();
+            if (next == null_bool_var)
+                return false;
+        }
+        push();
+        m_stats.m_decision++;
+        
+        if (phase == l_undef)
+            phase = guess(next) ? l_true: l_false;
+        
+        literal next_lit(next, false);
+        
+        if (m_ext && m_ext->decide(next, phase)) {
+            if (used_queue)
+                m_case_split_queue.unassign_var_eh(next);
+            next_lit = literal(next, false);
+        }
+        
+        if (phase == l_undef)
+            is_pos = guess(next);
+        else
+            is_pos = phase == l_true;
+        
+        if (!is_pos)
+            next_lit.neg();
+        
         TRACE("sat_decide", tout << scope_lvl() << ": next-case-split: " << next_lit << "\n";);
         assign_scoped(next_lit);
         return true;
@@ -2013,17 +2032,18 @@ namespace sat {
         sort_watch_lits();
         CASSERT("sat_simplify_bug", check_invariant());
 
-        m_probing();
-        CASSERT("sat_missed_prop", check_missed_propagation());
-        CASSERT("sat_simplify_bug", check_invariant());
-        m_asymm_branch(false);
-
         CASSERT("sat_missed_prop", check_missed_propagation());
         CASSERT("sat_simplify_bug", check_invariant());
         if (m_ext) {
             m_ext->clauses_modifed();
             m_ext->simplify();
         }
+
+        m_probing();
+        CASSERT("sat_missed_prop", check_missed_propagation());
+        CASSERT("sat_simplify_bug", check_invariant());
+        m_asymm_branch(false);
+
         if (m_config.m_lookahead_simplify && !m_ext) {
             lookahead lh(*this);
             lh.simplify(true);
@@ -2399,7 +2419,7 @@ namespace sat {
         m_conflict_lvl = get_max_lvl(m_not_l, m_conflict, unique_max);        
         justification js = m_conflict;
 
-        if (m_conflict_lvl <= 1 && tracking_assumptions()) {
+        if (m_conflict_lvl <= 1 && (!m_assumptions.empty() || !m_user_scope_literals.empty())) {
             TRACE("sat", tout << "unsat core\n";);
             resolve_conflict_for_unsat_core();
             return l_false;

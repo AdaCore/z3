@@ -16,7 +16,6 @@ Author:
 Revision History:
 
 --*/
-#include<iostream>
 #include<thread>
 #include "util/scoped_ctrl_c.h"
 #include "util/cancel_eh.h"
@@ -37,7 +36,7 @@ Revision History:
 #include "smt/smt_implied_equalities.h"
 #include "solver/smt_logics.h"
 #include "solver/tactic2solver.h"
-#include "solver/solver_params.hpp"
+#include "params/solver_params.hpp"
 #include "cmd_context/cmd_context.h"
 #include "parsers/smt2/smt2parser.h"
 #include "sat/dimacs.h"
@@ -207,7 +206,7 @@ extern "C" {
         if (!smt_logics::supported_logic(to_symbol(logic))) {
             std::ostringstream strm;
             strm << "logic '" << to_symbol(logic) << "' is not recognized";
-            throw default_exception(strm.str());
+            SET_ERROR_CODE(Z3_INVALID_ARG, strm.str());
             RETURN_Z3(nullptr);
         }
         else {
@@ -257,7 +256,10 @@ extern "C" {
     }
 
     void solver_from_stream(Z3_context c, Z3_solver s, std::istream& is) {
-        scoped_ptr<cmd_context> ctx = alloc(cmd_context, false, &(mk_c(c)->m()));
+        auto& solver = *to_solver(s);
+        if (!solver.m_cmd_context) 
+            solver.m_cmd_context = alloc(cmd_context, false, &(mk_c(c)->m()));
+        auto& ctx = solver.m_cmd_context;
         ctx->set_ignore_check(true);
         std::stringstream errstrm;
         ctx->set_regular_stream(errstrm);
@@ -273,6 +275,7 @@ extern "C" {
             init_solver(c, s);
         for (expr* e : ctx->tracked_assertions()) 
             to_solver(s)->assert_expr(e);
+        ctx->reset_tracked_assertions();
         to_solver_ref(s)->set_model_converter(ctx->get_model_converter());
     }
 
@@ -388,9 +391,11 @@ extern "C" {
             bool new_model = params.get_bool("model", true);
             if (old_model != new_model)
                 to_solver_ref(s)->set_produce_models(new_model);
-            param_descrs r;
-            to_solver_ref(s)->collect_param_descrs(r);
-            context_params::collect_solver_param_descrs(r);
+            param_descrs& r = to_solver(s)->m_param_descrs;
+            if(r.size () == 0) {
+              to_solver_ref(s)->collect_param_descrs(r);
+              context_params::collect_solver_param_descrs(r);
+            }
             params.validate(r);
             to_solver_ref(s)->updt_params(params);
         }
@@ -412,9 +417,8 @@ extern "C" {
     void Z3_API Z3_solver_dec_ref(Z3_context c, Z3_solver s) {
         Z3_TRY;
         LOG_Z3_solver_dec_ref(c, s);
-        RESET_ERROR_CODE();
-        if (s)
-            to_solver(s)->dec_ref();
+        if (s) 
+            to_solver(s)->dec_ref();        
         Z3_CATCH;
     }
 
@@ -980,6 +984,14 @@ extern "C" {
         RESET_ERROR_CODE();
         user_propagator::decide_eh_t c = (void(*)(void*, user_propagator::callback*, expr**, unsigned*, lbool*))decide_eh;
         to_solver_ref(s)->user_propagate_register_decide(c);
+        Z3_CATCH;
+    }
+
+    void Z3_API Z3_solver_next_split(Z3_context c, Z3_solver_callback cb,  Z3_ast t, unsigned idx, Z3_lbool phase) {
+        Z3_TRY;
+        LOG_Z3_solver_next_split(c, cb, t, idx, phase);
+        RESET_ERROR_CODE();
+        reinterpret_cast<user_propagator::callback*>(cb)->next_split_cb(to_expr(t), idx, (lbool)phase);
         Z3_CATCH;
     }
 

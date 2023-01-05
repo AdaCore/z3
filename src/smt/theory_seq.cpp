@@ -783,7 +783,7 @@ bool theory_seq::propagate_lit(dependency* dep, unsigned n, literal const* _lits
     justification* js =
         ctx.mk_justification(
             ext_theory_propagation_justification(
-                get_id(), ctx.get_region(), lits.size(), lits.data(), eqs.size(), eqs.data(), lit));
+                get_id(), ctx, lits.size(), lits.data(), eqs.size(), eqs.data(), lit));
 
     m_new_propagation = true;
     ctx.assign(lit, js);
@@ -804,7 +804,7 @@ void theory_seq::set_conflict(enode_pair_vector const& eqs, literal_vector const
     ctx.set_conflict(
         ctx.mk_justification(
             ext_theory_conflict_justification(
-                get_id(), ctx.get_region(), lits.size(), lits.data(), eqs.size(), eqs.data(), 0, nullptr)));
+                get_id(), ctx, lits.size(), lits.data(), eqs.size(), eqs.data(), 0, nullptr)));
     validate_conflict(eqs, lits);
 }
 
@@ -829,7 +829,7 @@ bool theory_seq::propagate_eq(dependency* dep, enode* n1, enode* n2) {
 
     justification* js = ctx.mk_justification(
         ext_theory_eq_propagation_justification(
-            get_id(), ctx.get_region(), lits.size(), lits.data(), eqs.size(), eqs.data(), n1, n2));
+            get_id(), ctx, lits.size(), lits.data(), eqs.size(), eqs.data(), n1, n2));
     
     {
         std::function<expr*(void)> fn = [&]() { return m.mk_eq(n1->get_expr(), n2->get_expr()); };
@@ -1455,7 +1455,7 @@ bool theory_seq::internalize_term(app* term) {
     if (ctx.e_internalized(term)) {
         mk_var(ctx.get_enode(term));
         return true;
-    }    
+    }
 
     if (m.is_bool(term) && 
         (m_util.str.is_in_re(term) || m_sk.is_skolem(term))) {
@@ -1484,11 +1484,20 @@ bool theory_seq::internalize_term(app* term) {
     mk_var(e);
     if (!ctx.relevancy()) {
         relevant_eh(term);
-    }
-
-    
+    }    
     return true;
 }
+
+bool theory_seq::is_beta_redex(enode* p, enode* n) const {
+    expr* term = p->get_expr();
+    if (!m_util.str.is_map(term) && !m_util.str.is_mapi(term) &&
+        !m_util.str.is_foldl(term) && !m_util.str.is_foldli(term))
+        return false;
+    if (p->get_arg(0)->get_root() == n->get_root())
+        return true;
+    return false;
+}
+
 
 void theory_seq::add_length(expr* l) {
     expr* e = nullptr;
@@ -1914,7 +1923,6 @@ public:
     seq_value_proc(theory_seq& th, enode* n, sort* s): th(th), m_node(n), m_sort(s) {
         (void)m_node;
     }
-    ~seq_value_proc() override {}
     void add_unit(enode* n) { 
         m_dependencies.push_back(model_value_dependency(n)); 
         m_source.push_back(unit_source);
@@ -2774,26 +2782,25 @@ bool theory_seq::get_length(expr* e, rational& val) {
             todo.push_back(e1);
             todo.push_back(e2);
         }
-        else if (m_util.str.is_unit(c)) {
+        else if (m_util.str.is_unit(c)) 
             val += rational(1);
-        }
-        else if (m_util.str.is_empty(c)) {
+        else if (m_util.str.is_empty(c)) 
             continue;
-        }
-        else if (m_util.str.is_string(c, s)) {
+        else if (m_util.str.is_map(c, e1, e2)) 
+            todo.push_back(e2);
+        else if (m_util.str.is_mapi(c, e1, e2, c)) 
+            todo.push_back(c);
+        else if (m_util.str.is_string(c, s)) 
             val += rational(s.length());
-        }
-        else if (!has_length(c)) {
-            len = mk_len(c);
-            add_axiom(mk_literal(m_autil.mk_ge(len, m_autil.mk_int(0))));
-            TRACE("seq", tout << "literal has no length " << mk_pp(c, m) << "\n";);
-            return false;            
-        }
         else {            
             len = mk_len(c);
-            if (m_arith_value.get_value(len, val1) && !val1.is_neg()) {
-                val += val1;                
+            if (!has_length(c)) {
+                add_axiom(mk_literal(m_autil.mk_ge(len, m_autil.mk_int(0))));
+                TRACE("seq", tout << "literal has no length " << mk_pp(c, m) << "\n";);
+                return false;            
             }
+            else if (m_arith_value.get_value(len, val1) && !val1.is_neg()) 
+                val += val1;                
             else {
                 TRACE("seq", tout << "length has not been internalized " << mk_pp(c, m) << "\n";);
                 return false;
@@ -2947,7 +2954,7 @@ bool theory_seq::propagate_eq(dependency* deps, literal_vector const& _lits, exp
     justification* js =
         ctx.mk_justification(
             ext_theory_eq_propagation_justification(
-                get_id(), ctx.get_region(), lits.size(), lits.data(), eqs.size(), eqs.data(), n1, n2));
+                get_id(), ctx, lits.size(), lits.data(), eqs.size(), eqs.data(), n1, n2));
 
     m_new_propagation = true;
     
@@ -3063,8 +3070,12 @@ void theory_seq::assign_eh(bool_var v, bool is_true) {
     else if (m_util.str.is_is_digit(e)) {
 	
     }
+    else if (m_util.str.is_foldl(e) || m_util.str.is_foldli(e)) {
+        
+    }
     else {
         TRACE("seq", tout << mk_pp(e, m) << "\n";);
+        IF_VERBOSE(0, verbose_stream() << mk_pp(e, m) << "\n");
         UNREACHABLE();
     }
 }
@@ -3207,18 +3218,15 @@ void theory_seq::relevant_eh(app* n) {
         add_ubv_string(n);
 
     expr* arg = nullptr;
-    if (m_sk.is_tail(n, arg)) {
+    if (m_sk.is_tail(n, arg)) 
         add_length_limit(arg, m_max_unfolding_depth, true);
-    }
 
-    if (m_util.str.is_length(n, arg) && !has_length(arg) && ctx.e_internalized(arg)) {
+    if (m_util.str.is_length(n, arg) && !has_length(arg) && ctx.e_internalized(arg)) 
         add_length_to_eqc(arg);
-    }
 
     if (m_util.str.is_replace_all(n) ||
         m_util.str.is_replace_re(n) ||
-        m_util.str.is_replace_re_all(n)
-        ) {
+        m_util.str.is_replace_re_all(n)) {
         add_unhandled_expr(n);
     }
 }
@@ -3268,12 +3276,12 @@ bool theory_seq::should_research(expr_ref_vector & unsat_core) {
         }
     }
 
-    if (k_min < UINT_MAX/4) {
+    if (k_min < get_fparams().m_seq_max_unfolding) {
         m_max_unfolding_depth++;
         k_min *= 2;
         if (m_util.is_seq(s_min))
             k_min = std::max(m_util.str.min_length(s_min), k_min);
-        IF_VERBOSE(1, verbose_stream() << "(smt.seq :increase-length " << mk_pp(s_min, m) << " " << k_min << ")\n");
+        IF_VERBOSE(1, verbose_stream() << "(smt.seq :increase-length " << mk_bounded_pp(s_min, m, 3) << " " << k_min << ")\n");
         add_length_limit(s_min, k_min, false);
         return true;
     }
@@ -3282,7 +3290,7 @@ bool theory_seq::should_research(expr_ref_vector & unsat_core) {
         IF_VERBOSE(1, verbose_stream() << "(smt.seq :increase-depth " << m_max_unfolding_depth << ")\n");
         return true;
     }
-    else if (k_min != UINT_MAX && k_min >= UINT_MAX/4) {
+    else if (k_min != UINT_MAX && k_min >= get_fparams().m_seq_max_unfolding) {
         throw default_exception("reached max unfolding");
     }
 

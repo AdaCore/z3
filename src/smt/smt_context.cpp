@@ -42,6 +42,7 @@ Revision History:
 #include "smt/smt_model_finder.h"
 #include "smt/smt_parallel.h"
 #include "smt/smt_arith_value.h"
+#include <iostream>
 
 namespace smt {
 
@@ -79,7 +80,8 @@ namespace smt {
         m_unsat_core(m),
         m_mk_bool_var_trail(*this),
         m_mk_enode_trail(*this),
-        m_mk_lambda_trail(*this) {
+        m_mk_lambda_trail(*this),
+        m_lemma_visitor(m) {
 
         SASSERT(m_scope_lvl == 0);
         SASSERT(m_base_lvl == 0);
@@ -820,6 +822,8 @@ namespace smt {
                 SASSERT(t2 != null_theory_id);
                 theory_var v1 = m_fparams.m_new_core2th_eq ? get_closest_var(n1, t2) : r1->get_th_var(t2);
 
+                TRACE("merge_theory_vars", tout << get_theory(t2)->get_name() << ": " << v2 << " == " << v1 << "\n");
+
                 if (v1 != null_theory_var) {
                     // only send the equality to the theory, if the equality was not propagated by it.
                     if (t2 != from_th)
@@ -838,6 +842,7 @@ namespace smt {
                 SASSERT(v1 != null_theory_var);
                 SASSERT(t1 != null_theory_id);
                 theory_var v2 = r2->get_th_var(t1);
+                TRACE("merge_theory_vars", tout << get_theory(t1)->get_name() << ": " << v2 << " == " << v1 << "\n");
                 if (v2 == null_theory_var) {
                     r2->add_th_var(v1, t1, m_region);
                     push_new_th_diseqs(r2, v1, get_theory(t1));
@@ -1847,23 +1852,29 @@ namespace smt {
             }
         }
         bool_var var;
-        lbool phase = l_undef;
-        m_case_split_queue->next_case_split(var, phase);
+        bool is_pos;
+        bool used_queue = false;
+        
+        if (!has_split_candidate(var, is_pos)) {
+            lbool phase = l_undef;
+            m_case_split_queue->next_case_split(var, phase);
+            used_queue = true;
+            if (var == null_bool_var)
+                return false;
 
-        if (var == null_bool_var) {
-            return false;
+            TRACE_CODE({
+                static unsigned counter = 0;
+                counter++;
+                if (counter % 100 == 0) {
+                    TRACE("activity_profile",
+                          for (unsigned i=0; i<get_num_bool_vars(); i++) {
+                              tout << get_activity(i) << " ";
+                          }
+                          tout << "\n";);
+                }});
+        
+            is_pos = guess(var, phase);
         }
-
-        TRACE_CODE({
-            static unsigned counter = 0;
-            counter++;
-            if (counter % 100 == 0) {
-                TRACE("activity_profile",
-                      for (unsigned i=0; i<get_num_bool_vars(); i++) {
-                          tout << get_activity(i) << " ";
-                      }
-                      tout << "\n";);
-            }});
 
         m_stats.m_num_decisions++;
 
@@ -1872,13 +1883,13 @@ namespace smt {
 
         TRACE("decide_detail", tout << mk_pp(bool_var2expr(var), m) << "\n";);
         
-        bool is_pos = guess(var, phase);
         literal l(var, false);
 
         bool_var original_choice = var;
 
         if (decide_user_interference(var, is_pos)) {
-            m_case_split_queue->unassign_var_eh(original_choice);
+            if (used_queue)
+                m_case_split_queue->unassign_var_eh(original_choice);
             l = literal(var, false);
         }
 
@@ -2550,7 +2561,7 @@ namespace smt {
             justification * js = cls.get_justification();
             justification * new_js = nullptr;
             if (js->in_region())
-                new_js = mk_justification(unit_resolution_justification(m_region,
+                new_js = mk_justification(unit_resolution_justification(*this,
                                                                         js,
                                                                         simp_lits.size(),
                                                                         simp_lits.data()));
@@ -2608,7 +2619,7 @@ namespace smt {
                             if (!cls_js || cls_js->in_region()) {
                                 // If cls_js is 0 or is allocated in a region, then
                                 // we can allocate the new justification in a region too.
-                                js = mk_justification(unit_resolution_justification(m_region,
+                                js = mk_justification(unit_resolution_justification(*this,
                                                                                     cls_js,
                                                                                     simp_lits.size(),
                                                                                     simp_lits.data()));
@@ -2904,8 +2915,14 @@ namespace smt {
         return m_user_propagator && m_user_propagator->has_fixed() && n->get_th_var(m_user_propagator->get_family_id()) != null_theory_var;
     }
 
+    bool context::has_split_candidate(bool_var& var, bool& is_pos) {
+        if (!m_user_propagator)
+            return false;
+        return m_user_propagator->get_case_split(var, is_pos);
+    }
+    
     bool context::decide_user_interference(bool_var& var, bool& is_pos) {
-        if (!m_user_propagator || !m_user_propagator->has_decide())
+        if (!m_user_propagator)
             return false;
         bool_var old = var;
         m_user_propagator->decide(var, is_pos);
@@ -3168,7 +3185,7 @@ namespace smt {
             }
             else {
                 expr_ref proxy(m), fml(m);
-                proxy = m.mk_fresh_const("proxy", m.mk_bool_sort());
+                proxy = m.mk_fresh_const(symbol(), m.mk_bool_sort());
                 fml = m.mk_implies(proxy, e);
                 m_asserted_formulas.assert_expr(fml);
                 asm2proxy.push_back(std::make_pair(e, proxy));
@@ -3737,15 +3754,12 @@ namespace smt {
 
         reset_model();
 
-        if (m_last_search_failure != OK) {
+        if (m_last_search_failure != OK) 
             return false;
-        }
-        if (status == l_false) {
+        if (status == l_false) 
             return false;
-        }
-        if (status == l_true && !m_qmanager->has_quantifiers() && !m_has_lambda) {
+        if (status == l_true && !m_qmanager->has_quantifiers() && !has_lambda()) 
             return false;
-        }
         if (status == l_true && m_qmanager->has_quantifiers()) {
             // possible outcomes   DONE l_true, DONE l_undef, CONTINUE
             mk_proto_model();
@@ -3766,7 +3780,7 @@ namespace smt {
                 break;
             }
         }
-        if (status == l_true && m_has_lambda) {
+        if (status == l_true && has_lambda()) {
             m_last_search_failure = LAMBDAS;
             status = l_undef;
             return false;
@@ -3946,8 +3960,7 @@ namespace smt {
         if (m_fparams.m_model_on_final_check) {
             mk_proto_model();
             model_pp(std::cout, *m_proto_model);
-            std::cout << "END_OF_MODEL\n";
-            std::cout.flush();
+            std::cout << "END_OF_MODEL" << std::endl;
         }
 
         m_stats.m_num_final_checks++;
@@ -4010,7 +4023,7 @@ namespace smt {
         TRACE("final_check_step", tout << "RESULT final_check: " << result << "\n";);
         if (result == FC_GIVEUP && f != OK)
             m_last_search_failure = f;
-        if (result == FC_DONE && m_has_lambda) {
+        if (result == FC_DONE && has_lambda()) {
             m_last_search_failure = LAMBDAS;
             result = FC_GIVEUP;
         }
@@ -4468,9 +4481,8 @@ namespace smt {
             return false;
         }
         case 1: {
-            if (m_qmanager->is_shared(n)) {
+            if (m_qmanager->is_shared(n) && !m.is_lambda_def(n->get_expr()) && !m_lambdas.contains(n)) 
                 return true;
-            }
 
             // the variable is shared if the equivalence class of n
             // contains a parent application.
@@ -4482,6 +4494,8 @@ namespace smt {
                 app* p = parent->get_expr();
                 family_id fid = p->get_family_id();
                 if (fid != th_id && fid != m.get_basic_family_id()) {
+                    if (is_beta_redex(parent, n))
+                        continue;
                     TRACE("is_shared", tout << enode_pp(n, *this) 
                           << "\nis shared because of:\n" 
                           << enode_pp(parent, *this) << "\n";);
@@ -4520,6 +4534,12 @@ namespace smt {
         default:
             return true;
         }
+    }
+
+    bool context::is_beta_redex(enode* p, enode* n) const {
+        family_id th_id = p->get_expr()->get_family_id();
+        theory * th = get_theory(th_id);
+        return th && th->is_beta_redex(p, n);
     }
 
     bool context::get_value(enode * n, expr_ref & value) {

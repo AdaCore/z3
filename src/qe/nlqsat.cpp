@@ -387,8 +387,7 @@ namespace qe {
             for (unsigned i = vars.size(); i-- > 0;) {
                 new_result.reset();
                 ex.project(vars[i], result.size(), result.data(), new_result);
-                TRACE("qe", display_project(tout, vars[i], result, new_result););                
-                TRACE("qe", display_project(std::cout, vars[i], result, new_result););
+                TRACE("qe", display_project(tout, vars[i], result, new_result););
                 result.swap(new_result);
             }
             negate_clause(result);
@@ -834,9 +833,6 @@ namespace qe {
             m_div_mc(nullptr) {
             s.m_solver.get_explain().set_signed_project(true);
             m_nftactic = mk_tseitin_cnf_tactic(m);
-        }
-
-        ~nlqsat() override {
         }
 
         char const* name() const override { return "nlqsat"; }

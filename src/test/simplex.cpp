@@ -11,10 +11,12 @@ Copyright (c) 2015 Microsoft Corporation
 #include "util/vector.h"
 #include "util/rational.h"
 #include "util/rlimit.h"
+#include <iostream>
 
 #define R rational
 typedef simplex::simplex<simplex::mpz_ext> Simplex;
 typedef simplex::sparse_matrix<simplex::mpz_ext> sparse_matrix;
+typedef simplex::sparse_matrix<simplex::mpq_ext> qmatrix;
 
 static vector<R> vec(int i, int j) {
     vector<R> nv;
@@ -24,29 +26,29 @@ static vector<R> vec(int i, int j) {
     return nv;
 }
 
-// static vector<R> vec(int i, int j, int k) {
-//     vector<R> nv = vec(i, j);
-//     nv.push_back(R(k));
-//     return nv;
-// }
+static vector<R> vec(int i, int j, int k) {
+     vector<R> nv = vec(i, j);
+     nv.push_back(R(k));
+     return nv;
+}
 
-// static vector<R> vec(int i, int j, int k, int l) {
-//     vector<R> nv = vec(i, j, k);
-//     nv.push_back(R(l));
-//     return nv;
-// }
+static vector<R> vec(int i, int j, int k, int l) {
+    vector<R> nv = vec(i, j, k);
+    nv.push_back(R(l));
+     return nv;
+}
 
-/// static vector<R> vec(int i, int j, int k, int l, int x) {
-///     vector<R> nv = vec(i, j, k, l);
-///     nv.push_back(R(x));
-///     return nv;
-/// }
+static vector<R> vec(int i, int j, int k, int l, int x) {
+    vector<R> nv = vec(i, j, k, l);
+    nv.push_back(R(x));
+    return nv;
+}
 
-// static vector<R> vec(int i, int j, int k, int l, int x, int y) {
-//     vector<R> nv = vec(i, j, k, l, x);
-//     nv.push_back(R(y));
-//     return nv;
-// }
+static vector<R> vec(int i, int j, int k, int l, int x, int y) {
+    vector<R> nv = vec(i, j, k, l, x);
+    nv.push_back(R(y));
+    return nv;
+}
 
 // static vector<R> vec(int i, int j, int k, int l, int x, int y, int z) {
 //     vector<R> nv = vec(i, j, k, l, x, y);
@@ -131,6 +133,63 @@ static void test4() {
     feas(S);
 }
 
+static void add(qmatrix& m, vector<R> const& v) {
+    m.ensure_var(v.size()-1);
+    auto r = m.mk_row();
+    for (unsigned u = 0; u < v.size(); ++u)
+        m.add_var(r, v[u].to_mpq(), u);
+}
+
+static void test5() {
+    unsynch_mpq_manager m;
+    qmatrix M(m);
+    add(M, vec(1, 0, -3, 0, 2, -8));
+    add(M, vec(0, 1, 5, 0, -1, 4));
+    add(M, vec(0, 0, 0, 1, 7, -9));
+    add(M, vec(0, 0, 0, 0, 0, 0));
+    M.display(std::cout);
+    vector<vector<rational>> K;
+    kernel_ffe(M, K);
+    std::cout << "after\n";
+    for (auto const& v : K)
+        std::cout << v << "\n";
+    M.display(std::cout);
+
+}
+
+static void test6() {
+  unsynch_mpq_manager m;
+  qmatrix M(m);
+  add(M, vec(-1, 2, 1));
+  add(M, vec(0, 1, 1));
+  M.display(std::cout);
+  vector<vector<rational>> K;
+  kernel_ffe(M, K);
+  std::cout << "Kernel:\n";
+  for (auto const &v : K)
+    std::cout << v << "\n";
+  std::cout << "matrix after\n";
+  M.display(std::cout);
+
+}
+
+static void test7() {
+  unsynch_mpq_manager m;
+  qmatrix M(m);
+  add(M, vec(1, 2, 3, 4, 10));
+  add(M, vec(2, 2, 3, 4, 11));
+  add(M, vec(3, 3, 3, 4, 13));
+  add(M, vec(9, 8, 7, 6, 30));
+  M.display(std::cout);
+  vector<vector<rational>> K;
+  kernel_ffe(M, K);
+  std::cout << "Kernel:\n";
+  for (auto const &v : K)
+    std::cout << v << "\n";
+  std::cout << "matrix after\n";
+  M.display(std::cout);
+}
+
 void tst_simplex() {
     reslimit rl; Simplex S(rl);
 
@@ -166,4 +225,7 @@ void tst_simplex() {
     test2();
     test3();
     test4();
+    test5();
+    test6();
+    test7();
 }

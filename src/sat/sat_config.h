@@ -177,6 +177,7 @@ namespace sat {
         bool               m_drat;
         bool               m_drat_binary;
         symbol             m_drat_file;
+        symbol             m_smt_proof;
         bool               m_drat_check_unsat;
         bool               m_drat_check_sat;
         bool               m_drat_activity;

@@ -75,8 +75,7 @@ namespace sat {
                 IF_VERBOSE(0, 
                            verbose_stream() << "not validated: " << clause << "\n";
                            s.display(verbose_stream()););
-                std::string line;
-                std::getline(std::cin, line);                
+                UNREACHABLE();
             }
         }
     };
@@ -180,7 +179,7 @@ namespace sat {
 
         for (; m_config.m_enable_units && m_trail_size < s.init_trail_size(); ++m_trail_size) {
             literal lit = s.trail_literal(m_trail_size);
-            m_aig_cuts.add_node(lit, and_op, 0, 0);
+            m_aig_cuts.add_node(lit, and_op, 0, nullptr);
         }
 
         clause_vector clauses(s.clauses());

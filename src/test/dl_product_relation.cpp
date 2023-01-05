@@ -4,13 +4,13 @@ Copyright (c) 2015 Microsoft Corporation
 
 --*/
 
-#ifdef _WINDOWS
 #include "ast/reg_decl_plugins.h"
 #include "muz/base/dl_context.h"
 #include "muz/fp/dl_register_engine.h"
 #include "muz/rel/dl_finite_product_relation.h"
 #include "muz/rel/dl_sparse_table.h"
 #include "muz/rel/rel_context.h"
+#include <iostream>
 
 namespace datalog {
 
@@ -22,7 +22,7 @@ namespace datalog {
     public:
         collector_of_reduced(idx_set & accumulator) : m_acc(accumulator) {}
 
-        virtual void operator()(table_element * func_columns, const table_element * merged_func_columns) {
+        void operator()(table_element * func_columns, const table_element * merged_func_columns) override {
             m_acc.insert(static_cast<unsigned>(merged_func_columns[0]));
         }
     };
@@ -351,6 +351,7 @@ namespace datalog {
 
 using namespace datalog;
 
+#ifdef _WINDOWS
 void tst_dl_product_relation() {
     smt_params fparams;
     params_ref params;
@@ -362,6 +363,6 @@ void tst_dl_product_relation() {
     
 }
 #else
-void tst_dl_product_relation() {
-}
+void tst_dl_product_relation() {}
+
 #endif

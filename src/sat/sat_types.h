@@ -28,6 +28,7 @@ Revision History:
 #include "util/stopwatch.h"
 #include "util/symbol.h"
 #include "util/sat_literal.h"
+#include "util/rational.h"
 
 class params_ref;
 class reslimit;
@@ -79,7 +80,7 @@ namespace sat {
 
     class i_local_search {
     public:
-        virtual ~i_local_search() {}
+        virtual ~i_local_search() = default;
         virtual void add(solver const& s) = 0;
         virtual void updt_params(params_ref const& p) = 0;
         virtual void set_seed(unsigned s) = 0;
@@ -93,27 +94,34 @@ namespace sat {
 
     };
 
+    class proof_hint {
+    public:
+        virtual ~proof_hint() {}
+    };
+
     class status {
     public:
         enum class st { input, asserted, redundant, deleted };
         st m_st;
         int m_orig;
+        const proof_hint* m_hint;
     public:
-        status(st s, int o) : m_st(s), m_orig(o) {};
-        status(status const& s) : m_st(s.m_st), m_orig(s.m_orig) {}
-        status(status&& s) noexcept { m_st = st::asserted; m_orig = -1; std::swap(m_st, s.m_st); std::swap(m_orig, s.m_orig); }
+        status(st s, int o, proof_hint const* ps = nullptr) : m_st(s), m_orig(o), m_hint(ps) {};
+        status(status const& s) : m_st(s.m_st), m_orig(s.m_orig), m_hint(s.m_hint) {}
+        status(status&& s) noexcept { m_st = st::asserted; m_orig = -1; std::swap(m_st, s.m_st); std::swap(m_orig, s.m_orig); std::swap(m_hint, s.m_hint); }
         status& operator=(status const& other) { m_st = other.m_st; m_orig = other.m_orig; return *this; }
         static status redundant() { return status(status::st::redundant, -1); }
         static status asserted() { return status(status::st::asserted, -1); }
         static status deleted() { return status(status::st::deleted, -1); }
         static status input() { return status(status::st::input, -1); }
 
-        static status th(bool redundant, int id) { return status(redundant ? st::redundant : st::asserted, id); }
+        static status th(bool redundant, int id, proof_hint const* ps = nullptr) { return status(redundant ? st::redundant : st::asserted, id, ps); }
 
         bool is_input() const { return st::input == m_st; }
         bool is_redundant() const { return st::redundant == m_st; }
         bool is_asserted() const { return st::asserted == m_st; }
         bool is_deleted() const { return st::deleted == m_st; }
+        proof_hint const* get_hint() const { return m_hint; }
 
         bool is_sat() const { return -1 == m_orig; }
         int  get_th() const { return m_orig;  }
