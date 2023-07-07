@@ -32,12 +32,9 @@ public:
     mpq(mpq &&) noexcept = default;
     mpq & operator=(mpq&&) = default;
     mpq & operator=(mpq const&) = delete;
-    void swap(mpq & other) { m_num.swap(other.m_num); m_den.swap(other.m_den); }
     mpz const & numerator() const { return m_num; }
     mpz const & denominator() const { return m_den; }
 };
-
-inline void swap(mpq & m1, mpq & m2) { m1.swap(m2); }
 
 template<bool SYNCH = true>
 class mpq_manager : public mpz_manager<SYNCH> {
@@ -490,6 +487,8 @@ public:
 
     void machine_div_rem(mpz const & a, mpz const & b, mpz & c, mpz & d) { mpz_manager<SYNCH>::machine_div_rem(a, b, c, d); }
 
+    void machine_div2k(mpz const & a, unsigned k, mpz & c) { mpz_manager<SYNCH>::machine_div2k(a, k, c); }
+
     void div(mpz const & a, mpz const & b, mpz & c) { mpz_manager<SYNCH>::div(a, b, c); }
     
     void rat_div(mpz const & a, mpz const & b, mpq & c) {
@@ -514,6 +513,12 @@ public:
     void machine_idiv(mpq const & a, mpq const & b, mpz & c) {
         SASSERT(is_int(a) && is_int(b));
         machine_div(a.m_num, b.m_num, c);
+    }
+
+    void machine_idiv2k(mpq const & a, unsigned k, mpq & c) {
+        SASSERT(is_int(a));
+        machine_div2k(a.m_num, k, c.m_num);
+        reset_denominator(c);
     }
 
     void idiv(mpq const & a, mpq const & b, mpq & c) {

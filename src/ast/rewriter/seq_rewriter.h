@@ -340,6 +340,7 @@ class seq_rewriter {
     bool is_sequence(expr* e, expr_ref_vector& seq);
     bool is_sequence(eautomaton& aut, expr_ref_vector& seq);
     bool get_lengths(expr* e, expr_ref_vector& lens, rational& pos);
+    bool reduce_value_clash(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& new_eqs);
     bool reduce_back(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& new_eqs);
     bool reduce_front(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& new_eqs);
     void remove_empty_and_concats(expr_ref_vector& es);
@@ -354,7 +355,7 @@ class seq_rewriter {
 
 public:
     seq_rewriter(ast_manager & m, params_ref const & p = params_ref()):
-        m_util(m), m_autil(m), m_br(m), m_re2aut(m), m_op_cache(m), m_es(m), 
+        m_util(m), m_autil(m), m_br(m, p), m_re2aut(m), m_op_cache(m), m_es(m), 
         m_lhs(m), m_rhs(m), m_coalesce_chars(true) {
     }
     ast_manager & m() const { return m_util.get_manager(); }

@@ -72,7 +72,7 @@ namespace sat {
         extension(symbol const& name, int id): m_id(id), m_name(name) { }
         virtual ~extension() = default;
         int get_id() const { return m_id; }
-        void set_solver(solver* s) { m_solver = s; }        
+        virtual void set_solver(solver* s) { m_solver = s; }        
         solver& s() { return *m_solver; }
         solver const& s() const { return *m_solver; }
         symbol const& name() const { return m_name;  }
@@ -126,12 +126,15 @@ namespace sat {
         virtual void add_assumptions(literal_set& ext_assumptions) {}
         virtual bool tracking_assumptions() { return false; }
         virtual bool enable_self_propagate() const { return false; }
+        virtual lbool local_search(bool_vector& phase) { return l_undef; }
 
         virtual bool extract_pb(std::function<void(unsigned sz, literal const* c, unsigned k)>& card,
                                 std::function<void(unsigned sz, literal const* c, unsigned const* coeffs, unsigned k)>& pb) {                                
             return false;
         }
         virtual bool is_pb() { return false; }
+
+        virtual std::string reason_unknown() { return "unknown"; }
     };
 
 };

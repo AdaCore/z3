@@ -372,8 +372,8 @@ namespace smt2 {
                     return true;
                 }
                 catch (scanner_exception & ex) {
-                    SASSERT(ex.has_pos());
-                    error(ex.line(), ex.pos(), ex.msg());
+                    if (ex.has_pos())
+                        error(ex.line(), ex.pos(), ex.msg());
                     ++num_errors;
                 }
             }
@@ -2640,8 +2640,6 @@ namespace smt2 {
             check_lparen_next("invalid get-value command, '(' expected");
             while (!curr_is_rparen()) {
                 parse_expr();
-                if (!is_ground(expr_stack().back()))
-                    throw cmd_exception("invalid get-value term, term must be ground and must not contain quantifiers");
                 m_cached_strings.push_back(m_scanner.cached_str(cache_it, m_cache_end));
                 cache_it = m_cache_end;
             }
@@ -2680,7 +2678,7 @@ namespace smt2 {
                     m_ctx.regular_stream() << "\n ";
                 m_ctx.regular_stream() << "(" << m_cached_strings[i] << " ";
                 m_ctx.display(m_ctx.regular_stream(), v);
-                m_ctx.regular_stream() << ")";
+                m_ctx.regular_stream() << ")";                
             }
             m_ctx.regular_stream() << ")" << std::endl;
             expr_stack().shrink(spos);
@@ -3105,6 +3103,10 @@ namespace smt2 {
 
         }
 
+        void reset_input(std::istream & is, bool interactive) {
+            m_scanner.reset_input(is, interactive);
+        }
+
         sexpr_ref parse_sexpr_ref() {
             m_num_bindings    = 0;
             m_num_open_paren = 0;
@@ -3204,11 +3206,21 @@ namespace smt2 {
             }
         }
     };
+
+    void free_parser(parser * p) { dealloc(p); }
 };
 
 bool parse_smt2_commands(cmd_context & ctx, std::istream & is, bool interactive, params_ref const & ps, char const * filename) {
     smt2::parser p(ctx, is, interactive, ps, filename);
     return p();
+}
+
+bool parse_smt2_commands_with_parser(class smt2::parser *& p, cmd_context & ctx, std::istream & is, bool interactive, params_ref const & ps, char const * filename) {
+    if (p)
+        p->reset_input(is, interactive);
+    else
+        p = alloc(smt2::parser, ctx, is, interactive, ps, filename);
+    return (*p)();
 }
 
 sort_ref parse_smt2_sort(cmd_context & ctx, std::istream & is, bool interactive, params_ref const & ps, char const * filename) {

@@ -21,7 +21,7 @@ Author:
 namespace user_solver {
 
     solver::solver(euf::solver& ctx) :
-        th_euf_solver(ctx, symbol("user"), ctx.get_manager().mk_family_id("user"))
+        th_euf_solver(ctx, symbol(user_propagator::plugin::name()), ctx.get_manager().mk_family_id(user_propagator::plugin::name()))
     {}
 
     solver::~solver() {
@@ -30,7 +30,7 @@ namespace user_solver {
 
     void solver::add_expr(expr* e) {
         force_push();
-        ctx.internalize(e, false);
+        ctx.internalize(e);
         euf::enode* n = expr2enode(e);
         if (is_attached_to_var(n))
             return;
@@ -63,7 +63,7 @@ namespace user_solver {
             return;
         }
         force_push();
-        ctx.internalize(e, false);
+        ctx.internalize(e);
         m_next_split_expr = e;
         m_next_split_idx = idx;
         m_next_split_phase = phase;
@@ -92,24 +92,24 @@ namespace user_solver {
         
         euf::enode* original_enode = bool_var2enode(var);
         
-        if (!is_attached_to_var(original_enode))
+        if (!original_enode || !is_attached_to_var(original_enode))
             return false;
         
         unsigned new_bit = 0; // ignored; currently no bv-support
-        expr* e = bool_var2expr(var);
+        expr* e = original_enode->get_expr();
         
         m_decide_eh(m_user_context, this, &e, &new_bit, &phase);
         
         euf::enode* new_enode = ctx.get_enode(e);
     
-        if (original_enode == new_enode)
+        if (original_enode == new_enode || new_enode->bool_var() == sat::null_bool_var)
             return false;
         
         var = new_enode->bool_var();
         return true;
     }
     
-    bool solver::get_case_split(sat::bool_var& var, lbool &phase){
+    bool solver::get_case_split(sat::bool_var& var, lbool& phase){
         if (!m_next_split_expr)
             return false;
         
@@ -123,9 +123,12 @@ namespace user_solver {
     void solver::asserted(sat::literal lit) {
         if (!m_fixed_eh)
             return;
-        force_push();
         auto* n = bool_var2enode(lit.var());
         euf::theory_var v = n->get_th_var(get_id());
+        if (!m_id2justification.get(v, sat::literal_vector()).empty())
+            // the core merged variables. We already issued the respective fixed callback for an equated variable
+            return;
+        force_push();
         sat::literal_vector lits;
         lits.push_back(lit);
         m_id2justification.setx(v, lits, sat::literal_vector());
@@ -162,7 +165,7 @@ namespace user_solver {
     }
 
     void solver::propagate_consequence(prop_info const& prop) {
-        sat::literal lit = ctx.internalize(prop.m_conseq, false, false, true);
+        sat::literal lit = ctx.internalize(prop.m_conseq, false, false);
         if (s().value(lit) != l_true) {
             s().assign(lit, mk_justification(m_qhead));
             ++m_stats.m_num_propagations;
@@ -207,7 +210,7 @@ namespace user_solver {
         for (unsigned id : prop.m_ids)
             r.append(m_id2justification[id]);        
         for (auto const& p : prop.m_eqs)
-            ctx.add_antecedent(expr2enode(p.first), expr2enode(p.second));
+            ctx.add_antecedent(probing, expr2enode(p.first), expr2enode(p.second));
     }
 
     /*
@@ -250,8 +253,8 @@ namespace user_solver {
         return result;
     }
 
-    sat::literal solver::internalize(expr* e, bool sign, bool root, bool redundant) {
-        if (!visit_rec(m, e, sign, root, redundant)) {
+    sat::literal solver::internalize(expr* e, bool sign, bool root) {
+        if (!visit_rec(m, e, sign, root)) {
             TRACE("array", tout << mk_pp(e, m) << "\n";);
             return sat::null_literal;
         }
@@ -263,15 +266,15 @@ namespace user_solver {
         return lit;
     }
 
-    void solver::internalize(expr* e, bool redundant) {
-        visit_rec(m, e, false, false, redundant);
+    void solver::internalize(expr* e) {
+        visit_rec(m, e, false, false);
     }
 
     bool solver::visit(expr* e) {
         if (visited(e))
             return true;
         if (!is_app(e) || to_app(e)->get_family_id() != get_id()) {
-            ctx.internalize(e, m_is_redundant);
+            ctx.internalize(e);
             return true;
         }
         m_stack.push_back(sat::eframe(e));

@@ -42,6 +42,7 @@ namespace Microsoft.Z3
             lock (creation_lock)
             {
                 m_ctx = Native.Z3_mk_context_rc(IntPtr.Zero);
+                Native.Z3_enable_concurrent_dec_ref(m_ctx);
                 InitContext();
             }
         }
@@ -75,6 +76,7 @@ namespace Microsoft.Z3
                 foreach (KeyValuePair<string, string> kv in settings)
                     Native.Z3_set_param_value(cfg, kv.Key, kv.Value);
                 m_ctx = Native.Z3_mk_context_rc(cfg);
+                Native.Z3_enable_concurrent_dec_ref(m_ctx);
                 Native.Z3_del_config(cfg);
                 InitContext();
             }
@@ -3724,6 +3726,110 @@ namespace Microsoft.Z3
         }
         #endregion
 
+        #region Simplifiers
+        /// <summary>
+        /// The number of supported simplifiers.
+        /// </summary>
+        public uint NumSimplifiers
+        {
+            get { return Native.Z3_get_num_simplifiers(nCtx); }
+        }
+
+        /// <summary>
+        /// The names of all supported tactics.
+        /// </summary>
+        public string[] SimplifierNames
+        {
+            get
+            {
+
+                uint n = NumSimplifiers;
+                string[] res = new string[n];
+                for (uint i = 0; i < n; i++)
+                    res[i] = Native.Z3_get_simplifier_name(nCtx, i);
+                return res;
+            }
+        }
+
+        /// <summary>
+        /// Returns a string containing a description of the simplifier with the given name.
+        /// </summary>
+        public string SimplifierDescription(string name)
+        {
+
+            return Native.Z3_simplifier_get_descr(nCtx, name);
+        }
+
+        /// <summary>
+        /// Creates a new Tactic.
+        /// </summary>
+        public Simplifier MkSimplifier(string name)
+        {
+
+            return new Simplifier(this, name);
+        }
+
+        /// <summary>
+        /// Create a simplifie that applies <paramref name="t1"/> and
+        /// then <paramref name="t2"/>.
+        /// </summary>
+        public Simplifier AndThen(Simplifier t1, Simplifier t2, params Simplifier[] ts)
+        {
+            Debug.Assert(t1 != null);
+            Debug.Assert(t2 != null);
+            // Debug.Assert(ts == null || Contract.ForAll(0, ts.Length, j => ts[j] != null));
+
+
+            CheckContextMatch(t1);
+            CheckContextMatch(t2);
+            CheckContextMatch<Simplifier>(ts);
+
+            IntPtr last = IntPtr.Zero;
+            if (ts != null && ts.Length > 0)
+            {
+                last = ts[ts.Length - 1].NativeObject;
+                for (int i = ts.Length - 2; i >= 0; i--)
+                    last = Native.Z3_simplifier_and_then(nCtx, ts[i].NativeObject, last);
+            }
+            if (last != IntPtr.Zero)
+            {
+                last = Native.Z3_simplifier_and_then(nCtx, t2.NativeObject, last);
+                return new Simplifier(this, Native.Z3_simplifier_and_then(nCtx, t1.NativeObject, last));
+            }
+            else
+                return new Simplifier(this, Native.Z3_simplifier_and_then(nCtx, t1.NativeObject, t2.NativeObject));
+        }
+
+        /// <summary>
+        /// Create a simplifier that applies <paramref name="t1"/> and then
+        /// then <paramref name="t2"/>.
+        /// </summary>
+        /// <remarks>
+        /// Shorthand for <c>AndThen</c>.
+        /// </remarks>
+        public Simplifier Then(Simplifier t1, Simplifier t2, params Simplifier[] ts)
+        {
+            Debug.Assert(t1 != null);
+            Debug.Assert(t2 != null);
+            //  Debug.Assert(ts == null || Contract.ForAll(0, ts.Length, j => ts[j] != null));
+
+            return AndThen(t1, t2, ts);
+        }
+
+        /// <summary>
+        /// Create a tactic that applies <paramref name="t"/> using the given set of parameters <paramref name="p"/>.
+        /// </summary>
+        public Simplifier UsingParams(Simplifier t, Params p)
+        {
+            Debug.Assert(t != null);
+            Debug.Assert(p != null);
+
+            CheckContextMatch(t);
+            CheckContextMatch(p);
+            return new Simplifier(this, Native.Z3_simplifier_using_params(nCtx, t.NativeObject, p.NativeObject));
+        }
+        #endregion
+
         #region Probes
         /// <summary>
         /// The number of supported Probes.
@@ -3925,6 +4031,16 @@ namespace Microsoft.Z3
         }
 
         /// <summary>
+        /// Creates a solver that uses an incremental simplifier.
+        /// </summary>
+        public Solver MkSolver(Solver s, Simplifier t)
+        {
+            Debug.Assert(t != null);
+            Debug.Assert(s != null);
+            return new Solver(this, Native.Z3_solver_add_simplifier(nCtx, s.NativeObject, t.NativeObject));
+        }
+
+        /// <summary>
         /// Creates a solver that is implemented using the given tactic.
         /// </summary>
         /// <remarks>
@@ -3937,6 +4053,8 @@ namespace Microsoft.Z3
 
             return new Solver(this, Native.Z3_mk_solver_from_tactic(nCtx, t.NativeObject));
         }
+
+
         #endregion
 
         #region Fixedpoints
@@ -4793,7 +4911,6 @@ namespace Microsoft.Z3
             PrintMode = Z3_ast_print_mode.Z3_PRINT_SMTLIB2_COMPLIANT;
             m_n_err_handler = new Native.Z3_error_handler(NativeErrorHandler); // keep reference so it doesn't get collected.
             Native.Z3_set_error_handler(m_ctx, m_n_err_handler);
-            GC.SuppressFinalize(this);
         }
 
         internal void CheckContextMatch(Z3Object other)
@@ -4852,122 +4969,8 @@ namespace Microsoft.Z3
 
         private void ObjectInvariant()
         {
-            Debug.Assert(m_AST_DRQ != null);
-            Debug.Assert(m_ASTMap_DRQ != null);
-            Debug.Assert(m_ASTVector_DRQ != null);
-            Debug.Assert(m_ApplyResult_DRQ != null);
-            Debug.Assert(m_FuncEntry_DRQ != null);
-            Debug.Assert(m_FuncInterp_DRQ != null);
-            Debug.Assert(m_Goal_DRQ != null);
-            Debug.Assert(m_Model_DRQ != null);
-            Debug.Assert(m_Params_DRQ != null);
-            Debug.Assert(m_ParamDescrs_DRQ != null);
-            Debug.Assert(m_Probe_DRQ != null);
-            Debug.Assert(m_Solver_DRQ != null);
-            Debug.Assert(m_Statistics_DRQ != null);
-            Debug.Assert(m_Tactic_DRQ != null);
-            Debug.Assert(m_Fixedpoint_DRQ != null);
-            Debug.Assert(m_Optimize_DRQ != null);
+            // none
         }
-
-        readonly private AST.DecRefQueue m_AST_DRQ = new AST.DecRefQueue();
-        readonly private ASTMap.DecRefQueue m_ASTMap_DRQ = new ASTMap.DecRefQueue(10);
-        readonly private ASTVector.DecRefQueue m_ASTVector_DRQ = new ASTVector.DecRefQueue(10);
-        readonly private ApplyResult.DecRefQueue m_ApplyResult_DRQ = new ApplyResult.DecRefQueue(10);
-        readonly private FuncInterp.Entry.DecRefQueue m_FuncEntry_DRQ = new FuncInterp.Entry.DecRefQueue(10);
-        readonly private FuncInterp.DecRefQueue m_FuncInterp_DRQ = new FuncInterp.DecRefQueue(10);
-        readonly private Goal.DecRefQueue m_Goal_DRQ = new Goal.DecRefQueue(10);
-        readonly private Model.DecRefQueue m_Model_DRQ = new Model.DecRefQueue(10);
-        readonly private Params.DecRefQueue m_Params_DRQ = new Params.DecRefQueue(10);
-        readonly private ParamDescrs.DecRefQueue m_ParamDescrs_DRQ = new ParamDescrs.DecRefQueue(10);
-        readonly private Probe.DecRefQueue m_Probe_DRQ = new Probe.DecRefQueue(10);
-        readonly private Solver.DecRefQueue m_Solver_DRQ = new Solver.DecRefQueue(10);
-        readonly private Statistics.DecRefQueue m_Statistics_DRQ = new Statistics.DecRefQueue(10);
-        readonly private Tactic.DecRefQueue m_Tactic_DRQ = new Tactic.DecRefQueue(10);
-        readonly private Fixedpoint.DecRefQueue m_Fixedpoint_DRQ = new Fixedpoint.DecRefQueue(10);
-        readonly private Optimize.DecRefQueue m_Optimize_DRQ = new Optimize.DecRefQueue(10);
-
-        /// <summary>
-        /// AST DRQ
-        /// </summary>
-        public IDecRefQueue AST_DRQ { get { return m_AST_DRQ; } }
-
-        /// <summary>
-        /// ASTMap DRQ
-        /// </summary>
-        public IDecRefQueue ASTMap_DRQ { get { return m_ASTMap_DRQ; } }
-
-        /// <summary>
-        /// ASTVector DRQ
-        /// </summary>
-        public IDecRefQueue ASTVector_DRQ { get { return m_ASTVector_DRQ; } }
-
-        /// <summary>
-        /// ApplyResult DRQ
-        /// </summary>
-        public IDecRefQueue ApplyResult_DRQ { get { return m_ApplyResult_DRQ; } }
-
-        /// <summary>
-        /// FuncEntry DRQ
-        /// </summary>
-        public IDecRefQueue FuncEntry_DRQ { get { return m_FuncEntry_DRQ; } }
-
-        /// <summary>
-        /// FuncInterp DRQ
-        /// </summary>
-        public IDecRefQueue FuncInterp_DRQ { get { return m_FuncInterp_DRQ; } }
-
-        /// <summary>
-        /// Goal DRQ
-        /// </summary>
-        public IDecRefQueue Goal_DRQ { get { return m_Goal_DRQ; } }
-
-        /// <summary>
-        /// Model DRQ
-        /// </summary>
-        public IDecRefQueue Model_DRQ { get { return m_Model_DRQ; } }
-
-        /// <summary>
-        /// Params DRQ
-        /// </summary>
-        public IDecRefQueue Params_DRQ { get { return m_Params_DRQ; } }
-
-        /// <summary>
-        /// ParamDescrs DRQ
-        /// </summary>
-        public IDecRefQueue ParamDescrs_DRQ { get { return m_ParamDescrs_DRQ; } }
-
-        /// <summary>
-        /// Probe DRQ
-        /// </summary>
-        public IDecRefQueue Probe_DRQ { get { return m_Probe_DRQ; } }
-
-        /// <summary>
-        /// Solver DRQ
-        /// </summary>
-        public IDecRefQueue Solver_DRQ { get { return m_Solver_DRQ; } }
-
-        /// <summary>
-        /// Statistics DRQ
-        /// </summary>
-        public IDecRefQueue Statistics_DRQ { get { return m_Statistics_DRQ; } }
-
-        /// <summary>
-        /// Tactic DRQ
-        /// </summary>
-        public IDecRefQueue Tactic_DRQ { get { return m_Tactic_DRQ; } }
-
-        /// <summary>
-        /// FixedPoint DRQ
-        /// </summary>
-        public IDecRefQueue Fixedpoint_DRQ { get { return m_Fixedpoint_DRQ; } }
-
-        /// <summary>
-        /// Optimize DRQ
-        /// </summary>
-        public IDecRefQueue Optimize_DRQ { get { return m_Fixedpoint_DRQ; } }
-
-        internal long refCount = 0;
 
         /// <summary>
         /// Finalizer.
@@ -4984,22 +4987,6 @@ namespace Microsoft.Z3
         public void Dispose()
         {
             // Console.WriteLine("Context Dispose from " + System.Threading.Thread.CurrentThread.ManagedThreadId);
-            AST_DRQ.Clear(this);
-            ASTMap_DRQ.Clear(this);
-            ASTVector_DRQ.Clear(this);
-            ApplyResult_DRQ.Clear(this);
-            FuncEntry_DRQ.Clear(this);
-            FuncInterp_DRQ.Clear(this);
-            Goal_DRQ.Clear(this);
-            Model_DRQ.Clear(this);
-            Params_DRQ.Clear(this);
-            ParamDescrs_DRQ.Clear(this);
-            Probe_DRQ.Clear(this);
-            Solver_DRQ.Clear(this);
-            Statistics_DRQ.Clear(this);
-            Tactic_DRQ.Clear(this);
-            Fixedpoint_DRQ.Clear(this);
-            Optimize_DRQ.Clear(this);
 
             if (m_boolSort != null) m_boolSort.Dispose();
             if (m_intSort != null) m_intSort.Dispose();
@@ -5011,16 +4998,19 @@ namespace Microsoft.Z3
             m_realSort = null;
             m_stringSort = null;
             m_charSort = null;
-            if (refCount == 0 && m_ctx != IntPtr.Zero)
+            if (m_ctx != IntPtr.Zero)
             {
-                m_n_err_handler = null;
                 IntPtr ctx = m_ctx;
-                m_ctx = IntPtr.Zero;
-                if (!is_external) 
-                   Native.Z3_del_context(ctx);
+                lock (this)
+                {
+                    m_n_err_handler = null;
+                    m_ctx = IntPtr.Zero;
+                }
+                if (!is_external)
+                    Native.Z3_del_context(ctx);
             }
-            else
-                GC.ReRegisterForFinalize(this);
+
+            GC.SuppressFinalize(this);
         }
 
 
