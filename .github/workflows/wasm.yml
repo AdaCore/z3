@@ -12,6 +12,9 @@ defaults:
 env:
   EM_VERSION: 3.1.15
 
+permissions:
+  contents: read # to fetch code (actions/checkout)
+
 jobs:
   check:
     name: Check
@@ -26,7 +29,7 @@ jobs:
           node-version: "lts/*"
 
       - name: Setup emscripten
-        uses: mymindstorm/setup-emsdk@v11
+        uses: mymindstorm/setup-emsdk@v12
         with:
           no-install: true
           version: ${{env.EM_VERSION}}

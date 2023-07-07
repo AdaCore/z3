@@ -19,9 +19,7 @@ Author:
 #include "util/obj_pair_set.h"
 #include "ast/ast_trail.h"
 #include "ast/arith_decl_plugin.h"
-#include "math/lp/lp_solver.h"
-#include "math/lp/lp_primal_simplex.h"
-#include "math/lp/lp_dual_simplex.h"
+
 #include "math/lp/indexed_value.h"
 #include "math/lp/lar_solver.h"
 #include "math/lp/nla_solver.h"
@@ -30,6 +28,8 @@ Author:
 #include "math/polynomial/algebraic_numbers.h"
 #include "math/polynomial/polynomial.h"
 #include "sat/smt/sat_th.h"
+#include "sat/smt/arith_sls.h"
+#include "sat/sat_ddfw.h"
 
 namespace euf {
     class solver;
@@ -51,14 +51,15 @@ namespace arith {
     enum class hint_type {
         farkas_h,
         bound_h,
-        implied_eq_h    
+        implied_eq_h
     };
 
     struct arith_proof_hint : public euf::th_proof_hint {
-        hint_type                              m_ty;
-        unsigned m_lit_head, m_lit_tail, m_eq_head, m_eq_tail;
-        arith_proof_hint(hint_type t, unsigned lh, unsigned lt, unsigned eh, unsigned et):
-            m_ty(t), m_lit_head(lh), m_lit_tail(lt), m_eq_head(eh), m_eq_tail(et) {}
+        hint_type m_ty;
+        unsigned  m_num_le;
+        unsigned  m_lit_head, m_lit_tail, m_eq_head, m_eq_tail;
+        arith_proof_hint(hint_type t, unsigned num_le, unsigned lh, unsigned lt, unsigned eh, unsigned et):
+            m_ty(t), m_num_le(num_le), m_lit_head(lh), m_lit_tail(lt), m_eq_head(eh), m_eq_tail(et) {}
         expr* get_hint(euf::solver& s) const override;
     };
 
@@ -66,22 +67,19 @@ namespace arith {
         vector<std::pair<rational, literal>>   m_literals;
         svector<std::tuple<euf::enode*,euf::enode*,bool>> m_eqs;
         hint_type                              m_ty;
+        unsigned                               m_num_le = 0;
         unsigned                               m_lit_head = 0, m_lit_tail = 0, m_eq_head = 0, m_eq_tail = 0;
         void reset() { m_lit_head = m_lit_tail; m_eq_head = m_eq_tail; }
         void add(euf::enode* a, euf::enode* b, bool is_eq) {
-            if (m_eq_tail < m_eqs.size()) 
-                m_eqs[m_eq_tail] = std::tuple(a, b, is_eq); 
-            else 
-                m_eqs.push_back(std::tuple(a, b, is_eq)); 
+            if (m_eq_tail < m_eqs.size())
+                m_eqs[m_eq_tail] = { a, b, is_eq };
+            else
+                m_eqs.push_back({a, b, is_eq });
             m_eq_tail++; 
         }
     public:
-        void set_type(euf::solver& ctx, hint_type ty) { 
-            ctx.push(value_trail<unsigned>(m_eq_tail)); 
-            ctx.push(value_trail<unsigned>(m_lit_tail)); 
-            m_ty = ty; 
-            reset(); 
-        }
+        void set_type(euf::solver& ctx, hint_type ty);
+        void set_num_le(unsigned n) { m_num_le = n; }
         void add_eq(euf::enode* a, euf::enode* b) { add(a, b, true); }
         void add_diseq(euf::enode* a, euf::enode* b) { add(a, b, false); }
         void add_lit(rational const& coeff, literal lit) { 
@@ -93,23 +91,18 @@ namespace arith {
         }
         std::pair<rational, literal> const& lit(unsigned i) const { return m_literals[i]; }
         std::tuple<enode*, enode*, bool> const& eq(unsigned i) const { return m_eqs[i]; }
-        arith_proof_hint* mk(euf::solver& s) { 
-            return new (s.get_region()) arith_proof_hint(m_ty, m_lit_head, m_lit_tail, m_eq_head, m_eq_tail);
-        }
+        arith_proof_hint* mk(euf::solver& s);
     };
-
 
     class solver : public euf::th_euf_solver {
 
         friend struct arith_proof_hint;
+        friend class sls;
 
         struct scope {
             unsigned m_bounds_lim;
-            unsigned m_idiv_lim;
             unsigned m_asserted_qhead;
             unsigned m_asserted_lim;
-            unsigned m_underspecified_lim;
-            expr* m_not_handled;
         };
 
         class resource_limit : public lp::lp_resource_limit {
@@ -144,7 +137,7 @@ namespace arith {
         };
         int_hashtable<var_value_hash, var_value_eq>   m_model_eqs;
 
-        bool                m_new_eq { false };
+        bool                m_new_eq = false;
 
 
         // temporary values kept during internalization
@@ -197,6 +190,8 @@ namespace arith {
                 coeffs().pop_back();
             }
         };
+   
+        sls m_local_search;
 
         typedef vector<std::pair<rational, lpvar>> var_coeffs;
         vector<rational>         m_columns;
@@ -220,7 +215,7 @@ namespace arith {
         svector<std::pair<euf::th_eq, bool>>          m_delayed_eqs;
 
         literal_vector  m_asserted;
-        expr* m_not_handled{ nullptr };
+        expr* m_not_handled = nullptr;
         ptr_vector<app>        m_underspecified;
         ptr_vector<expr>       m_idiv_terms;
         vector<ptr_vector<api_bound> > m_use_list;        // bounds where variables are used.
@@ -233,10 +228,10 @@ namespace arith {
         unsigned               m_asserted_qhead = 0;
 
         svector<std::pair<theory_var, theory_var> >       m_assume_eq_candidates;
-        unsigned                                          m_assume_eq_head{ 0 };
+        unsigned                                          m_assume_eq_head = 0;
         lp::u_set                                         m_tmp_var_set;
 
-        unsigned                                          m_num_conflicts{ 0 };
+        unsigned                                          m_num_conflicts = 0;
         lp_api::stats                                     m_stats;
         svector<scope>                                    m_scopes;
 
@@ -325,6 +320,7 @@ namespace arith {
         void mk_bound_axiom(api_bound& b1, api_bound& b2);
         void mk_power0_axioms(app* t, app* n);
         void flush_bound_axioms();
+        void add_farkas_clause(sat::literal l1, sat::literal l2);
 
         // bounds
         struct compare_bounds {
@@ -475,8 +471,10 @@ namespace arith {
         arith_proof_hint_builder m_arith_hint;
 
         arith_proof_hint const* explain(hint_type ty, sat::literal lit = sat::null_literal);
-        arith_proof_hint const* explain_implied_eq(euf::enode* a, euf::enode* b);
-        void explain_assumptions();
+        arith_proof_hint const* explain_implied_eq(lp::explanation const& e, euf::enode* a, euf::enode* b);
+        arith_proof_hint const* explain_trichotomy(sat::literal le, sat::literal ge, sat::literal eq);
+        arith_proof_hint const* explain_conflict(sat::literal_vector const& core, euf::enode_pair_vector const& eqs);
+        void explain_assumptions(lp::explanation const& e);
 
 
     public:
@@ -502,8 +500,8 @@ namespace arith {
         void finalize_model(model& mdl) override { DEBUG_CODE(dbg_finalize_model(mdl);); }
         void add_value(euf::enode* n, model& mdl, expr_ref_vector& values) override;
         bool add_dep(euf::enode* n, top_sort<euf::enode>& dep) override;
-        sat::literal internalize(expr* e, bool sign, bool root, bool learned) override;
-        void internalize(expr* e, bool redundant) override;
+        sat::literal internalize(expr* e, bool sign, bool root) override;
+        void internalize(expr* e) override;
         void eq_internalized(euf::enode* n) override;
         void apply_sort_cnstr(euf::enode* n, sort* s) override {}
         bool is_shared(theory_var v) const override;
@@ -511,6 +509,8 @@ namespace arith {
         bool include_func_interp(func_decl* f) const override;
         bool enable_ackerman_axioms(euf::enode* n) const override { return !a.is_add(n->get_expr()); }
         bool has_unhandled() const override { return m_not_handled != nullptr; }
+
+        void set_bool_search(sat::ddfw* ddfw) override { m_local_search.set(ddfw); }
 
         // bounds and equality propagation callbacks
         lp::lar_solver& lp() { return *m_solver; }
@@ -520,4 +520,7 @@ namespace arith {
         void consume(rational const& v, lp::constraint_index j);
         bool bound_is_interesting(unsigned vi, lp::lconstraint_kind kind, const rational& bval) const;
     };
+
+
+
 }

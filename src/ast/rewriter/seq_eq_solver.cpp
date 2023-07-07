@@ -190,8 +190,8 @@ namespace seq {
             expr_ref digit = m_ax.sk().mk_digit2int(u);
             add_consequence(m_ax.mk_ge(digit, 1));
         }
-	    expr_ref y(seq.str.mk_concat(es, es[0]->get_sort()), m);
-	    ctx.add_solution(seq.str.mk_itos(n), y);
+        expr_ref y(seq.str.mk_concat(es, es[0]->get_sort()), m);
+        ctx.add_solution(seq.str.mk_itos(n), y);
         return true;
     }
 
@@ -438,6 +438,10 @@ namespace seq {
             !seq.str.is_unit(a) &&
             !seq.str.is_itos(a) &&
             !seq.str.is_nth_i(a) &&
+            !seq.str.is_map(a) &&
+            !seq.str.is_mapi(a) &&
+            !seq.str.is_foldl(a) &&
+            !seq.str.is_foldli(a) &&
             !m.is_ite(a);
     }
 
