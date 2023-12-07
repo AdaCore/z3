@@ -683,6 +683,8 @@ def _to_sort_ref(s, ctx):
         return SeqSortRef(s, ctx)
     elif k == Z3_CHAR_SORT:
         return CharSortRef(s, ctx)
+    elif k == Z3_TYPE_VAR:
+        return TypeVarRef(s, ctx)
     return SortRef(s, ctx)
 
 
@@ -707,6 +709,26 @@ def DeclareSort(name, ctx=None):
     """
     ctx = _get_ctx(ctx)
     return SortRef(Z3_mk_uninterpreted_sort(ctx.ref(), to_symbol(name, ctx)), ctx)
+
+class TypeVarRef(SortRef):
+    """Type variable reference"""
+
+    def subsort(self, other):
+        return True
+    
+    def cast(self, val):
+        return val
+    
+
+def DeclareTypeVar(name, ctx=None):
+    """Create a new type variable named `name`.
+
+    If `ctx=None`, then the new sort is declared in the global Z3Py context.
+
+    """
+    ctx = _get_ctx(ctx)
+    return TypeVarRef(Z3_mk_type_variable(ctx.ref(), to_symbol(name, ctx)), ctx)
+
 
 #########################################
 #
@@ -1549,6 +1571,14 @@ class BoolRef(ExprRef):
     def sort(self):
         return BoolSortRef(Z3_get_sort(self.ctx_ref(), self.as_ast()), self.ctx)
 
+    def __add__(self, other):
+        if isinstance(other, BoolRef):
+            other = If(other, 1, 0)
+        return If(self, 1, 0) + other
+
+    def __radd__(self, other):
+        return self + other
+ 
     def __rmul__(self, other):
         return self * other
 
@@ -1562,6 +1592,20 @@ class BoolRef(ExprRef):
         if isinstance(other, BoolRef):
             other = If(other, 1, 0)
         return If(self, other, 0)
+        
+    def __and__(self, other):
+        return And(self, other)
+    
+    def __or__(self, other):
+        return Or(self, other)
+
+    def __xor__(self, other):
+        return Xor(self, other)
+    
+    def __invert__(self):
+        return Not(self)
+    
+    
 
     
 def is_bool(a):
@@ -2058,6 +2102,16 @@ class QuantifierRef(BoolRef):
         10
         """
         return int(Z3_get_quantifier_weight(self.ctx_ref(), self.ast))
+
+    def skolem_id(self):
+        """Return the skolem id of `self`.
+        """
+        return _symbol2py(self.ctx, Z3_get_quantifier_skolem_id(self.ctx_ref(), self.ast))
+
+    def qid(self):
+        """Return the quantifier id of `self`.
+        """
+        return _symbol2py(self.ctx, Z3_get_quantifier_id(self.ctx_ref(), self.ast))
 
     def num_patterns(self):
         """Return the number of patterns (i.e., quantifier instantiation hints) in `self`.
@@ -5385,7 +5439,7 @@ def EnumSort(name, values, ctx=None):
     """
     if z3_debug():
         _z3_assert(isinstance(name, str), "Name must be a string")
-        _z3_assert(all([isinstance(v, str) for v in values]), "Eumeration sort values must be strings")
+        _z3_assert(all([isinstance(v, str) for v in values]), "Enumeration sort values must be strings")
         _z3_assert(len(values) > 0, "At least one value expected")
     ctx = _get_ctx(ctx)
     num = len(values)
@@ -6909,6 +6963,13 @@ class Solver(Z3PPObject):
         if self.solver is not None and self.ctx.ref() is not None and Z3_solver_dec_ref is not None:
             Z3_solver_dec_ref(self.ctx.ref(), self.solver)
 
+    def __enter__(self):
+        self.push()
+        return self
+
+    def __exit__(self, *exc_info):
+        self.pop()
+
     def set(self, *args, **keys):
         """Set a configuration option.
         The method `help()` return a string containing all available options.
@@ -7135,6 +7196,13 @@ class Solver(Z3PPObject):
     def import_model_converter(self, other):
         """Import model converter from other into the current solver"""
         Z3_solver_import_model_converter(self.ctx.ref(), other.solver, self.solver)
+
+    def interrupt(self):
+        """Interrupt the execution of the solver object.
+        Remarks: This ensures that the interrupt applies only
+        to the given solver object and it applies only if it is running.
+        """
+        Z3_solver_interrupt(self.ctx.ref(), self.solver)
 
     def unsat_core(self):
         """Return a subset (as an AST vector) of the assumptions provided to the last check().
@@ -7986,7 +8054,7 @@ class Optimize(Z3PPObject):
         Z3_optimize_pop(self.ctx.ref(), self.optimize)
 
     def check(self, *assumptions):
-        """Check satisfiability while optimizing objective functions."""
+        """Check consistency and produce optimal values."""
         assumptions = _get_args(assumptions)
         num = len(assumptions)
         _assumptions = (Ast * num)()
@@ -11279,6 +11347,8 @@ def Plus(re):
     >>> print(simplify(InRe("", re)))
     False
     """
+    if z3_debug():
+        _z3_assert(is_expr(re), "expression expected")
     return ReRef(Z3_mk_re_plus(re.ctx_ref(), re.as_ast()), re.ctx)
 
 
@@ -11292,6 +11362,8 @@ def Option(re):
     >>> print(simplify(InRe("aa", re)))
     False
     """
+    if z3_debug():
+        _z3_assert(is_expr(re), "expression expected")
     return ReRef(Z3_mk_re_option(re.ctx_ref(), re.as_ast()), re.ctx)
 
 
@@ -11310,6 +11382,8 @@ def Star(re):
     >>> print(simplify(InRe("", re)))
     True
     """
+    if z3_debug():
+        _z3_assert(is_expr(re), "expression expected")
     return ReRef(Z3_mk_re_star(re.ctx_ref(), re.as_ast()), re.ctx)
 
 
@@ -11323,6 +11397,8 @@ def Loop(re, lo, hi=0):
     >>> print(simplify(InRe("", re)))
     False
     """
+    if z3_debug():
+        _z3_assert(is_expr(re), "expression expected")
     return ReRef(Z3_mk_re_loop(re.ctx_ref(), re.as_ast(), lo, hi), re.ctx)
 
 
@@ -11336,11 +11412,17 @@ def Range(lo, hi, ctx=None):
     """
     lo = _coerce_seq(lo, ctx)
     hi = _coerce_seq(hi, ctx)
+    if z3_debug():
+        _z3_assert(is_expr(lo), "expression expected")
+        _z3_assert(is_expr(hi), "expression expected")
     return ReRef(Z3_mk_re_range(lo.ctx_ref(), lo.ast, hi.ast), lo.ctx)
 
 def Diff(a, b, ctx=None):
     """Create the difference regular expression
     """
+    if z3_debug():
+        _z3_assert(is_expr(a), "expression expected")
+        _z3_assert(is_expr(b), "expression expected")
     return ReRef(Z3_mk_re_diff(a.ctx_ref(), a.ast, b.ast), a.ctx)
 
 def AllChar(regex_sort, ctx=None):
@@ -11395,11 +11477,12 @@ def to_AstVectorObj(ptr,):
 # for UserPropagator we use a global dictionary, which isn't great code.
 
 _my_hacky_class = None
-def on_clause_eh(ctx, p, clause):
+def on_clause_eh(ctx, p, n, dep, clause):
     onc = _my_hacky_class
     p = _to_expr_ref(to_Ast(p), onc.ctx)
     clause = AstVector(to_AstVectorObj(clause), onc.ctx)
-    onc.on_clause(p, clause)
+    deps = [dep[i] for i in range(n)]
+    onc.on_clause(p, deps, clause)
     
 _on_clause_eh = Z3_on_clause_eh(on_clause_eh)
 
@@ -11522,16 +11605,11 @@ def user_prop_diseq(ctx, cb, x, y):
     prop.diseq(x, y)
     prop.cb = None
 
-# TODO The decision callback is not fully implemented.
-# It needs to handle the ast*, unsigned* idx, and Z3_lbool* 
-def user_prop_decide(ctx, cb, t_ref, idx_ref, phase_ref):
+def user_prop_decide(ctx, cb, t, idx, phase):
     prop = _prop_closures.get(ctx)
     prop.cb = cb
     t = _to_expr_ref(to_Ast(t_ref), prop.ctx())
-    t, idx, phase = prop.decide(t, idx, phase)
-    t_ref = t
-    idx_ref = idx
-    phase_ref = phase
+    prop.decide(t, idx, phase)
     prop.cb = None
     
 
@@ -11678,7 +11756,7 @@ class UserPropagateBase:
     # split on. A phase of true = 1/false = -1/undef = 0 = let solver decide is the last argument.
     #
     def next_split(self, t, idx, phase):
-        Z3_solver_next_split(self.ctx_ref(), ctypes.c_void_p(self.cb), t.ast, idx, phase)
+        return Z3_solver_next_split(self.ctx_ref(), ctypes.c_void_p(self.cb), t.ast, idx, phase)
         
     #
     # Propagation can only be invoked as during a fixed or final callback.
@@ -11688,7 +11766,7 @@ class UserPropagateBase:
         num_eqs = len(eqs)
         _lhs, _num_lhs = _to_ast_array([x for x, y in eqs])
         _rhs, _num_rhs = _to_ast_array([y for x, y in eqs])
-        Z3_solver_propagate_consequence(e.ctx.ref(), ctypes.c_void_p(
+        return Z3_solver_propagate_consequence(e.ctx.ref(), ctypes.c_void_p(
             self.cb), num_fixed, _ids, num_eqs, _lhs, _rhs, e.ast)
 
     def conflict(self, deps = [], eqs = []):

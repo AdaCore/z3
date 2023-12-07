@@ -18,7 +18,7 @@ from setuptools.command.bdist_egg import bdist_egg as _bdist_egg
 
 build_env = dict(os.environ)
 build_env['PYTHON'] = sys.executable
-build_env['CXXFLAGS'] = build_env.get('CXXFLAGS', '') + " -std=c++11"
+build_env['CXXFLAGS'] = build_env.get('CXXFLAGS', '') + " -std=c++17"
 
 # determine where we're building and where sources are
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -292,7 +292,7 @@ if 'bdist_wheel' in sys.argv and '--plat-name' not in sys.argv:
         distos = RELEASE_METADATA[2]
         if distos in ('debian', 'ubuntu'):
             raise Exception(
-                "Linux binary distributions must be built on centos to conform to PEP 513 or alpine if targetting musl"
+                "Linux binary distributions must be built on centos to conform to PEP 513 or alpine if targeting musl"
             )
         elif distos == 'glibc':
             if arch == 'x64':

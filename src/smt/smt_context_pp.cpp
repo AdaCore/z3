@@ -66,6 +66,7 @@ namespace smt {
     std::string context::last_failure_as_string() const {
         std::string r;
         switch(m_last_search_failure) {
+        case UNKNOWN:
         case OK: r = m_unknown; break;
         case MEMOUT: r = "memout"; break;
         case CANCELED: r = "canceled"; break;
@@ -82,7 +83,6 @@ namespace smt {
         case RESOURCE_LIMIT: r = "(resource limits reached)"; break;
         case QUANTIFIERS: r = "(incomplete quantifiers)"; break;
         case LAMBDAS: r = "(incomplete lambdas)"; break;
-        case UNKNOWN: r = m_unknown; break;
         }
         return r;
     }
@@ -635,7 +635,7 @@ namespace smt {
             literal_vector lits;
             const_cast<conflict_resolution&>(*m_conflict_resolution).justification2literals(j.get_justification(), lits);
             out << "justification " << j.get_justification()->get_from_theory() << ": ";
-            // display_literals_smt2(out, lits);
+            display_literals_smt2(out, lits);
             break;
         }
         default:
