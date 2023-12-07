@@ -15,7 +15,6 @@
 
   Revision History:
   --*/
-
 #include "math/lp/int_solver.h"
 #include "math/lp/lar_solver.h"
 #include "math/lp/int_branch.h"
@@ -25,7 +24,7 @@ namespace lp {
 int_branch::int_branch(int_solver& lia):lia(lia), lra(lia.lra) {}
 
 lia_move int_branch::operator()() {
-    lra.move_non_basic_columns_to_bounds(true);
+    lra.move_non_basic_columns_to_bounds();
     int j = find_inf_int_base_column();
     return j == -1? lia_move::sat : create_branch_on_column(j);        
 }
@@ -53,8 +52,8 @@ lia_move int_branch::create_branch_on_column(int j) {
 
 int int_branch::find_inf_int_base_column() {
 
-#if 0
-    return lia.select_int_infeasible_var();
+#if 1
+    return lia.select_int_infeasible_var(false);
 #endif
 
     int result = -1;
@@ -63,7 +62,7 @@ int int_branch::find_inf_int_base_column() {
     mpq small_value(1024);
     unsigned n = 0;
     lar_core_solver & lcs = lra.m_mpq_lar_core_solver;
-    unsigned prev_usage = 0; // to quiet down the compile
+    unsigned prev_usage = 0; // to quiet down the compiler
     unsigned k = 0;
     unsigned usage;
     unsigned j;
