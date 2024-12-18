@@ -32,7 +32,7 @@ namespace array {
         typedef sat::literal literal;
         typedef sat::bool_var bool_var;
         typedef sat::literal_vector literal_vector;
-        typedef union_find<solver, euf::solver>  array_union_find;
+        typedef union_find<solver>  array_union_find;
 
 
         struct stats {
@@ -268,7 +268,6 @@ namespace array {
         void validate_extensionality(euf::enode* s, euf::enode* t) const;
     public:
         solver(euf::solver& ctx, theory_id id);
-        ~solver() override;
         bool is_external(bool_var v) override { return false; }
         void get_antecedents(literal l, sat::ext_justification_idx idx, literal_vector& r, bool probing) override {}
         void asserted(literal l) override {}

@@ -2060,6 +2060,10 @@ br_status seq_rewriter::mk_seq_replace_all(expr* a, expr* b, expr* c, expr_ref& 
         result = m().mk_ite(str().mk_is_empty(b), str().mk_empty(a->get_sort()), c);
         return BR_REWRITE2;
     }
+    if (str().is_empty(a) && str().is_empty(c)) {
+        result = a;
+        return BR_DONE;
+    }
     zstring s1, s2;
     expr_ref_vector strs(m());
     if (str().is_string(a, s1) && str().is_string(b, s2)) {
@@ -2463,6 +2467,14 @@ br_status seq_rewriter::mk_str_le(expr* a, expr* b, expr_ref& result) {
 
 br_status seq_rewriter::mk_str_lt(expr* a, expr* b, expr_ref& result) {
     zstring as, bs;
+    if (str().is_empty(b)) {
+        result = m().mk_false();
+        return BR_DONE;
+    }
+    if (str().is_empty(a)) {
+        result = m().mk_not(m().mk_eq(a, b));
+        return BR_REWRITE1;
+    }
     if (str().is_string(a, as) && str().is_string(b, bs)) {
         unsigned sz = std::min(as.length(), bs.length());
         for (unsigned i = 0; i < sz; ++i) {
@@ -3201,6 +3213,7 @@ expr_ref seq_rewriter::mk_antimirov_deriv(expr* e, expr* r, expr* path) {
 
 void seq_rewriter::mk_antimirov_deriv_rec(expr* e, expr* r, expr* path, expr_ref& result) {
     sort* seq_sort = nullptr, * ele_sort = nullptr;
+    expr_ref _r(r, m()), _path(path, m());
     VERIFY(m_util.is_re(r, seq_sort));
     VERIFY(m_util.is_seq(seq_sort, ele_sort));
     SASSERT(ele_sort == e->get_sort());
@@ -3347,8 +3360,10 @@ void seq_rewriter::mk_antimirov_deriv_rec(expr* e, expr* r, expr* path, expr_ref
     else if (re().is_loop(r, r1, lo, hi)) {
         if ((lo == 0 && hi == 0) || hi < lo)
             result = nothing();
-        else
-            result = mk_antimirov_deriv_concat(mk_antimirov_deriv(e, r1, path), re().mk_loop_proper(r1, (lo == 0 ? 0 : lo - 1), hi - 1));
+        else {
+            expr_ref t(re().mk_loop_proper(r1, (lo == 0 ? 0 : lo - 1), hi - 1), m());
+            result = mk_antimirov_deriv_concat(mk_antimirov_deriv(e, r1, path), t);
+        }
     }
     else if (re().is_opt(r, r1))
         result = mk_antimirov_deriv(e, r1, path);
@@ -3414,15 +3429,18 @@ expr_ref seq_rewriter::mk_antimirov_deriv_intersection(expr* e, expr* d1, expr* 
 
 expr_ref seq_rewriter::mk_antimirov_deriv_concat(expr* d, expr* r) {
     expr_ref result(m());
-    // Take reference count of r and d
     expr_ref _r(r, m()), _d(d, m());
     expr* c, * t, * e;
-    if (m().is_ite(d, c, t, e))
-        result = m().mk_ite(c, mk_antimirov_deriv_concat(t, r), mk_antimirov_deriv_concat(e, r));
+    if (m().is_ite(d, c, t, e)) {
+        auto r2 = mk_antimirov_deriv_concat(e, r);
+        auto r1 = mk_antimirov_deriv_concat(t, r);
+        result = m().mk_ite(c, r1, r2);
+    }
     else if (re().is_union(d, t, e))
         result = mk_antimirov_deriv_union(mk_antimirov_deriv_concat(t, r), mk_antimirov_deriv_concat(e, r));
     else
         result = mk_re_append(d, r);
+    SASSERT(result.get());
     return result;
 }
 
@@ -3478,7 +3496,7 @@ expr_ref seq_rewriter::mk_antimirov_deriv_union(expr* d1, expr* d2) {
 // 
 // restrict(d, false) = []
 // 
-// it is already assumed that the restriction takes place witin a branch
+// it is already assumed that the restriction takes place within a branch
 // so the condition is not added explicitly but propagated down in order to eliminate 
 // infeasible cases
 expr_ref seq_rewriter::mk_antimirov_deriv_restrict(expr* e, expr* d, expr* cond) {
@@ -3717,7 +3735,7 @@ expr_ref seq_rewriter::mk_regex_concat(expr* r, expr* s) {
         result = re().mk_plus(re().mk_full_char(ele_sort));
     else if (re().is_concat(r, r1, r2))
         // create the resulting concatenation in right-associative form except for the following case
-        // TODO: maintain the followig invariant for A ++ B{m,n} + C
+        // TODO: maintain the following invariant for A ++ B{m,n} + C
         //       concat(concat(A, B{m,n}), C) (if A != () and C != ()) 
         //       concat(B{m,n}, C) (if A == () and C != ()) 
         // where A, B, C are regexes
@@ -3725,11 +3743,11 @@ expr_ref seq_rewriter::mk_regex_concat(expr* r, expr* s) {
         // In other words, do not make A ++ B{m,n} into right-assoc form, but keep B{m,n} at the top 
         // This will help to identify this situation in the merge routine:
         //               concat(concat(A, B{0,m}), C) | concat(concat(A, B{0,n}), C)
-        // simplies to 
+        // simplifies to
         //               concat(concat(A, B{0,max(m,n)}), C)
         // analogously:
         //               concat(concat(A, B{0,m}), C) & concat(concat(A, B{0,n}), C)
-        // simplies to 
+        // simplifies to
         //               concat(concat(A, B{0,min(m,n)}), C)
         result = mk_regex_concat(r1, mk_regex_concat(r2, s));
     else {
@@ -3850,12 +3868,12 @@ bool seq_rewriter::pred_implies(expr* a, expr* b) {
     Utility function to decide if two BDDs (nested if-then-else terms)
     have exactly the same structure and conditions.
 */
-bool seq_rewriter::ite_bdds_compatabile(expr* a, expr* b) {
+bool seq_rewriter::ite_bdds_compatible(expr* a, expr* b) {
     expr* ca = nullptr, *a1 = nullptr, *a2 = nullptr;
     expr* cb = nullptr, *b1 = nullptr, *b2 = nullptr;
     if (m().is_ite(a, ca, a1, a2) && m().is_ite(b, cb, b1, b2)) {
-        return (ca == cb) && ite_bdds_compatabile(a1, b1)
-                          && ite_bdds_compatabile(a2, b2);
+        return (ca == cb) && ite_bdds_compatible(a1, b1)
+                          && ite_bdds_compatible(a2, b2);
     }
     else if (m().is_ite(a) || m().is_ite(b)) {
         return false;
@@ -3915,7 +3933,7 @@ expr_ref seq_rewriter::mk_der_op_rec(decl_kind k, expr* a, expr* b) {
         // sophisticated: in an antimirov union of n terms, we really
         // want to check if any pair of them is compatible.
         else if (m().is_ite(a) && m().is_ite(b) &&
-                 !ite_bdds_compatabile(a, b)) {
+                 !ite_bdds_compatible(a, b)) {
             k = _OP_RE_ANTIMIROV_UNION;
         }
         #endif
@@ -4269,7 +4287,7 @@ expr_ref seq_rewriter::mk_derivative_rec(expr* ele, expr* r) {
     }
     else if (re().is_reverse(r, r1)) {
         if (re().is_to_re(r1, r2)) {
-            // First try to exctract hd and tl such that r = hd ++ tl and |tl|=1
+            // First try to extract hd and tl such that r = hd ++ tl and |tl|=1
             expr_ref hd(m()), tl(m());
             if (get_head_tail_reversed(r2, hd, tl)) {
                 // Use mk_der_cond to normalize
@@ -4530,6 +4548,15 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
     if (lift_str_from_to_re(b, b_s)) {
        result = m_br.mk_eq_rw(a, b_s);
        return BR_REWRITE_FULL;
+    }
+    expr* c = nullptr, *d = nullptr, *e = nullptr;
+    if (re().is_concat(b, c, d) && re().is_to_re(c, e) && re().is_full_seq(d)) {
+        result = str().mk_prefix(e, a);
+        return BR_REWRITE1;
+    }
+    if (re().is_concat(b, c, d) && re().is_to_re(d, e) && re().is_full_seq(c)) {
+        result = str().mk_suffix(e, a);
+        return BR_REWRITE1;
     }
     expr* b1 = nullptr;
     expr* eps = nullptr;

@@ -1014,7 +1014,6 @@ namespace qe {
                 case AST_APP: {
                     app* a = to_app(e);
                     expr_ref_vector args(m);
-                    unsigned num_args = a->get_num_args();
                     bool all_visited = true;
                     for (expr* arg : *a) {
                         if (visited.find(arg, r)) {
@@ -1378,7 +1377,9 @@ namespace qe {
         
         tactic * translate(ast_manager & m) override {
             return alloc(qsat, m, m_params, m_mode);
-        }        
+        }
+
+        void user_propagate_initialize_value(expr* var, expr* value) override { }
 
         lbool maximize(expr_ref_vector const& fmls, app* t, model_ref& mdl, opt::inf_eps& value) {
             expr_ref_vector defs(m);

@@ -63,6 +63,7 @@ class arith_rewriter : public poly_rewriter<arith_rewriter_core> {
     bool m_eq2ineq;
     unsigned m_max_degree;
 
+    bool get_range(expr* e, rational& lo, rational& hi);
     void get_coeffs_gcd(expr * t, numeral & g, bool & first, unsigned & num_consts);
     enum const_treatment { CT_FLOOR, CT_CEIL, CT_FALSE };
     bool div_polynomial(expr * t, numeral const & g, const_treatment ct, expr_ref & result);
@@ -72,6 +73,12 @@ class arith_rewriter : public poly_rewriter<arith_rewriter_core> {
     br_status is_separated(expr * arg1, expr * arg2, op_kind kind, expr_ref & result);
     bool is_non_negative(expr* e);
     br_status mk_le_ge_eq_core(expr * arg1, expr * arg2, op_kind kind, expr_ref & result);
+    bool is_add_factor(expr* s, expr* t);
+    bool is_mul_factor(expr* s, expr* t);
+    expr* find_nl_factor(expr* t);
+    void get_nl_muls(expr* t, ptr_buffer<expr>& muls);
+    expr_ref remove_factor(expr* s, expr* t);
+    br_status factor_le_ge_eq(expr * arg1, expr * arg2, op_kind kind, expr_ref & result);
 
     bool elim_to_real_var(expr * var, expr_ref & new_var);
     bool elim_to_real_mon(expr * monomial, expr_ref & new_monomial);
@@ -103,7 +110,7 @@ class arith_rewriter : public poly_rewriter<arith_rewriter_core> {
     expr_ref neg_monomial(expr * e);
     expr * mk_sin_value(rational const & k);
     app * mk_sqrt(rational const & k);
-    bool divides(expr* d, expr* n, expr_ref& result);
+    bool get_divides(expr* d, expr* n, expr_ref& result);
     expr_ref remove_divisor(expr* arg, expr* num, expr* den); 
     void flat_mul(expr* e, ptr_buffer<expr>& args); 
     void remove_divisor(expr* d, ptr_buffer<expr>& args);
@@ -159,6 +166,10 @@ public:
     br_status mk_mod_core(expr * arg1, expr * arg2, expr_ref & result);
     br_status mk_rem_core(expr * arg1, expr * arg2, expr_ref & result);
     br_status mk_power_core(expr* arg1, expr* arg2, expr_ref & result);
+    br_status mk_band_core(unsigned sz, expr* arg1, expr* arg2, expr_ref& result);
+    br_status mk_shl_core(unsigned sz, expr* arg1, expr* arg2, expr_ref& result);
+    br_status mk_lshr_core(unsigned sz, expr* arg1, expr* arg2, expr_ref& result);
+    br_status mk_ashr_core(unsigned sz, expr* arg1, expr* arg2, expr_ref& result);
     void mk_div(expr * arg1, expr * arg2, expr_ref & result) {
         if (mk_div_core(arg1, arg2, result) == BR_FAILED)
             result = m.mk_app(get_fid(), OP_DIV, arg1, arg2);

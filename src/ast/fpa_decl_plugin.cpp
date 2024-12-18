@@ -47,9 +47,6 @@ void fpa_decl_plugin::set_manager(ast_manager * m, family_id id) {
     m_bv_plugin = static_cast<bv_decl_plugin*>(m_manager->get_plugin(m_bv_fid));
 }
 
-fpa_decl_plugin::~fpa_decl_plugin() {
-}
-
 unsigned fpa_decl_plugin::mk_id(mpf const & v) {
     unsigned new_id = m_id_gen.mk();
     m_values.reserve(new_id+1);
@@ -208,8 +205,7 @@ sort * fpa_decl_plugin::mk_float_sort(unsigned ebits, unsigned sbits) {
     if (ebits > 63)
         m_manager->raise_exception("maximum number of exponent bits is 63");
 
-    parameter p1(ebits), p2(sbits);
-    parameter ps[2] = { p1, p2 };
+    parameter ps[2] = { parameter(ebits), parameter(sbits) };
     sort_size sz;
     sz = sort_size::mk_very_big(); // TODO: refine
     return m_manager->mk_sort(symbol("FloatingPoint"), sort_info(m_family_id, FLOATING_POINT_SORT, sz, 2, ps));
@@ -960,9 +956,6 @@ fpa_util::fpa_util(ast_manager & m):
     m_a_util(m),
     m_bv_util(m) {
     m_plugin = static_cast<fpa_decl_plugin*>(m.get_plugin(m_fid));
-}
-
-fpa_util::~fpa_util() {
 }
 
 sort * fpa_util::mk_float_sort(unsigned ebits, unsigned sbits) {

@@ -23,13 +23,6 @@ Revision History:
 
 namespace sat {
 
-    model_converter::model_converter(): m_exposed_lim(0), m_solver(nullptr) {
-    }
-
-    model_converter::~model_converter() {
-    }
-
-
     model_converter& model_converter::operator=(model_converter const& other) {
         copy(other);
         return *this;
@@ -369,7 +362,7 @@ namespace sat {
         return result;
     }
 
-    void model_converter::swap(bool_var v, unsigned sz, literal_vector& clause) {
+    void model_converter::swap(bool_var v, unsigned sz, literal_vector& clause) noexcept {
         for (unsigned j = 0; j < sz; ++j) {
             if (v == clause[j].var()) {
                 std::swap(clause[0], clause[j]);

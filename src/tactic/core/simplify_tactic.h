@@ -69,6 +69,7 @@ There are several options to control its behavior.
 #include "tactic/tactical.h"
 
 class simplify_tactic : public tactic {
+    bool       m_clean = true;
     struct     imp;
     imp *      m_imp;
     params_ref m_params;
@@ -81,6 +82,8 @@ public:
     static void get_param_descrs(param_descrs & r);
     
     void collect_param_descrs(param_descrs & r) override { get_param_descrs(r); }
+
+    void collect_statistics(statistics& st) const override;
     
     void operator()(goal_ref const & in, goal_ref_buffer & result) override;
     

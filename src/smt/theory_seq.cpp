@@ -1244,7 +1244,7 @@ bool theory_seq::get_length(expr* e, expr_ref& len, literal_vector& lits) {
 
 /**
  * solve for fold/map (recursive function that depends on a sequence)
- * Assumption: the Seq argument of fold/map expands into a concatentation of units
+ * Assumption: the Seq argument of fold/map expands into a concatenation of units
  * The assumption is enforced by tracking the length of the seq argument.
  * This is ensured in relevant_eh.
  * Under the assumption, evern occurrence of fold/map gets simplified by expanding
@@ -1270,7 +1270,6 @@ bool theory_seq::solve_nc(unsigned idx) {
     expr_ref c(m);
     expr* a = nullptr, *b = nullptr;
     VERIFY(m_util.str.is_contains(n.contains(), a, b));
-    literal pre, cnt, ctail, emp;
     lbool is_gt = ctx.get_assignment(len_gt);
     TRACE("seq", ctx.display_literal_smt2(tout << len_gt << " := " << is_gt << "\n", len_gt) << "\n";);
     
@@ -1495,6 +1494,11 @@ bool theory_seq::internalize_term(app* term) {
         bool_var bv = ctx.mk_bool_var(term);
         ctx.set_var_theory(bv, get_id());
         ctx.mark_as_relevant(bv);
+#if 0
+        // experiment
+        if (m_util.str.is_contains(term))
+            init_length_limit_for_contains(term);
+#endif
     }
 
     enode* e = nullptr;
@@ -1532,6 +1536,20 @@ void theory_seq::add_length(expr* l) {
     m_has_length.insert(e);
     m_trail_stack.push(push_back_vector<expr_ref_vector>(m_length));
     m_trail_stack.push(insert_obj_trail<expr>(m_has_length, e));
+}
+
+
+void theory_seq::init_length_limit_for_contains(expr* c) {
+    if (ctx.is_searching())
+        return;
+    expr* x, *y;
+    VERIFY(m_util.str.is_contains(c, x, y));
+    unsigned min_y = m_util.str.min_length(y);
+    if (min_y > 0) {
+        unsigned old_min_y = 0;
+        m_length_limit_map.find(x, old_min_y);
+        add_length_limit(x, old_min_y + min_y, false);
+    }
 }
 
 /**

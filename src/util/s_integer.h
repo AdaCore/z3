@@ -21,7 +21,7 @@ Revision History:
 #include "util/rational.h"
 
 class s_integer {
-    int m_val;
+    int m_val = 0;
     static s_integer m_zero;
     static s_integer m_one;
     static s_integer m_minus_one;
@@ -34,14 +34,14 @@ public:
     struct hash_proc {  unsigned operator()(s_integer const& r) const { return r.hash(); }  };
     struct eq_proc { bool operator()(s_integer const& r1, s_integer const& r2) const { return r1 == r2; } };
 
-    void swap(s_integer & n) { 
+    void swap(s_integer & n) noexcept {
         std::swap(m_val, n.m_val);
     }
 
     std::string to_string() const;
 
 public:
-    s_integer(): m_val(0) {}
+    s_integer() = default;
     explicit s_integer(int n):m_val(n) {}
     struct i64 {};
     explicit s_integer(int64_t i, i64):m_val(static_cast<int>(i)) {}

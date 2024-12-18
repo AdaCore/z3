@@ -59,9 +59,9 @@ TODOs:
   - The shared terms hash table is not incremental. 
     It could be made incremental by updating it on every merge similar to how the egraph handles it.
 - V2 using multiplicities instead of repeated values in monomials.
-- Squash trail updates when equations or monomials are modified within the same epoque. 
-  - by an epoque counter that can be updated by the egraph class whenever there is a push/pop.
-  - store the epoque as a tick on equations and possibly when updating monomials on equations.
+- Squash trail updates when equations or monomials are modified within the same epoch.
+  - by an epoch counter that can be updated by the egraph class whenever there is a push/pop.
+  - store the epoch as a tick on equations and possibly when updating monomials on equations.
 
 --*/
 
@@ -80,7 +80,7 @@ namespace euf {
     }
 
     ac_plugin::ac_plugin(egraph& g, func_decl* f) :
-        plugin(g), m_decl(f), m_fid(f->get_family_id()),
+        plugin(g), m_fid(f->get_family_id()), m_decl(f),
         m_dep_manager(get_region()),
         m_hash(*this), m_eq(*this), m_monomial_table(m_hash, m_eq)
     {
@@ -109,7 +109,7 @@ namespace euf {
         m_shared_nodes.setx(n->get_id(), true, false);
         sort(monomial(m));
         m_shared_todo.insert(m_shared.size());
-        m_shared.push_back({ n, m, justification::axiom() });
+        m_shared.push_back({ n, m, justification::axiom(get_id()) });
         push_undo(is_register_shared);
     }
 
@@ -440,8 +440,9 @@ namespace euf {
             TRACE("plugin", tout << "propagate " << eq_id << ": " << eq_pp(*this, m_eqs[eq_id]) << "\n");
 
             // simplify eq using processed
-            for (auto other_eq : backward_iterator(eq_id))
-                TRACE("plugin", tout << "backward iterator " << eq_id << " vs " << other_eq << " " << is_processed(other_eq) << "\n");
+            TRACE("plugin", 
+                  for (auto other_eq : backward_iterator(eq_id))
+                      tout << "backward iterator " << eq_id << " vs " << other_eq << " " << is_processed(other_eq) << "\n");
             for (auto other_eq : backward_iterator(eq_id))
                 if (is_processed(other_eq) && backward_simplify(eq_id, other_eq))
                     goto loop_start;
@@ -907,7 +908,6 @@ namespace euf {
         m_dst_r.reset();
         m_dst_r.append(monomial(dst.r).m_nodes);
         unsigned src_r_size = m_src_r.size();
-        unsigned dst_r_size = m_dst_r.size();
         SASSERT(src_r_size == monomial(src.r).size());
         // dst_r contains C
         // src_r contains E

@@ -36,10 +36,6 @@ namespace euf {
     typedef std::pair<enode*,bool> enode_bool_pair;
     typedef svector<enode_bool_pair> enode_bool_pair_vector;
     typedef id_var_list<> th_var_list;
-    typedef int theory_var;
-    typedef int theory_id;
-    const theory_var null_theory_var = -1;
-    const theory_id null_theory_id = -1;
 
     class enode {
         expr*         m_expr = nullptr;
@@ -284,8 +280,7 @@ namespace euf {
             enode* operator*() { return m_first; }
             iterator& operator++() { if (!m_last) m_last = m_first; m_first = m_first->m_next; return *this; }
             iterator operator++(int) { iterator tmp = *this; ++*this; return tmp; }
-            bool operator==(iterator const& other) const { return m_last == other.m_last && m_first == other.m_first; }
-            bool operator!=(iterator const& other) const { return !(*this == other); }            
+            bool operator!=(iterator const& other) const { return m_last != other.m_last || m_first != other.m_first; }            
         };
         enode_class(enode & _n):n(_n) {}
         enode_class(enode * _n):n(*_n) {}
@@ -304,8 +299,7 @@ namespace euf {
             th_var_list const& operator*() { return *m_th_vars; }
             iterator& operator++() { m_th_vars = m_th_vars->get_next(); return *this; }
             iterator operator++(int) { iterator tmp = *this; ++* this; return tmp; }
-            bool operator==(iterator const& other) const { return m_th_vars == other.m_th_vars; }
-            bool operator!=(iterator const& other) const { return !(*this == other); }
+            bool operator!=(iterator const& other) const { return m_th_vars != other.m_th_vars; }
         };
         enode_th_vars(enode& _n) :n(_n) {}
         enode_th_vars(enode* _n) :n(*_n) {}

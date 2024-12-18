@@ -125,7 +125,9 @@ class nlsat_tactic : public tactic {
                     continue; // don't care
                 md->register_decl(to_app(a)->get_decl(), val == l_true ? m.mk_true() : m.mk_false());
             }
-            DEBUG_CODE(eval_model(*md.get(), g););
+#ifdef Z3DEBUG
+            eval_model(*md.get(), g);
+#endif            
             // VERIFY(eval_model(*md.get(), g));
             mc = model2model_converter(md.get());
             return ok;
@@ -247,7 +249,7 @@ public:
         }
         catch (z3_exception & ex) {
             // convert all Z3 exceptions into tactic exceptions.
-            throw tactic_exception(ex.msg());
+            throw tactic_exception(ex.what());
         }
     }
     
@@ -260,6 +262,9 @@ public:
     void reset_statistics() override {
         m_stats.reset();
     }
+
+    void user_propagate_initialize_value(expr* var, expr* value) override { }
+
 };
 
 tactic * mk_nlsat_tactic(ast_manager & m, params_ref const & p) {

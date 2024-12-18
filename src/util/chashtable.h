@@ -52,9 +52,8 @@ public:
 
 protected:
     struct cell {
-        cell *  m_next;
+        cell *  m_next = (cell*)1;
         T       m_data;
-        cell():m_next(reinterpret_cast<cell*>(1)) {}
         bool is_free() const { return GET_TAG(m_next) == 1; }
         void mark_free() { m_next = TAG(cell*, m_next, 1); }
         void unmark_free() { m_next = UNTAG(cell*, m_next); }
@@ -161,8 +160,12 @@ protected:
         unsigned curr_cellar  = (m_capacity - m_slots);
         unsigned new_slots    = m_slots * 2;
         unsigned new_cellar   = curr_cellar * 2;
+        if (new_slots < m_slots || new_cellar < curr_cellar)
+            throw default_exception("table overflow");            
         while (true) {
             unsigned new_capacity = new_slots + new_cellar;
+            if (new_capacity < new_slots)
+                throw default_exception("table overflow");
             cell * new_table      = alloc_table(new_capacity);
             cell * next_cell      = copy_table(m_table, m_slots, m_capacity,
                                                new_table, new_slots, new_capacity,
@@ -179,6 +182,8 @@ protected:
                 return;
             }
             dealloc_vect(new_table, new_capacity);
+            if (2*new_cellar < new_cellar)
+                throw default_exception("table overflow");                
             new_cellar *= 2;
         }
     }
@@ -546,14 +551,13 @@ public:
             return *this;
         }
         iterator operator++(int) { iterator tmp = *this; ++*this; return tmp; }
-        bool operator==(iterator const & it) const { return m_list_it == it.m_list_it; }
         bool operator!=(iterator const & it) const { return m_list_it != it.m_list_it; }
     };
     
     iterator begin() const { return iterator(m_table, m_table + m_slots); }
     iterator end() const { return iterator(); }
 
-    void swap(chashtable & other) {
+    void swap(chashtable & other) noexcept {
         std::swap(m_table,       other.m_table);
         std::swap(m_capacity,    other.m_capacity);
         std::swap(m_init_slots,  other.m_init_slots);
@@ -604,7 +608,7 @@ public:
     struct key_value {
         Key    m_key;
         Value  m_value;
-        key_value() {}
+        key_value() = default;
         key_value(Key const & k):m_key(k) {}
         key_value(Key const & k, Value const & v):m_key(k), m_value(v) {}
     };

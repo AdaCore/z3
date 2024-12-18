@@ -157,8 +157,8 @@ namespace qe {
 
         //
         // Partition variables into buckets.
-        // The var_paritions buckets covering disjoint subsets of
-        // the conjuncts. The remaining variables in vars are non-partioned.
+        // The var_partitions buckets covering disjoint subsets of
+        // the conjuncts. The remaining variables in vars are non-partitioned.
         // 
         bool partition_vars(
             unsigned               num_vars,
@@ -2456,7 +2456,7 @@ namespace qe {
     }
 
     bool has_quantified_uninterpreted(ast_manager& m, expr* fml) {
-        struct found {};
+        struct found : public std::exception {};
         struct proc {
             ast_manager& m;
             proc(ast_manager& m):m(m) {}

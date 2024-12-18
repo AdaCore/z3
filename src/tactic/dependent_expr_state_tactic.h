@@ -62,9 +62,9 @@ public:
         if (m_simp)
             pop(1);
     }
-
+    
     /**
-    * size(), [](), update() and inconsisent() implement the abstract interface of dependent_expr_state
+    * size(), [](), update() and inconsistent() implement the abstract interface of dependent_expr_state
     */
     unsigned qtail() const override { return m_goal->size(); }
 
@@ -129,7 +129,7 @@ public:
                 m_simp->reduce();
         }
         catch (rewriter_exception& ex) {
-            throw tactic_exception(ex.msg());
+            throw tactic_exception(ex.what());
         }
         m_goal->elim_true();
         m_goal->elim_redundancies();
@@ -138,6 +138,12 @@ public:
             in->add(m_model_trail->get_model_converter().get());
         result.push_back(in.get());
         cleanup();
+    }
+
+    void collect_statistics(statistics& st) const override {
+        if (m_simp)
+            m_simp->collect_statistics(st);
+        st.copy(m_st);
     }
 
     void cleanup() override {
@@ -149,13 +155,6 @@ public:
         m_model_trail = nullptr;
         m_goal = nullptr;
         m_dep = dependent_expr(m, m.mk_true(), nullptr, nullptr);
-    }
-
-    void collect_statistics(statistics& st) const override {
-        if (m_simp)
-            m_simp->collect_statistics(st);
-        else
-            st.copy(m_st);
     }
 
     void reset_statistics() override {

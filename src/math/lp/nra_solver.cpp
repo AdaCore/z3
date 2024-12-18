@@ -3,6 +3,10 @@
   Author: Nikolaj Bjorner, Lev Nachmanson
 */
 
+#ifndef SINGLE_THREAD
+#include <thread>
+#endif
+#include <fstream>
 #include "math/lp/lar_solver.h"
 #include "math/lp/nra_solver.h"
 #include "nlsat/nlsat_solver.h"
@@ -11,6 +15,7 @@
 #include "util/map.h"
 #include "util/uint_set.h"
 #include "math/lp/nla_core.h"
+#include "smt/params/smt_params_helper.hpp"
 
 
 namespace nra {
@@ -29,7 +34,7 @@ struct solver::imp {
     scoped_ptr<scoped_anum_vector>   m_values; // values provided by LRA solver
     scoped_ptr<scoped_anum> m_tmp1, m_tmp2;
     nla::core&                m_nla_core;
-
+    
     imp(lp::lar_solver& s, reslimit& lim, params_ref const& p, nla::core& nla_core): 
         lra(s), 
         m_limit(lim),
@@ -71,12 +76,11 @@ struct solver::imp {
             }
         }
 
-        for (unsigned i = lra.terms().size(); i-- > 0; ) {
-            auto const& t = lra.term(i);
-            for (auto const iv : t) {
-                auto v = iv.column().index();
+        for (const auto *t :  lra.terms() ) {
+            for (auto const iv : *t) {
+                auto v = iv.j();
                 var2occurs.reserve(v + 1);
-                var2occurs[v].terms.push_back(i);
+                var2occurs[v].terms.push_back(t->j());
             }
         }
 
@@ -99,17 +103,15 @@ struct solver::imp {
                 todo.push_back(w);
 
             for (auto ti : var2occurs[v].terms) {
-                for (auto iv : lra.term(ti))
-                    todo.push_back(iv.column().index());
-                auto vi = lp::tv::mask_term(ti);
-                todo.push_back(lra.map_term_index_to_column_index(vi));
+                for (auto iv : lra.get_term(ti))
+                    todo.push_back(iv.j());
+                todo.push_back(ti);
             }
 
-            if (lra.column_corresponds_to_term(v)) {
+            if (lra.column_has_term(v)) {
                 m_term_set.insert(v);
-                lp::tv ti = lp::tv::raw(lra.column_to_reported_index(v));
-                for (auto kv : lra.get_term(ti))
-                    todo.push_back(kv.column().index());
+                for (auto kv : lra.get_term(v))
+                    todo.push_back(kv.j());
             }            
 
             if (m_nla_core.is_monic_var(v)) {
@@ -158,7 +160,27 @@ struct solver::imp {
         for (unsigned i : m_term_set)
             add_term(i);
 
+        TRACE("nra", m_nlsat->display(tout));
+
+        smt_params_helper p(m_params);
+        if (p.arith_nl_log()) {
+            static unsigned id = 0;
+            std::stringstream strm;
+
+#ifndef SINGLE_THREAD            
+            std::thread::id this_id = std::this_thread::get_id();
+            strm << "nla_" << this_id << "." << (++id) << ".smt2";
+#else
+            strm << "nla_" << (++id) << ".smt2";
+#endif
+            std::ofstream out(strm.str());
+            m_nlsat->display_smt2(out);
+            out << "(check-sat)\n";
+            out.close();
+        }
+
         lbool r = l_undef;
+        statistics& st = m_nla_core.lp_settings().stats().m_st;
         try {
             r = m_nlsat->check();
         }
@@ -167,9 +189,11 @@ struct solver::imp {
                 r = l_undef;
             }
             else {
+                m_nlsat->collect_statistics(st);
                 throw;
             }
         }
+        m_nlsat->collect_statistics(st);
         TRACE("nra",
               m_nlsat->display(tout << r << "\n");
               display(tout);
@@ -200,7 +224,7 @@ struct solver::imp {
             for (auto c : core) {
                 unsigned idx = static_cast<unsigned>(static_cast<imp*>(c) - this);
                 ex.push_back(idx);
-                TRACE("arith", tout << "ex: " << idx << "\n";);
+                TRACE("nra", lra.display_constraint(tout << "ex: " << idx << ": ", idx) << "\n";);
             }
             nla::new_lemma lemma(m_nla_core, __FUNCTION__);
             lemma &= ex;
@@ -212,6 +236,7 @@ struct solver::imp {
         }
         return r;
     }   
+
 
     void add_monic_eq_bound(mon_eq const& m) {
         if (!lra.column_has_lower_bound(m.var()) && 
@@ -353,6 +378,7 @@ struct solver::imp {
         }
         
         lbool r = l_undef;
+        statistics& st = m_nla_core.lp_settings().stats().m_st;
         try {
             r = m_nlsat->check();
         }
@@ -361,9 +387,11 @@ struct solver::imp {
                 r = l_undef;
             }
             else {
+                m_nlsat->collect_statistics(st);
                 throw;
             }
         }
+        m_nlsat->collect_statistics(st);
         
         switch (r) {
         case l_true:
@@ -515,16 +543,16 @@ struct solver::imp {
         
         
         
-    bool is_int(lp::var_index v) {
+    bool is_int(lp::lpvar v) {
         return lra.var_is_int(v);
     }
 
-    polynomial::var lp2nl(lp::var_index v) {
+    polynomial::var lp2nl(lp::lpvar v) {
         polynomial::var r;
         if (!m_lp2nl.find(v, r)) {
             r = m_nlsat->mk_var(is_int(v));
             m_lp2nl.insert(v, r);
-            if (!m_term_set.contains(v) && lra.column_corresponds_to_term(v)) {
+            if (!m_term_set.contains(v) && lra.column_has_term(v)) {
                 m_term_set.insert(v);
             }
         }
@@ -532,14 +560,13 @@ struct solver::imp {
     }
     //
     void add_term(unsigned term_column) {
-        lp::tv ti = lp::tv::raw(lra.column_to_reported_index(term_column));
-        const lp::lar_term& t = lra.get_term(ti);
+        const lp::lar_term& t = lra.get_term(term_column);
         // code that creates a polynomial equality between the linear coefficients and
         // variable representing the term.
         svector<polynomial::var> vars;
         rational den(1);
         for (lp::lar_term::ival kv : t) {
-            vars.push_back(lp2nl(kv.column().index()));
+            vars.push_back(lp2nl(kv.j()));
             den = lcm(den, denominator(kv.coeff()));
         }
         vars.push_back(lp2nl(term_column));
@@ -557,7 +584,7 @@ struct solver::imp {
         m_nlsat->mk_clause(1, &lit, nullptr);
     }
 
-    nlsat::anum const& value(lp::var_index v)  {
+    nlsat::anum const& value(lp::lpvar v)  {
         polynomial::var pv;
         if (m_lp2nl.find(v, pv))
             return m_nlsat->value(pv);
@@ -634,7 +661,7 @@ std::ostream& solver::display(std::ostream& out) const {
     return m_imp->display(out);
 }
 
-nlsat::anum const& solver::value(lp::var_index v) {
+nlsat::anum const& solver::value(lp::lpvar v) {
     return m_imp->value(v);
 }
 
@@ -645,7 +672,7 @@ nlsat::anum_manager& solver::am() {
 scoped_anum& solver::tmp1() { return m_imp->tmp1(); }
 
 scoped_anum& solver::tmp2() { return m_imp->tmp2(); }
-
+ 
 
 void solver::updt_params(params_ref& p) {
     m_imp->updt_params(p);

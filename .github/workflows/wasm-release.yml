@@ -10,7 +10,7 @@ defaults:
     working-directory: src/api/js
 
 env:
-  EM_VERSION: 3.1.15
+  EM_VERSION: 3.1.73
 
 permissions:
   contents: read # to fetch code (actions/checkout)
@@ -36,7 +36,7 @@ jobs:
           cp ../../../LICENSE.txt .
 
       - name: Setup emscripten
-        uses: mymindstorm/setup-emsdk@v13
+        uses: mymindstorm/setup-emsdk@v14
         with:
           no-install: true
           version: ${{env.EM_VERSION}}

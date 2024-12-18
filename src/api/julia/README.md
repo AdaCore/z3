@@ -1,6 +1,8 @@
 # Julia bindings
 
-The Julia package [Z3.jl](https://github.com/ahumenberger/Z3.jl) provides and interface to Z3 by exposing its C++ API via [CxxWrap.jl](https://github.com/JuliaInterop/CxxWrap.jl). The bindings therefore consist of a [C++ part](z3jl.cpp) and a [Julia part](https://github.com/ahumenberger/Z3.jl). The C++ part defines the Z3 types/methods which are exposed. The resulting library is loaded in the Julia part via CxxWrap.jl which creates the corresponding Julia types/methods.
+The Julia package [Z3.jl](https://github.com/ahumenberger/Z3.jl) provides and interface to Z3 by exposing its C API.
+
+A previous version exposed the C++ API via [CxxWrap.jl](https://github.com/JuliaInterop/CxxWrap.jl). The bindings therefore consisted of a [C++ part](z3jl.cpp) and a [Julia part](https://github.com/ahumenberger/Z3.jl). The C++ part defines the Z3 types/methods which are exposed. The resulting library is loaded in the Julia part via CxxWrap.jl which creates the corresponding Julia types/methods.
 
 ## Building the C++ part 
 
@@ -14,7 +16,10 @@ make
 
 ## Julia part
 
-The Z3 binaries are provided to [Z3.jl](https://github.com/ahumenberger/Z3.jl) via [z3_jll.jl](https://github.com/JuliaBinaryWrappers/z3_jll.jl). That is, in order to release a new Z3 version one has to update the corresponding [build script](https://github.com/JuliaPackaging/Yggdrasil/tree/master/Z/z3) which triggers a new version of z3_jll.jl.
+The Z3 binaries are provided to [Z3.jl](https://github.com/ahumenberger/Z3.jl) via [z3_jll.jl](https://github.com/JuliaBinaryWrappers/z3_jll.jl). 
+That is, in order to propagate any C++ changes to the Julia side, one has to:
+1. Release a new version of Z3. 
+2. Update the corresponding [build script](https://github.com/JuliaPackaging/Yggdrasil/tree/master/Z/z3) to use the new Z3 release. 
 
 ### Using the compiled version of Z3
 

@@ -8,7 +8,7 @@
 from mk_util import *
 
 def init_version():
-    set_version(4, 12, 4, 0) # express a default build version or pick up ci build version
+    set_version(4, 13, 4, 0) # express a default build version or pick up ci build version
     
 # Z3 Project definition
 def init_project_def():
@@ -28,17 +28,18 @@ def init_project_def():
     add_lib('parser_util', ['ast'], 'parsers/util')
     add_lib('euf', ['ast'], 'ast/euf')
     add_lib('grobner', ['ast', 'dd', 'simplex'], 'math/grobner')    
-    add_lib('sat', ['params', 'util', 'dd', 'grobner'])    
-    add_lib('nlsat', ['polynomial', 'sat'])
-    add_lib('lp', ['util', 'nlsat', 'grobner', 'interval', 'smt_params'], 'math/lp')
     add_lib('rewriter', ['ast', 'polynomial', 'interval', 'automata', 'params'], 'ast/rewriter')
-    add_lib('bit_blaster',  ['rewriter'], 'ast/rewriter/bit_blaster')
     add_lib('normal_forms', ['rewriter'], 'ast/normal_forms')
-    add_lib('substitution', ['rewriter'], 'ast/substitution')
-    add_lib('proofs', ['rewriter'], 'ast/proofs')
     add_lib('macros', ['rewriter'], 'ast/macros')
     add_lib('model',  ['macros'])
     add_lib('converters', ['model'], 'ast/converters')
+    add_lib('ast_sls', ['ast','normal_forms','converters','smt_params','euf'], 'ast/sls')
+    add_lib('sat', ['params', 'util', 'dd', 'ast_sls', 'grobner'])    
+    add_lib('nlsat', ['polynomial', 'sat'])
+    add_lib('lp', ['util', 'nlsat', 'grobner', 'interval', 'smt_params'], 'math/lp')
+    add_lib('bit_blaster',  ['rewriter'], 'ast/rewriter/bit_blaster')
+    add_lib('substitution', ['rewriter'], 'ast/substitution')
+    add_lib('proofs', ['rewriter'], 'ast/proofs')
     add_lib('simplifiers', ['euf', 'normal_forms', 'bit_blaster', 'converters', 'substitution'], 'ast/simplifiers')
     add_lib('tactic', ['simplifiers'])
     add_lib('mbp', ['model', 'simplex'], 'qe/mbp')
@@ -58,13 +59,13 @@ def init_project_def():
     add_lib('proto_model', ['model', 'rewriter', 'smt_params'], 'smt/proto_model')
     add_lib('smt', ['bit_blaster', 'macros', 'normal_forms', 'cmd_context', 'proto_model', 'solver_assertions',
                     'substitution', 'grobner', 'simplex', 'proofs', 'pattern', 'parser_util', 'fpa', 'lp'])
-    add_lib('sat_smt', ['sat', 'euf', 'smt', 'tactic', 'solver', 'smt_params', 'bit_blaster', 'fpa', 'mbp', 'normal_forms', 'lp', 'pattern', 'qe_lite'], 'sat/smt')
+    add_lib('sat_smt', ['sat', 'ast_sls', 'euf', 'smt', 'tactic', 'solver', 'smt_params', 'bit_blaster', 'fpa', 'mbp', 'normal_forms', 'lp', 'pattern', 'qe_lite'], 'sat/smt')
     add_lib('sat_tactic', ['tactic', 'sat', 'solver', 'sat_smt'], 'sat/tactic')
     add_lib('nlsat_tactic', ['nlsat', 'sat_tactic', 'arith_tactics'], 'nlsat/tactic')    
     add_lib('bv_tactics', ['tactic', 'bit_blaster', 'core_tactics'], 'tactic/bv')
     add_lib('fuzzing', ['ast'], 'test/fuzzing')
     add_lib('smt_tactic', ['smt'], 'smt/tactic')
-    add_lib('sls_tactic', ['tactic', 'normal_forms', 'core_tactics', 'bv_tactics'], 'tactic/sls')
+    add_lib('sls_tactic', ['tactic', 'normal_forms', 'core_tactics', 'bv_tactics', 'ast_sls'], 'tactic/sls')
     add_lib('qe', ['smt', 'mbp', 'qe_lite', 'nlsat', 'tactic', 'nlsat_tactic'], 'qe')
     add_lib('sat_solver', ['solver', 'core_tactics', 'aig_tactic', 'bv_tactics', 'arith_tactics', 'sat_tactic'], 'sat/sat_solver')
     add_lib('fd_solver', ['core_tactics', 'arith_tactics', 'sat_solver', 'smt'], 'tactic/fd_solver') 

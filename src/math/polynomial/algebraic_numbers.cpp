@@ -121,9 +121,6 @@ namespace algebraic_numbers {
             m_y = pm().mk_var();
         }
 
-        ~imp() {
-        }
-
         bool acell_inv(algebraic_cell const& c) {
             auto s = upm().eval_sign_at(c.m_p_sz, c.m_p, lower(&c));
             return s == sign_zero || c.m_sign_lower == (s == sign_neg);
@@ -180,7 +177,7 @@ namespace algebraic_numbers {
             return m_upmanager;
         }
 
-        void del(basic_cell * c) {
+        void del_basic(basic_cell * c) {
             qm().del(c->m_value);
             m_allocator.deallocate(sizeof(basic_cell), c);
         }
@@ -204,13 +201,13 @@ namespace algebraic_numbers {
         }
 
         void del(numeral & a) {
-            if (a.m_cell == nullptr)
+            if (a.is_null())
                 return;
             if (a.is_basic())
-                del(a.to_basic());
+                del_basic(a.to_basic());
             else
                 del(a.to_algebraic());
-            a.m_cell = nullptr;
+            a.clear();
         }
 
         void reset(numeral & a) {
@@ -218,7 +215,7 @@ namespace algebraic_numbers {
         }
 
         bool is_zero(numeral const & a) {
-            return a.m_cell == nullptr;
+            return a.is_null();
         }
 
         bool is_pos(numeral const & a) {
@@ -358,8 +355,8 @@ namespace algebraic_numbers {
             return a.to_algebraic()->m_p_sz - 1;
         }
 
-        void swap(numeral & a, numeral & b) {
-            std::swap(a.m_cell, b.m_cell);
+        void swap(numeral & a, numeral & b) noexcept {
+            a.swap(b);
         }
 
         basic_cell * mk_basic_cell(mpq & n) {
@@ -432,13 +429,13 @@ namespace algebraic_numbers {
             }
             if (a.is_basic()) {
                 if (is_zero(a))
-                    a.m_cell = mk_basic_cell(n);
+                    a = mk_basic_cell(n);
                 else
                     qm().set(a.to_basic()->m_value, n);
             }
             else {
                 del(a);
-                a.m_cell = mk_basic_cell(n);
+                a = mk_basic_cell(n);
             }
         }
 
@@ -492,7 +489,7 @@ namespace algebraic_numbers {
             else {
                 if (a.is_basic()) {
                     del(a);
-                    a.m_cell = TAG(void*, mk_algebraic_cell(sz, p, lower, upper, minimal), ROOT);
+                    a = mk_algebraic_cell(sz, p, lower, upper, minimal);
                 }
                 else {
                     SASSERT(sz > 2);
@@ -526,7 +523,7 @@ namespace algebraic_numbers {
                     del(a);
                     void * mem = m_allocator.allocate(sizeof(algebraic_cell));
                     algebraic_cell * c = new (mem) algebraic_cell();
-                    a.m_cell = TAG(void *, c, ROOT);
+                    a = c;
                     copy(c, b.to_algebraic());
                     SASSERT(acell_inv(*c));
                 }
@@ -795,8 +792,8 @@ namespace algebraic_numbers {
                 // root was found
                 scoped_mpq r(qm());
                 to_mpq(qm(), lower(c), r);
-                del(c);
-                a.m_cell = mk_basic_cell(r);
+                del(a);
+                a = mk_basic_cell(r);
                 return false;
             }
         }
@@ -816,8 +813,8 @@ namespace algebraic_numbers {
                 // actual root was found
                 scoped_mpq r(qm());
                 to_mpq(qm(), lower(c), r);
-                del(c);
-                a.m_cell = mk_basic_cell(r);
+                del(a);
+                a = mk_basic_cell(r);
                 return false;
             }
             SASSERT(acell_inv(*c));
@@ -2594,25 +2591,28 @@ namespace algebraic_numbers {
 
         void int_lt(numeral const & a, numeral & b) {
             scoped_mpz v(qm());
+            if (!a.is_basic())
+                refine_until_prec(const_cast<numeral&>(a), 1);
             if (a.is_basic()) {
                 qm().floor(basic_value(a), v);
                 qm().dec(v);
             }
-            else {
-                bqm().floor(qm(), lower(a.to_algebraic()), v);
-            }
+            else                 
+                bqm().floor(qm(), lower(a.to_algebraic()), v);            
             m_wrapper.set(b, v);
         }
 
         void int_gt(numeral const & a, numeral & b) {
             scoped_mpz v(qm());
+            if (!a.is_basic()) 
+                refine_until_prec(const_cast<numeral&>(a), 1);
             if (a.is_basic()) {
                 qm().ceil(basic_value(a), v);
                 qm().inc(v);
             }
-            else {
+            else                
                 bqm().ceil(qm(), upper(a.to_algebraic()), v);
-            }
+            
             m_wrapper.set(b, v);
         }
 
@@ -2935,7 +2935,7 @@ namespace algebraic_numbers {
         return m_imp->to_rational(const_cast<numeral&>(a), r);
     }
 
-    void manager::swap(numeral & a, numeral & b) {
+    void manager::swap(numeral & a, numeral & b) noexcept {
         return m_imp->swap(a, b);
     }
 

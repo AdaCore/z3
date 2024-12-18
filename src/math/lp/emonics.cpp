@@ -536,7 +536,7 @@ bool emonics::invariant() const {
             do {
                 auto const& m = m_monics[c->m_index];
                 bool found = false;
-                for (lp::var_index w : m.rvars()) {
+                for (lp::lpvar w : m.rvars()) {
                     auto w1 = m_ve.find(w);
                     found |= v1.var() == w1.var();
                 }
@@ -609,6 +609,21 @@ void emonics::set_propagated(monic const& m) {
     SASSERT(!m.is_propagated());
     (*this)[m.var()].set_propagated(true);
     m_u_f_stack.push(set_unpropagated(*this, m.var()));
+}
+
+void emonics::set_bound_propagated(monic const& m) {
+    struct set_bound_unpropagated : public trail {
+        emonics& em;
+        unsigned var;
+    public:
+        set_bound_unpropagated(emonics& em, unsigned var): em(em), var(var) {}
+        void undo() override {
+            em[var].set_bound_propagated(false);
+        }
+    };
+    SASSERT(!m.is_bound_propagated());
+    (*this)[m.var()].set_bound_propagated(true);
+    m_u_f_stack.push(set_bound_unpropagated(*this, m.var()));
 }
 
 }
