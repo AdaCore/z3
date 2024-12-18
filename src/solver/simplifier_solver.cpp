@@ -38,8 +38,7 @@ class simplifier_solver : public solver {
         model_reconstruction_trail m_reconstruction_trail;
         bool m_updated = false;
         dep_expr_state(simplifier_solver& s) :dependent_expr_state(s.m), s(s), m_reconstruction_trail(s.m, m_trail) {}
-        ~dep_expr_state() override {}
-        virtual unsigned qtail() const override { return s.m_fmls.size(); }
+        unsigned qtail() const override { return s.m_fmls.size(); }
         dependent_expr const& operator[](unsigned i) override { return s.m_fmls[i]; }
         void update(unsigned i, dependent_expr const& j) override { 
             SASSERT(j.fml());  
@@ -80,8 +79,10 @@ class simplifier_solver : public solver {
         void flatten_suffix() override {
             expr_mark seen;
             unsigned j = qhead();
+            expr_ref_vector pinned(s.m);
             for (unsigned i = qhead(); i < qtail(); ++i) {
                 expr* f = s.m_fmls[i].fml(), *g = nullptr;
+                pinned.push_back(f);
                 if (seen.is_marked(f))
                     continue;
                 seen.mark(f, true);
@@ -129,6 +130,10 @@ class simplifier_solver : public solver {
         unsigned qhead = m_preprocess_state.qhead();
         expr_ref_vector orig_assumptions(assumptions);
         m_core_replace.reset();
+        m_preprocess_state.replay(qhead, assumptions);   
+        for (unsigned i = 0; i < assumptions.size(); ++i) 
+            m_core_replace.insert(assumptions.get(i), orig_assumptions.get(i));                    
+
         if (qhead < m_fmls.size()) {
             m_preprocess.reduce();
             if (!m.inc())
@@ -137,11 +142,7 @@ class simplifier_solver : public solver {
                   m_preprocess_state.display(tout));
             m_preprocess_state.advance_qhead();
         }
-        if (!assumptions.empty()) {
-            m_preprocess_state.replay(m_preprocess_state.qhead(), assumptions);   
-            for (unsigned i = 0; i < assumptions.size(); ++i) 
-                m_core_replace.insert(assumptions.get(i), orig_assumptions.get(i));            
-        }
+
         m_mc = m_preprocess_state.model_trail().get_model_converter(); 
         m_cached_mc = nullptr;
         for (; qhead < m_fmls.size(); ++qhead)
@@ -389,6 +390,8 @@ public:
     void user_propagate_register_expr(expr* e) override { m_preprocess_state.freeze(e);  s->user_propagate_register_expr(e); }
     void user_propagate_register_created(user_propagator::created_eh_t& r) override { s->user_propagate_register_created(r); }
     void user_propagate_register_decide(user_propagator::decide_eh_t& r) override { s->user_propagate_register_decide(r); }
+    void user_propagate_initialize_value(expr* var, expr* value) override { m_preprocess_state.freeze(var); s->user_propagate_initialize_value(var, value); }
+
 
 
 };

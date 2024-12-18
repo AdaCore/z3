@@ -47,7 +47,7 @@
 #include "util/scoped_timer.h"
 #include "util/distribution.h"
 
-typedef lp::var_index lpvar;
+typedef lp::lpvar lpvar;
 
 
 namespace smt {
@@ -154,6 +154,7 @@ class theory_lra::imp {
     svector<delayed_atom>  m_asserted_atoms;        
     ptr_vector<expr>       m_not_handled;
     ptr_vector<app>        m_underspecified;
+    ptr_vector<app>        m_bv_terms;
     vector<ptr_vector<api_bound> > m_use_list;        // bounds where variables are used.
 
     // attributes for incremental version:
@@ -469,6 +470,13 @@ class theory_lra::imp {
                     if (!ctx().relevancy()) mk_power_axiom(n, n1, n2);
                     st.to_ensure_var().push_back(n1);
                     st.to_ensure_var().push_back(n2);
+                }
+                else if (a.is_band(n) || a.is_shl(n) || a.is_ashr(n) || a.is_lshr(n)) {
+                    m_bv_terms.push_back(to_app(n));
+                    ctx().push_trail(push_back_vector(m_bv_terms));
+                    mk_bv_axiom(to_app(n));
+                    for (expr* arg : *to_app(n))
+                        st.to_ensure_var().push_back(arg);                    
                 }
                 else if (!a.is_div0(n)) {
                     found_unsupported(n);
@@ -790,10 +798,6 @@ class theory_lra::imp {
         return v == null_theory_var ? lp::null_lpvar : lp().external_to_local(v);
     }
 
-    lp::tv get_tv(theory_var v) const {
-        return lp::tv::raw(get_lpvar(v));
-    }
-    
     theory_var internalize_linearized_def(app* term, scoped_internalize_state& st) {
         theory_var v = mk_var(term);
         TRACE("arith_internalize", tout << "v" << v << " " << bpp(term) << "\n";);
@@ -812,11 +816,11 @@ class theory_lra::imp {
             }
             else {
                 vi = lp().add_term(m_left_side, v);
-                SASSERT(lp::tv::is_term(vi));
+                SASSERT(lp().column_has_term(vi));
                 TRACE("arith_verbose", 
                       tout << "v" << v << " := " << mk_pp(term, m) 
                       << " slack: " << vi << " scopes: " << m_scopes.size() << "\n";
-                      lp().print_term(lp().get_term(lp::tv::raw(vi)), tout) << "\n";);
+                      lp().print_term(lp().get_term(vi), tout) << "\n";);
             }
         }
 
@@ -993,6 +997,15 @@ public:
             return l_undef;
         }
         return lp().compare_values(vi, k, b->get_value()) ? l_true : l_false;
+    }
+
+    void initialize_value(expr* var, expr* value) {
+        rational r;
+        if (!a.is_numeral(value, r)) {
+            IF_VERBOSE(5, verbose_stream() << "numeric constant expected in initialization " << mk_pp(var, m) << " := " << mk_pp(value, m) << "\n");
+            return;
+        }
+        lp().move_lpvar_to_value(get_lpvar(var), r);
     }
 
     void new_eq_eh(theory_var v1, theory_var v2) {
@@ -1432,15 +1445,15 @@ public:
             register_theory_var_in_lar_solver(v);
     }
 
-    mutable vector<std::pair<lp::tv, rational>> m_todo_terms;
- 
+    mutable vector<std::pair<lp::lpvar, rational>> m_todo_terms;
+
     lp::impq get_ivalue(theory_var v) const {
         SASSERT(is_registered_var(v));       
-        return lp().get_tv_ivalue(get_tv(v));
+        return lp().get_column_value(get_lpvar(v));
     }
         
     rational get_value(theory_var v) const {
-        return is_registered_var(v) ? lp().get_tv_value(get_tv(v)) : rational::zero();        
+        return is_registered_var(v) ? lp().get_value(get_lpvar(v)) : rational::zero();        
     }    
 
     bool m_model_is_initialized{ false };
@@ -1467,8 +1480,8 @@ public:
                 continue;
             }
             ensure_column(v);
-            lp::column_index vj = lp().to_column_index(v);
-            SASSERT(!vj.is_null());
+            lp::lpvar vj = lp().external_to_local(v);
+            SASSERT(vj != lp::null_lpvar);
             theory_var other = m_model_eqs.insert_if_not_there(v);
             if (other == v) {
                 continue;
@@ -1476,14 +1489,14 @@ public:
             enode * n2 = get_enode(other);
             if (n1->get_root() == n2->get_root())
                 continue;
-            if (!lp().is_fixed(vj)) {
-                vars.push_back(vj.index());
+            if (!lp().column_is_fixed(vj)) {
+                vars.push_back(vj);
             }
             else if (!m_tmp_var_set.contains(other) ) {
-                lp::column_index other_j = lp().to_column_index(other);
-                if (!lp().is_fixed(other_j)) {
+                lp::lpvar other_j = lp().external_to_local(other);
+                if (!lp().column_is_fixed(other_j)) {
                     m_tmp_var_set.insert(other);
-                    vars.push_back(other_j.index());
+                    vars.push_back(other_j);
                 }
             } 
         }
@@ -1567,7 +1580,7 @@ public:
     }
 
     final_check_status eval_power(expr* e) {
-        expr* x, * y;
+        expr* x = nullptr, * y = nullptr;
         rational r;
         VERIFY(a.is_power(e, x, y));
         if (a.is_numeral(x, r) && r == 0 && a.is_numeral(y, r) && r == 0)
@@ -1606,6 +1619,7 @@ public:
         if (!lp().is_feasible() || lp().has_changed_columns()) 
             is_sat = make_feasible();
         final_check_status st = FC_DONE;
+        bool int_undef = false;
         switch (is_sat) {
         case l_true:
             TRACE("arith", display(tout));            
@@ -1616,6 +1630,7 @@ public:
             case FC_CONTINUE:
                 return FC_CONTINUE;
             case FC_GIVEUP:
+                int_undef = true;
                 TRACE("arith", tout << "check-lia giveup\n";);
                 if (ctx().get_fparams().m_arith_ignore_int)
                     st = FC_CONTINUE;
@@ -1637,6 +1652,9 @@ public:
                 ++m_stats.m_assume_eqs;
                 return FC_CONTINUE;
             }
+
+            if (!int_undef && !check_bv_terms())
+                return FC_CONTINUE;
             
             for (expr* e : m_not_handled) {
                 if (!ctx().is_relevant(e))
@@ -1794,12 +1812,12 @@ public:
         expr_ref t(m);
         expr_ref_vector ts(m);
         for (lp::lar_term::ival p : term) {
-            auto ti = lp().column2tv(p.column());
-            if (ti.is_term()) {
+            auto ti = p.j();
+            if (lp().column_has_term(ti)) {
                 ts.push_back(multerm(p.coeff(), term2expr(lp().get_term(ti))));
             }
             else {
-                ts.push_back(multerm(p.coeff(), var2expr(ti.id())));
+                ts.push_back(multerm(p.coeff(), var2expr(ti)));
             }
         }
         if (ts.size() == 1) {
@@ -1836,13 +1854,13 @@ public:
         lp().print_term(term, out << "bound: "); 
         out << (upper?" <= ":" >= ") << k << "\n";
         for (lp::lar_term::ival p : term) {
-            auto ti = lp().column2tv(p.column());
+            auto ti = p.j();
             out << p.coeff() << " * ";
-            if (ti.is_term()) {
+            if (lp().column_has_term(ti)) {
                 lp().print_term(lp().get_term(ti), out) << "\n";
             }
             else {
-                out << "v" << lp().local_to_external(ti.id()) << "\n";
+                out << "v" << lp().local_to_external(ti) << "\n";
             }
         }
         for (auto ev : ex) {
@@ -2151,7 +2169,7 @@ public:
     }
 
     void add_lemmas() {
-        if (m_nla->check_feasible()) {
+        if (m_nla->should_check_feasible()) {
             auto is_sat = make_feasible();
             if (l_false == is_sat) {
                 get_infeasibility_explanation_and_set_conflict();
@@ -2324,7 +2342,7 @@ public:
 
     void refine_bound(theory_var v, const lp::implied_bound& be) {
         lpvar vi = be.m_j;
-        if (lp::tv::is_term(vi))
+        if (lp().column_has_term(vi))
             return;
         expr_ref w(get_enode(v)->get_expr(), m);
         if (a.is_add(w) || a.is_numeral(w) || m.is_ite(w))
@@ -2389,7 +2407,9 @@ public:
 
     literal_vector m_core2;
 
-    void assign(literal lit, literal_vector const& core, svector<enode_pair> const& eqs, vector<parameter> const& params) {
+    void assign(literal lit, literal_vector const& core, svector<enode_pair> const& eqs, vector<parameter> const& ps) {
+        if (params().m_arith_validate)
+            VERIFY(validate_assign(lit, core, eqs));
         if (core.size() < small_lemma_size() && eqs.empty()) {
             m_core2.reset();
             for (auto const& c : core) {
@@ -2399,7 +2419,7 @@ public:
             justification * js = nullptr;
             if (proofs_enabled()) {
                 js = alloc(theory_lemma_justification, get_id(), ctx(), m_core2.size(), m_core2.data(),
-                           params.size(), params.data());
+                           ps.size(), ps.data());
             }
             ctx().mk_clause(m_core2.size(), m_core2.data(), js, CLS_TH_LEMMA, nullptr);
         }
@@ -2408,7 +2428,7 @@ public:
                 lit, ctx().mk_justification(
                     ext_theory_propagation_justification(
                         get_id(), ctx(), core.size(), core.data(), 
-                        eqs.size(), eqs.data(), lit, params.size(), params.data())));            
+                        eqs.size(), eqs.data(), lit, ps.size(), ps.data())));            
         }
     }
 
@@ -2434,6 +2454,180 @@ public:
 
         return null_literal;
     }
+
+    bool check_bv_terms() {
+        for (app* n : m_bv_terms) {
+            if (!check_bv_term(n)) {
+                ++m_stats.m_bv_axioms;
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    bool check_bv_term(app* n) {
+        unsigned sz = 0;
+        expr* _x = nullptr, * _y = nullptr;
+        if (!ctx().is_relevant(ctx().get_enode(n)))
+            return true;
+        expr_ref vx(m), vy(m),vn(m);
+        rational valn, valx, valy;
+        bool is_int;
+        VERIFY(a.is_band(n, sz, _x, _y) || a.is_shl(n, sz, _x, _y) || a.is_ashr(n, sz, _x, _y) || a.is_lshr(n, sz, _x, _y));
+        if (!get_value(ctx().get_enode(_x), vx) || !get_value(ctx().get_enode(_y), vy) || !get_value(ctx().get_enode(n), vn)) {
+            IF_VERBOSE(2, verbose_stream() << "could not get value of " << mk_pp(n, m) << "\n");
+            found_unsupported(n);
+            return true;
+        }
+        if (!a.is_numeral(vn, valn, is_int) || !is_int || !a.is_numeral(vx, valx, is_int) || !is_int || !a.is_numeral(vy, valy, is_int) || !is_int) {
+            IF_VERBOSE(2, verbose_stream() << "could not get value of " << mk_pp(n, m) << "\n");
+            found_unsupported(n);
+            return true;
+        }
+        rational N = rational::power_of_two(sz);
+        valx = mod(valx, N);
+        valy = mod(valy, N);
+        expr_ref x(a.mk_mod(_x, a.mk_int(N)), m);
+        expr_ref y(a.mk_mod(_y, a.mk_int(N)), m);
+        SASSERT(0 <= valn && valn < N);
+        
+        // x mod 2^{i + 1} >= 2^i means the i'th bit is 1.
+        auto bitof = [&](expr* x, unsigned i) { 
+            expr_ref r(m);
+            r = a.mk_ge(a.mk_mod(x, a.mk_int(rational::power_of_two(i+1))), a.mk_int(rational::power_of_two(i)));
+            return mk_literal(r);
+        };
+
+        if (a.is_band(n)) {
+            IF_VERBOSE(2, verbose_stream() << "band: " << mk_bounded_pp(n, m) << " " << valn << " := " << valx << "&" << valy << "\n");
+            for (unsigned i = 0; i < sz; ++i) {
+                bool xb = valx.get_bit(i);
+                bool yb = valy.get_bit(i);
+                bool nb = valn.get_bit(i);
+                if (xb && yb && !nb)
+                    ctx().mk_th_axiom(get_id(), ~bitof(x, i), ~bitof(y, i), bitof(n, i));
+                else if (nb && !xb)
+                    ctx().mk_th_axiom(get_id(), ~bitof(n, i), bitof(x, i));
+                else if (nb && !yb)
+                    ctx().mk_th_axiom(get_id(), ~bitof(n, i), bitof(y, i));
+                else
+                    continue;
+                return false;
+            }
+        }
+        if (a.is_shl(n)) {
+            SASSERT(valy >= 0);
+            if (valy >= sz || valy == 0)
+                return true;
+            unsigned k = valy.get_unsigned();
+            sat::literal eq = th.mk_eq(n, a.mk_mod(a.mk_mul(_x, a.mk_int(rational::power_of_two(k))), a.mk_int(N)), false);
+            if (ctx().get_assignment(eq) == l_true)
+                return true;            
+            ctx().mk_th_axiom(get_id(), ~th.mk_eq(y, a.mk_int(k), false), eq);
+            IF_VERBOSE(2, verbose_stream() << "shl: " << mk_bounded_pp(n, m) << " " << valn << " := " << valx << " << " << valy << "\n");
+            return false;
+        }
+        if (a.is_lshr(n)) {
+            SASSERT(valy >= 0);
+            if (valy >= sz || valy == 0)
+                return true;
+            unsigned k = valy.get_unsigned();
+            sat::literal eq = th.mk_eq(n, a.mk_idiv(x, a.mk_int(rational::power_of_two(k))), false);
+            if (ctx().get_assignment(eq) == l_true)
+                return true;            
+            ctx().mk_th_axiom(get_id(), ~th.mk_eq(y, a.mk_int(k), false), eq);
+            IF_VERBOSE(2, verbose_stream() << "lshr: " << mk_bounded_pp(n, m) << " " << valn << " := " << valx << " >>l " << valy << "\n");
+            return false;
+        }
+        if (a.is_ashr(n)) {
+            SASSERT(valy >= 0);
+            if (valy >= sz || valy == 0)
+                return true;
+            unsigned k = valy.get_unsigned();
+            sat::literal signx = mk_literal(a.mk_ge(x, a.mk_int(N/2)));
+            sat::literal eq;
+            expr* xdiv2k;
+            switch (ctx().get_assignment(signx)) {
+            case l_true:
+                // x < 0 & y = k -> n = (x div 2^k - 2^{N-k}) mod 2^N
+                xdiv2k = a.mk_idiv(x, a.mk_int(rational::power_of_two(k)));
+                eq = th.mk_eq(n, a.mk_mod(a.mk_add(xdiv2k, a.mk_int(-rational::power_of_two(sz - k))), a.mk_int(N)), false);
+                if (ctx().get_assignment(eq) == l_true)
+                    return true;
+                break;
+            case l_false:
+                // x >= 0 & y = k -> n = x div 2^k
+                xdiv2k = a.mk_idiv(x, a.mk_int(rational::power_of_two(k)));
+                eq = th.mk_eq(n, xdiv2k, false);
+                if (ctx().get_assignment(eq) == l_true)
+                    return true;
+                break;
+            case l_undef:
+                ctx().mark_as_relevant(signx);
+                return false;
+            }
+            ctx().mk_th_axiom(get_id(), ~th.mk_eq(y, a.mk_int(k), false), ~signx, eq); 
+            return false;
+        }
+        return true;
+    }
+
+    expr_ref mk_le(expr* x, expr* y) {
+        if (a.is_numeral(y))
+            return expr_ref(a.mk_le(x, y), m);
+        if (a.is_numeral(x))
+            return expr_ref(a.mk_ge(y, x), m);
+        return expr_ref(a.mk_le(a.mk_sub(x, y), a.mk_numeral(rational(0), x->get_sort())), m);
+    }
+
+    void mk_bv_axiom(app* n) {
+        unsigned sz = 0;
+        expr* _x = nullptr, * _y = nullptr;
+        VERIFY(a.is_band(n, sz, _x, _y) || a.is_shl(n, sz, _x, _y) || a.is_ashr(n, sz, _x, _y) || a.is_lshr(n, sz, _x, _y));
+        rational N = rational::power_of_two(sz);
+        expr_ref x(a.mk_mod(_x, a.mk_int(N)), m);
+        expr_ref y(a.mk_mod(_y, a.mk_int(N)), m);
+
+        // 0 <= n < 2^sz
+        
+        ctx().mk_th_axiom(get_id(), mk_literal(a.mk_ge(n, a.mk_int(0))));
+        ctx().mk_th_axiom(get_id(), mk_literal(a.mk_le(n, a.mk_int(N - 1))));
+
+        if (a.is_band(n)) {
+                       
+            // x&y <= x
+            // x&y <= y
+            // TODO? x = y => x&y = x
+
+            ctx().mk_th_axiom(get_id(), mk_literal(mk_le(n, x)));
+            ctx().mk_th_axiom(get_id(), mk_literal(mk_le(n, y)));
+        }
+        else if (a.is_shl(n)) {
+            // y >= sz => n = 0
+            // y = 0 => n = x
+            ctx().mk_th_axiom(get_id(), ~mk_literal(a.mk_ge(y, a.mk_int(sz))), mk_literal(m.mk_eq(n, a.mk_int(0))));
+            ctx().mk_th_axiom(get_id(), ~mk_literal(a.mk_eq(y, a.mk_int(0))), mk_literal(m.mk_eq(n, x)));
+        }
+        else if (a.is_lshr(n)) {
+            // y >= sz => n = 0
+            // y = 0 => n = x
+            ctx().mk_th_axiom(get_id(), ~mk_literal(a.mk_ge(y, a.mk_int(sz))), mk_literal(m.mk_eq(n, a.mk_int(0))));
+            ctx().mk_th_axiom(get_id(), ~mk_literal(a.mk_eq(y, a.mk_int(0))), mk_literal(m.mk_eq(n, x)));
+        }
+        else if (a.is_ashr(n)) {
+            // y >= sz & x < 2^{sz-1} => n = 0
+            // y >= sz & x >= 2^{sz-1} => n = -1
+            // y = 0 => n = x
+            auto signx = mk_literal(a.mk_ge(x, a.mk_int(N/2)));
+            ctx().mk_th_axiom(get_id(), ~mk_literal(a.mk_ge(a.mk_mod(y, a.mk_int(N)), a.mk_int(sz))), signx, mk_literal(m.mk_eq(n, a.mk_int(0))));
+            ctx().mk_th_axiom(get_id(), ~mk_literal(a.mk_ge(a.mk_mod(y, a.mk_int(N)), a.mk_int(sz))), ~signx, mk_literal(m.mk_eq(n, a.mk_int(N-1))));
+            ctx().mk_th_axiom(get_id(), ~mk_literal(a.mk_eq(a.mk_mod(y, a.mk_int(N)), a.mk_int(0))), mk_literal(m.mk_eq(n, x)));            
+        }
+        else
+            UNREACHABLE();
+    }
+
 
     void mk_bound_axioms(api_bound& b) {
         if (!ctx().is_searching()) {
@@ -2745,27 +2939,27 @@ public:
         ++m_stats.m_bounds_propagations;
     }
 
-    svector<lp::tv> m_todo_vars;
+    svector<lp::lpvar> m_todo_vars;
 
     void add_use_lists(api_bound* b) {
         theory_var v = b->get_var();
         lpvar vi = register_theory_var_in_lar_solver(v);
-        if (!lp::tv::is_term(vi)) {
+        if (!lp().column_has_term(vi)) {
             return;
         }
-        m_todo_vars.push_back(lp::tv::raw(vi));
+        m_todo_vars.push_back(vi);
         while (!m_todo_vars.empty()) {
             auto ti = m_todo_vars.back();
-            SASSERT(ti.is_term());
+            SASSERT(lp().column_has_term(ti));
             m_todo_vars.pop_back();
             lp::lar_term const& term = lp().get_term(ti);
             for (auto p : term) {
-                lp::tv wi = lp().column2tv(p.column());
-                if (wi.is_term()) {
+                lp::lpvar wi = p.j();
+                if (lp().column_has_term(wi)) {
                     m_todo_vars.push_back(wi);
                 }
                 else {
-                    unsigned w = lp().local_to_external(wi.id());
+                    unsigned w = lp().local_to_external(wi);
                     m_use_list.reserve(w + 1, ptr_vector<api_bound>());
                     m_use_list[w].push_back(b);
                 }
@@ -2776,22 +2970,22 @@ public:
     void del_use_lists(api_bound* b) {
         theory_var v = b->get_var();
         lpvar vi = get_lpvar(v);
-        if (!lp::tv::is_term(vi)) {
+        if (!lp().column_has_term(vi)) {
             return;
         }
-        m_todo_vars.push_back(lp::tv::raw(vi));
+        m_todo_vars.push_back(vi);
         while (!m_todo_vars.empty()) {
             auto ti = m_todo_vars.back();
-            SASSERT(ti.is_term());
+            SASSERT(lp().column_has_term(ti));
             m_todo_vars.pop_back();
             lp::lar_term const& term = lp().get_term(ti);
             for (auto coeff : term) {
-                auto wi = lp().column2tv(coeff.column());
-                if (wi.is_term()) {
+                auto wi = coeff.j();
+                if (lp().column_has_term(wi)) {
                     m_todo_vars.push_back(wi);
                 }
                 else {
-                    unsigned w = lp().local_to_external(wi.id());
+                    unsigned w = lp().local_to_external(wi);
                     SASSERT(m_use_list[w].back() == b);
                     m_use_list[w].pop_back();
                 }
@@ -2870,20 +3064,20 @@ public:
         reset_evidence();
         r.reset();
         theory_var v = b.get_var();
-        auto ti = get_tv(v);
-        SASSERT(ti.is_term());
+        lp::lpvar ti = get_lpvar(v);
+        SASSERT(lp().column_has_term(ti));
         lp::lar_term const& term = lp().get_term(ti);
         for (auto const mono : term) {
-            auto wi = lp().column2tv(mono.column());
+            auto wi = mono.j();
             u_dependency* ci = nullptr;
             rational value;
             bool is_strict;
-            if (wi.is_term()) {
+            if (lp().column_has_term(wi)) {
                 return false;
             }
             if (mono.coeff().is_neg() == is_lub) {
                 // -3*x ... <= lub based on lower bound for x.
-                if (!lp().has_lower_bound(wi.id(), ci, value, is_strict)) {
+                if (!lp().has_lower_bound(wi, ci, value, is_strict)) {
                     return false;
                 }
                 if (is_strict) {
@@ -2891,7 +3085,7 @@ public:
                 }
             }
             else {
-                if (!lp().has_upper_bound(wi.id(), ci, value, is_strict)) {
+                if (!lp().has_upper_bound(wi, ci, value, is_strict)) {
                     return false;
                 }
                 if (is_strict) {
@@ -2931,7 +3125,7 @@ public:
         }
         inf_rational value = b.get_value(is_true);
         if (propagate_eqs() && value.is_rational()) 
-            propagate_eqs(b.tv(), ci, k, b, value.get_rational());
+            propagate_eqs(b.column_index(), ci, k, b, value.get_rational());
         return true;
 #if 0
         if (should_propagate())
@@ -2976,13 +3170,13 @@ public:
     vector<constraint_bound>        m_lower_terms;
     vector<constraint_bound>        m_upper_terms;
 
-    void propagate_eqs(lp::tv t, lp::constraint_index ci1, lp::lconstraint_kind k, api_bound& b, rational const& value) {
+    void propagate_eqs(lp::lpvar t, lp::constraint_index ci1, lp::lconstraint_kind k, api_bound& b, rational const& value) {
         u_dependency* ci2 = nullptr;
         auto pair = [&]() { return lp().dep_manager().mk_join(lp().dep_manager().mk_leaf(ci1), ci2);  };
-        if (k == lp::GE && set_lower_bound(t, ci1, value) && has_upper_bound(t.index(), ci2, value)) {
+        if (k == lp::GE && set_lower_bound(t, ci1, value) && has_upper_bound(t, ci2, value)) {
             fixed_var_eh(b.get_var(), t, pair(), value);
         }
-        else if (k == lp::LE && set_upper_bound(t, ci1, value) && has_lower_bound(t.index(), ci2, value)) {
+        else if (k == lp::LE && set_upper_bound(t, ci1, value) && has_lower_bound(t, ci2, value)) {
             fixed_var_eh(b.get_var(), t, pair(), value);
         }
     }
@@ -2996,24 +3190,23 @@ public:
 
     bool proofs_enabled() const { return m.proofs_enabled(); }
 
-    bool set_upper_bound(lp::tv t, lp::constraint_index ci, rational const& v) { return set_bound(t, ci, v, false);  }
+    bool set_upper_bound(lp::lpvar t, lp::constraint_index ci, rational const& v) { return set_bound(t, ci, v, false);  }
 
-    bool set_lower_bound(lp::tv t, lp::constraint_index ci, rational const& v) { return set_bound(t, ci, v, true);   }
+    bool set_lower_bound(lp::lpvar t, lp::constraint_index ci, rational const& v) { return set_bound(t, ci, v, true);   }
 
     vector<constraint_bound> m_history;
 
-    bool set_bound(lp::tv tv, lp::constraint_index ci, rational const& v, bool is_lower) {
-        if (tv.is_term()) {
-            lpvar ti = tv.id();
+    bool set_bound(lp::lpvar tv, lp::constraint_index ci, rational const& v, bool is_lower) {
+        if (lp().column_has_term(tv)) {
             auto& vec = is_lower ? m_lower_terms : m_upper_terms;
-            if (vec.size() <= ti) {
-                vec.resize(ti + 1, constraint_bound(UINT_MAX, rational()));
+            if (vec.size() <= tv) {
+                vec.resize(tv + 1, constraint_bound(UINT_MAX, rational()));
             }
-            constraint_bound& b = vec[ti];
+            constraint_bound& b = vec[tv];
             if (b.first == UINT_MAX || (is_lower? b.second < v : b.second > v)) {
-                TRACE("arith", tout << "tighter bound " << tv.to_string() << "\n";);
-                m_history.push_back(vec[ti]);
-                ctx().push_trail(history_trail<constraint_bound>(vec, ti, m_history));
+                TRACE("arith", tout << "tighter bound " << tv << "\n";);
+                m_history.push_back(vec[tv]);
+                ctx().push_trail(history_trail<constraint_bound>(vec, tv, m_history));
                 b.first = ci;
                 b.second = v;
             }
@@ -3025,10 +3218,10 @@ public:
             rational b;
             u_dependency* dep = nullptr;
             if (is_lower) {
-                return lp().has_lower_bound(tv.id(), dep, b, is_strict) && !is_strict && b == v;
+                return lp().has_lower_bound(tv, dep, b, is_strict) && !is_strict && b == v;
             }
             else {
-                return lp().has_upper_bound(tv.id(), dep, b, is_strict) && !is_strict && b == v;
+                return lp().has_upper_bound(tv, dep, b, is_strict) && !is_strict && b == v;
             }            
         }
     }
@@ -3050,7 +3243,7 @@ public:
     bool has_lower_bound(lpvar vi, u_dependency*& ci, rational const& bound) { return has_bound(vi, ci, bound, true); }
        
     bool has_bound(lpvar vi, u_dependency*& dep, rational const& bound, bool is_lower) {
-        if (lp::tv::is_term(vi)) {
+        if (lp().column_has_term(vi)) {
             theory_var v = lp().local_to_external(vi);
             rational val;
             TRACE("arith", tout << lp().get_variable_name(vi) << " " << v << "\n";);
@@ -3060,9 +3253,8 @@ public:
             }
 
             auto& vec = is_lower ? m_lower_terms : m_upper_terms;
-            lpvar ti = lp::tv::unmask_term(vi);
-            if (vec.size() > ti) {
-                auto const& [ci, coeff] = vec[ti];
+            if (vec.size() > vi) {
+                auto const& [ci, coeff] = vec[vi];
                 if (ci == UINT_MAX)
                     return false;
                 dep = lp().dep_manager().mk_leaf(ci);
@@ -3138,11 +3330,12 @@ public:
         std::function<expr*(void)> fn = [&]() { return m.mk_eq(x->get_expr(), y->get_expr()); };
         scoped_trace_stream _sts(th, fn);
 
-        // VERIFY(validate_eq(x, y));
+        if (params().m_arith_validate)
+            VERIFY(validate_eq(x, y));
         ctx().assign_eq(x, y, eq_justification(js));
     }
     
-    void fixed_var_eh(theory_var v, lp::tv t, u_dependency* dep, rational const& bound) {
+    void fixed_var_eh(theory_var v, lp::lpvar t, u_dependency* dep, rational const& bound) {
         theory_var w = null_theory_var;
         enode* x = get_enode(v);
         if (m_value2var.find(bound, w)) 
@@ -3248,12 +3441,13 @@ public:
               tout << "@" << ctx().get_scope_level() << (is_conflict ? " conflict":" lemma");
               for (auto const& p : m_params) tout << " " << p;
               tout << "\n";
-              display_evidence(tout, m_explanation););
+              display_evidence(tout << core << " ", m_explanation););
         for (auto ev : m_explanation) 
             set_evidence(ev.ci(), m_core, m_eqs);
 
-        
-        // VERIFY(validate_conflict(m_core, m_eqs));
+
+        if (params().m_arith_validate)
+            VERIFY(validate_conflict(m_core, m_eqs));
         if (is_conflict) {
             ctx().set_conflict(
                 ctx().mk_justification(
@@ -3269,6 +3463,8 @@ public:
             for (literal & c : m_core) {
                 c.neg();
                 ctx().mark_as_relevant(c);
+                if (ctx().get_assignment(c) == l_true)
+                    return;
             }
             TRACE("arith", ctx().display_literals_verbose(tout, m_core) << "\n";);
             ctx().mk_th_axiom(get_id(), m_core.size(), m_core.data());
@@ -3310,14 +3506,14 @@ public:
 
     nlsat::anum const& nl_value(theory_var v, scoped_anum& r) const {
         SASSERT(use_nra_model());
-        auto t = get_tv(v);
-        if (!t.is_term())
-            m_nla->am().set(r, m_nla->am_value(t.id()));            
+        auto t = get_lpvar(v);
+        if (!lp().column_has_term(t))
+            m_nla->am().set(r, m_nla->am_value(t));            
         else {
 
             m_todo_terms.push_back({t, rational::one()});
-            TRACE("nl_value", tout << "v" << v << " " << t.to_string() << "\n";);
-            TRACE("nl_value", tout << "v" << v << " := w" << t.to_string() << "\n";
+            TRACE("nl_value", tout << "v" << v << " " << t << "\n";);
+            TRACE("nl_value", tout << "v" << v << " := w" << t << "\n";
                   lp().print_term(lp().get_term(t), tout) << "\n";);
 
             m_nla->am().set(r, 0);
@@ -3332,14 +3528,14 @@ public:
                 m_nla->am().set(r1, c1.to_mpq());
                 m_nla->am().add(r, r1, r);                
                 for (lp::lar_term::ival arg : term) {
-                    auto wi = lp().column2tv(arg.column());
+                    auto wi = arg.j();
                     c1 = arg.coeff() * wcoeff;
-                    if (wi.is_term()) {
+                    if (lp().column_has_term(wi)) {
                         m_todo_terms.push_back({wi, c1});
                     }
                     else {
                         m_nla->am().set(r1, c1.to_mpq());
-                        m_nla->am().mul(m_nla->am_value(wi.id()), r1, r1);
+                        m_nla->am().mul(m_nla->am_value(wi), r1, r1);
                         m_nla->am().add(r1, r, r);
                     }
                 }
@@ -3431,7 +3627,33 @@ public:
         lpvar vi = get_lpvar(v);
         u_dependency* dep = nullptr;
         return lp().has_upper_bound(vi, dep, val, is_strict);
+    }
 
+    bool solve_for(enode* n, expr_ref& term) {
+        theory_var v = n->get_th_var(get_id());
+        if (!is_registered_var(v))
+            return false;
+        lpvar vi = get_lpvar(v);
+        lp::lar_term t;
+        rational coeff;
+        if (!lp().solve_for(vi, t, coeff))
+            return false;
+        rational lc(1);
+        if (is_int(v)) {
+            lc = denominator(coeff);
+            for (auto const& cv : t)
+                lc = lcm(denominator(cv.coeff()), lc);
+            if (lc != 1) {
+                coeff *= lc;
+                t *= lc;
+            }
+        }
+        term = mk_term(t, is_int(v));
+        if (coeff != 0)
+            term = a.mk_add(a.mk_numeral(coeff, is_int(v)), term);
+        if (lc != 1)
+            term = a.mk_idiv(term, a.mk_numeral(lc, true));
+        return true;
     }
 
     bool get_upper(enode* n, expr_ref& r) {
@@ -3488,14 +3710,13 @@ public:
 
     bool validate_eq(enode* x, enode* y) {
         static bool s_validating = false;
-        static unsigned s_count = 0;
         if (s_validating)
             return true;
-        ++s_count;
         flet<bool> _svalid(s_validating, true);
         context nctx(m, ctx().get_fparams(), ctx().get_params());
         add_background(nctx);
-        nctx.assert_expr(m.mk_not(m.mk_eq(x->get_expr(), y->get_expr())));
+        expr_ref neq(m.mk_not(m.mk_eq(x->get_expr(), y->get_expr())), m);
+        nctx.assert_expr(neq);
         cancel_eh<reslimit> eh(m.limit());
         scoped_timer timer(1000, &eh);
         lbool r = nctx.check();
@@ -3614,17 +3835,17 @@ public:
         TRACE("arith", lp().print_term(term, tout) << "\n";);
         for (lp::lar_term::ival ti : term) {
             theory_var w;
-            auto tv = lp().column2tv(ti.column());
-            if (tv.is_term()) {
+            auto tv = ti.j();
+            if (lp().column_has_term(tv)) {
                 lp::lar_term const& term1 = lp().get_term(tv);
                 rational coeff2 = coeff * ti.coeff();
                 term2coeffs(term1, coeffs, coeff2);
                 continue;
             }
             else {
-                w = lp().local_to_external(tv.id());
+                w = lp().local_to_external(tv);
                 SASSERT(w >= 0);
-                TRACE("arith", tout << (tv.id()) << ": " << w << "\n";);
+                TRACE("arith", tout << tv << ": " << w << "\n";);
             }
             rational c0(0);
             coeffs.find(w, c0);
@@ -3681,9 +3902,9 @@ public:
     }
 
     app_ref mk_obj(theory_var v) {
-        auto t = get_tv(v);
+        auto t = get_lpvar(v);
         bool is_int = a.is_int(get_enode(v)->get_expr());
-        if (t.is_term()) {
+        if (lp().column_has_term(t)) {
             return mk_term(lp().get_term(t), is_int);
         }
         else {
@@ -3739,11 +3960,10 @@ public:
         }
         unsigned nv = th.get_num_vars();
         for (unsigned v = 0; v < nv; ++v) {
-            auto t = get_tv(v);
-            auto vi = lp().external_to_column_index(v);
+            auto vi = get_lpvar(v);
             if (!ctx().is_relevant(get_enode(v))) out << "irr: ";
             out << "v" << v << " ";
-            if (t.is_null()) out << "null"; else out << (t.is_term() ? "t":"j") << vi;
+            if (vi == lp::null_lpvar) out << "null"; else out << (lp().column_has_term(vi) ? "t":"j") << vi;
             if (use_nra_model() && is_registered_var(v)) m_nla->am().display(out << " = ", nl_value(v, m_nla->tmp1()));
             else if (can_get_value(v)) out << " = " << get_value(v); 
             if (is_int(v)) out << ", int";
@@ -3799,19 +4019,10 @@ public:
      * Facility to put a small box around integer variables used in branch and bounds.
      */
 
-    struct bound_info {
-        rational m_offset;
-        unsigned m_range;
-        bound_info() {}
-        bound_info(rational const& o, unsigned r):m_offset(o), m_range(r) {}
-    };
     unsigned                  m_bounded_range_idx;  // current size of bounded range.
     literal                   m_bounded_range_lit;  // current bounded range literal
     expr_ref_vector           m_bound_terms; // predicates used for bounds
     expr_ref                  m_bound_predicate;
-    
-    obj_map<expr, expr*>      m_predicate2term;
-    obj_map<expr, bound_info> m_term2bound_info;
 
     unsigned init_range() const { return 5; }
     unsigned max_range() const { return 20; }
@@ -3821,8 +4032,6 @@ public:
         m_bounded_range_lit = null_literal;
         m_bound_terms.reset();
         m_bound_predicate = nullptr;
-        m_predicate2term.reset();
-        m_term2bound_info.reset();
     }
 
 
@@ -3880,6 +4089,9 @@ void theory_lra::assign_eh(bool_var v, bool is_true) {
 lbool theory_lra::get_phase(bool_var v) {
     return m_imp->get_phase(v);
 }
+void theory_lra::initialize_value(expr* var, expr* value) {
+    m_imp->initialize_value(var, value);
+}
 void theory_lra::new_eq_eh(theory_var v1, theory_var v2) {
     m_imp->new_eq_eh(v1, v2);
 }
@@ -3914,7 +4126,7 @@ final_check_status theory_lra::final_check_eh() {
 }
 bool theory_lra::is_shared(theory_var v) const {
     return m_imp->is_shared(v);
-}
+}    
 bool theory_lra::can_propagate() {
     return m_imp->can_propagate();
 }
@@ -3954,6 +4166,10 @@ bool theory_lra::get_lower(enode* n, rational& r, bool& is_strict) {
 bool theory_lra::get_upper(enode* n, rational& r, bool& is_strict) {
     return m_imp->get_upper(n, r, is_strict);
 }
+bool theory_lra::solve_for(enode* n, expr_ref& r) {
+    return m_imp->solve_for(n, r);
+}
+
 void theory_lra::display(std::ostream & out) const {
     m_imp->display(out);
 }

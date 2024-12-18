@@ -31,15 +31,16 @@ struct simplify_tactic::imp {
         m_num_steps(0) {
     }
 
-    ~imp() {
-    }
-
     ast_manager & m() const { return m_manager; }
 
 
     void reset() {
         m_r.reset();
         m_num_steps = 0;
+    }
+
+    void collect_statistics(statistics& st) {
+        st.update("rewriter.steps", m_num_steps);
     }
 
     void operator()(goal & g) {
@@ -94,18 +95,27 @@ void simplify_tactic::operator()(goal_ref const & in,
         (*m_imp)(*(in.get()));
         in->inc_depth();
         result.push_back(in.get());
+        m_clean = false;
     }
     catch (rewriter_exception & ex) {
-        throw tactic_exception(ex.msg());
+        throw tactic_exception(ex.what());
     }
 }
 
 
 void simplify_tactic::cleanup() {
+    if (m_clean)
+        return;
     ast_manager & m = m_imp->m();
     params_ref p = std::move(m_params);
     m_imp->~imp();
     new (m_imp) imp(m, p);
+    m_clean = true;
+}
+
+void simplify_tactic::collect_statistics(statistics& st) const {
+    if (m_imp)
+        m_imp->collect_statistics(st);
 }
 
 unsigned simplify_tactic::get_num_steps() const {

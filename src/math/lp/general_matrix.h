@@ -109,7 +109,7 @@ public:
         auto & row = m_data[adjust_row(i)];
         lp_assert(row_is_initialized_correctly(row));
         for (lp::lar_term::ival p : c) {
-            unsigned j = adjust_column(column_fix(p.column().index()));
+            unsigned j = adjust_column(column_fix(p.j()));
             row[j] = sign * p.coeff();
         }
     }
@@ -180,7 +180,7 @@ public:
         m_column_permutation.transpose_from_left(j, k);
     }
     
-    general_matrix(){}
+    general_matrix() = default;
     general_matrix(unsigned n) :
         m_row_permutation(n),
         m_column_permutation(n),

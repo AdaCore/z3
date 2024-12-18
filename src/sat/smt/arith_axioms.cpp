@@ -205,6 +205,171 @@ namespace arith {
         add_clause(dgez, neg);
     }
 
+    bool solver::check_bv_term(app* n) {
+        unsigned sz = 0;
+        expr* _x = nullptr, * _y = nullptr;
+        if (!ctx.is_relevant(expr2enode(n)))
+            return true;
+        expr_ref vx(m), vy(m),vn(m);
+        rational valn, valx, valy;
+        bool is_int;
+        VERIFY(a.is_band(n, sz, _x, _y) || a.is_shl(n, sz, _x, _y) || a.is_ashr(n, sz, _x, _y) || a.is_lshr(n, sz, _x, _y));
+        if (!get_value(expr2enode(_x), vx) || !get_value(expr2enode(_y), vy) || !get_value(expr2enode(n), vn)) {
+            IF_VERBOSE(2, verbose_stream() << "could not get value of " << mk_pp(n, m) << "\n");
+            found_unsupported(n);
+            return true;
+        }
+        if (!a.is_numeral(vn, valn, is_int) || !is_int || !a.is_numeral(vx, valx, is_int) || !is_int || !a.is_numeral(vy, valy, is_int) || !is_int) {
+            IF_VERBOSE(2, verbose_stream() << "could not get value of " << mk_pp(n, m) << "\n");
+            found_unsupported(n);
+            return true;
+        }
+        rational N = rational::power_of_two(sz);
+        valx = mod(valx, N);
+        valy = mod(valy, N);
+        expr_ref x(a.mk_mod(_x, a.mk_int(N)), m);
+        expr_ref y(a.mk_mod(_y, a.mk_int(N)), m);
+        SASSERT(0 <= valn && valn < N);
+        
+        // x mod 2^{i + 1} >= 2^i means the i'th bit is 1.
+        auto bitof = [&](expr* x, unsigned i) { 
+            expr_ref r(m);
+            r = a.mk_ge(a.mk_mod(x, a.mk_int(rational::power_of_two(i+1))), a.mk_int(rational::power_of_two(i)));
+            return mk_literal(r);
+        };
+
+        if (a.is_band(n)) {
+            IF_VERBOSE(2, verbose_stream() << "band: " << mk_bounded_pp(n, m) << " " << valn << " := " << valx << "&" << valy << "\n");
+            for (unsigned i = 0; i < sz; ++i) {
+                bool xb = valx.get_bit(i);
+                bool yb = valy.get_bit(i);
+                bool nb = valn.get_bit(i);
+                if (xb && yb && !nb)
+                    add_clause(~bitof(x, i), ~bitof(y, i), bitof(n, i));
+                else if (nb && !xb)
+                    add_clause(~bitof(n, i), bitof(x, i));
+                else if (nb && !yb)
+                    add_clause(~bitof(n, i), bitof(y, i));
+                else
+                    continue;
+                return false;
+            }
+        }
+        if (a.is_shl(n)) {
+            SASSERT(valy >= 0);
+            if (valy >= sz || valy == 0)
+                return true;
+            unsigned k = valy.get_unsigned();
+            sat::literal eq = eq_internalize(n, a.mk_mod(a.mk_mul(_x, a.mk_int(rational::power_of_two(k))), a.mk_int(N)));
+            if (s().value(eq) == l_true)
+                return true;            
+            add_clause(~eq_internalize(y, a.mk_int(k)), eq);
+            IF_VERBOSE(2, verbose_stream() << "shl: " << mk_bounded_pp(n, m) << " " << valn << " := " << valx << " << " << valy << "\n");
+            return false;
+        }
+        if (a.is_lshr(n)) {
+            SASSERT(valy >= 0);
+            if (valy >= sz || valy == 0)
+                return true;
+            unsigned k = valy.get_unsigned();
+            sat::literal eq = eq_internalize(n, a.mk_idiv(x, a.mk_int(rational::power_of_two(k))));
+            if (s().value(eq) == l_true)
+                return true;            
+            add_clause(~eq_internalize(y, a.mk_int(k)), eq);
+            IF_VERBOSE(2, verbose_stream() << "lshr: " << mk_bounded_pp(n, m) << " " << valn << " := " << valx << " >>l " << valy << "\n");
+            return false;
+        }
+        if (a.is_ashr(n)) {
+            SASSERT(valy >= 0);
+            if (valy >= sz || valy == 0)
+                return true;
+            unsigned k = valy.get_unsigned();
+            sat::literal signx = mk_literal(a.mk_ge(x, a.mk_int(N/2)));
+            sat::literal eq;
+            expr* xdiv2k;
+            switch (s().value(signx)) {
+            case l_true:
+                // x < 0 & y = k -> n = (x div 2^k - 2^{N-k}) mod 2^N
+                xdiv2k = a.mk_idiv(x, a.mk_int(rational::power_of_two(k)));
+                eq = eq_internalize(n, a.mk_mod(a.mk_add(xdiv2k, a.mk_int(-rational::power_of_two(sz - k))), a.mk_int(N)));
+                if (s().value(eq) == l_true)
+                    return true;
+                break;
+            case l_false:
+                // x >= 0 & y = k -> n = x div 2^k
+                xdiv2k = a.mk_idiv(x, a.mk_int(rational::power_of_two(k)));
+                eq = eq_internalize(n, xdiv2k);
+                if (s().value(eq) == l_true)
+                    return true;
+                break;
+            case l_undef:
+                ctx.mark_relevant(signx);
+                return false;
+            }
+            add_clause(~eq_internalize(y, a.mk_int(k)), ~signx, eq); 
+            return false;
+        }
+        return true;
+    }
+
+    bool solver::check_bv_terms() {
+        for (app* n : m_bv_terms) {
+            if (!check_bv_term(n)) {
+                ++m_stats.m_bv_axioms;
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    void solver::mk_bv_axiom(app* n) {
+        unsigned sz = 0;
+        expr* _x = nullptr, * _y = nullptr;
+        VERIFY(a.is_band(n, sz, _x, _y) || a.is_shl(n, sz, _x, _y) || a.is_ashr(n, sz, _x, _y) || a.is_lshr(n, sz, _x, _y));
+        rational N = rational::power_of_two(sz);
+        expr_ref x(a.mk_mod(_x, a.mk_int(N)), m);
+        expr_ref y(a.mk_mod(_y, a.mk_int(N)), m);
+
+        // 0 <= n < 2^sz
+
+        add_clause(mk_literal(a.mk_ge(n, a.mk_int(0))));
+        add_clause(mk_literal(a.mk_le(n, a.mk_int(N - 1))));
+
+        if (a.is_band(n)) {
+                       
+            // x&y <= x
+            // x&y <= y
+            // TODO? x = y => x&y = x
+
+            add_clause(mk_literal(a.mk_le(n, x)));
+            add_clause(mk_literal(a.mk_le(n, y)));
+        }
+        else if (a.is_shl(n)) {
+            // y >= sz => n = 0
+            // y = 0 => n = x
+            add_clause(~mk_literal(a.mk_ge(y, a.mk_int(sz))), mk_literal(m.mk_eq(n, a.mk_int(0))));
+            add_clause(~mk_literal(a.mk_eq(y, a.mk_int(0))), mk_literal(m.mk_eq(n, x)));
+        }
+        else if (a.is_lshr(n)) {
+            // y >= sz => n = 0
+            // y = 0 => n = x
+            add_clause(~mk_literal(a.mk_ge(y, a.mk_int(sz))), mk_literal(m.mk_eq(n, a.mk_int(0))));
+            add_clause(~mk_literal(a.mk_eq(y, a.mk_int(0))), mk_literal(m.mk_eq(n, x)));
+        }
+        else if (a.is_ashr(n)) {
+            // y >= sz & x < 2^{sz-1} => n = 0
+            // y >= sz & x >= 2^{sz-1} => n = -1
+            // y = 0 => n = x
+            auto signx = mk_literal(a.mk_ge(x, a.mk_int(N/2)));
+            add_clause(~mk_literal(a.mk_ge(a.mk_mod(y, a.mk_int(N)), a.mk_int(sz))), signx, mk_literal(m.mk_eq(n, a.mk_int(0))));
+            add_clause(~mk_literal(a.mk_ge(a.mk_mod(y, a.mk_int(N)), a.mk_int(sz))), ~signx, mk_literal(m.mk_eq(n, a.mk_int(N-1))));
+            add_clause(~mk_literal(a.mk_eq(a.mk_mod(y, a.mk_int(N)), a.mk_int(0))), mk_literal(m.mk_eq(n, x)));            
+        }
+        else
+            UNREACHABLE();
+    }
+
     void solver::mk_bound_axioms(api_bound& b) {
         theory_var v = b.get_var();
         lp_api::bound_kind kind1 = b.get_bound_kind();
@@ -374,12 +539,15 @@ namespace arith {
         euf::enode* n2 = var2enode(v2);
         lpvar w1 = register_theory_var_in_lar_solver(v1);
         lpvar w2 = register_theory_var_in_lar_solver(v2);
+        if (lp().are_equal(w1, w2))
+            return;
         auto cs = lp().add_equality(w1, w2);            
         add_eq_constraint(cs.first, n1, n2);
         add_eq_constraint(cs.second, n1, n2);
     }
 
     void solver::new_diseq_eh(euf::th_eq const& e) {
+        TRACE("artih", tout << mk_bounded_pp(e.eq(), m) << "\n");
         ensure_column(e.v1());
         ensure_column(e.v2());
         m_delayed_eqs.push_back(std::make_pair(e, false));

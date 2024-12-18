@@ -51,6 +51,16 @@ namespace arith {
         }
     }
 
+    void solver::initialize_value(expr* var, expr* value) {
+        rational r;
+        if (!a.is_numeral(value, r)) {
+            IF_VERBOSE(5, verbose_stream() << "numeric constant expected in initialization " << mk_pp(var, m) << " := " << mk_pp(value, m) << "\n");
+            return;
+        }
+        lp().move_lpvar_to_value(get_lpvar(mk_evar(var)), r);
+    }
+
+
     lpvar solver::get_one(bool is_int) {
         return add_const(1, is_int ? m_one_var : m_rone_var, is_int);
     }
@@ -251,6 +261,12 @@ namespace arith {
                     mk_div_axiom(n1, n2);
                     st.to_ensure_var().push_back(n1);
                     st.to_ensure_var().push_back(n2);
+                }
+                else if (a.is_band(n) || a.is_shl(n) || a.is_ashr(n) || a.is_lshr(n)) {
+                    m_bv_terms.push_back(to_app(n));
+                    ctx.push(push_back_vector(m_bv_terms));
+                    mk_bv_axiom(to_app(n));
+                    ensure_arg_vars(to_app(n));
                 }
                 else if (!a.is_div0(n) && !a.is_mod0(n) && !a.is_idiv0(n) && !a.is_rem0(n) && !a.is_power0(n)) {
                     found_unsupported(n);
@@ -466,7 +482,7 @@ namespace arith {
         bool _has_var = has_var(t);
         mk_enode(t);
         theory_var v = mk_evar(t);
-
+                                      
         if (!_has_var) {
             svector<lpvar> vars;
             for (expr* n : *t) {
@@ -501,11 +517,11 @@ namespace arith {
             }
             else {
                 vi = lp().add_term(m_left_side, v);
-                SASSERT(lp::tv::is_term(vi));
+                SASSERT(lp().column_has_term(vi));
                 TRACE("arith_verbose", 
                       tout << "v" << v << " := " << mk_pp(term, m) 
                       << " slack: " << vi << " scopes: " << m_scopes.size() << "\n";
-                      lp().print_term(lp().get_term(lp::tv::raw(vi)), tout) << "\n";);
+                      lp().print_term(lp().get_term(vi), tout) << "\n";);
             }
         }
         return v;
@@ -535,8 +551,6 @@ namespace arith {
             rational const& r = m_columns[var];
             if (!r.is_zero()) {
                 auto vi = register_theory_var_in_lar_solver(var);
-                if (lp::tv::is_term(vi))
-                    vi = lp().map_term_index_to_column_index(vi);
                 m_left_side.push_back(std::make_pair(r, vi));
                 m_columns[var].reset();
             }
@@ -619,9 +633,6 @@ namespace arith {
         return lp().external_to_local(v);
     }
 
-    lp::tv solver::get_tv(theory_var v) const {
-        return lp::tv::raw(get_lpvar(v));
-    }
 
     /**
        \brief We must redefine this method, because theory of arithmetic contains

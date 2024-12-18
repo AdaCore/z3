@@ -218,7 +218,7 @@ namespace euf {
 
         // plugin related methods
         void push_plugin_undo(unsigned th_id) { m_updates.push_back(update_record(th_id, update_record::plugin_undo())); }
-        void push_merge(enode* a, enode* b, justification j) { m_to_merge.push_back({ a, b, j }); }
+        void push_merge(enode* a, enode* b, justification j) { SASSERT(a->get_sort() == b->get_sort());  m_to_merge.push_back({ a, b, j }); }
         void push_merge(enode* a, enode* b, bool comm) { m_to_merge.push_back({ a, b, comm }); }
         void propagate_plugins();
 
@@ -278,10 +278,11 @@ namespace euf {
          */
         void merge(enode* n1, enode* n2, void* reason) { merge(n1, n2, justification::external(reason)); }        
         void new_diseq(enode* n);
+        void new_diseq(enode* n, void* reason);
 
 
         /**
-           \brief propagate set of merges. 
+           \brief propagate set of merges.           
            This call may detect an inconsistency. Then inconsistent() is true.
            Use then explain() to extract an explanation for the conflict.
 

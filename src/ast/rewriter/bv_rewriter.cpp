@@ -20,8 +20,9 @@ Notes:
 #include "ast/rewriter/bv_rewriter.h"
 #include "ast/rewriter/poly_rewriter_def.h"
 #include "ast/rewriter/bool_rewriter.h"
-#include "ast/ast_smt2_pp.h"
 #include "ast/ast_lt.h"
+#include "ast/ast_pp.h"
+
 
 
 void bv_rewriter::updt_local_params(params_ref const & _p) {
@@ -54,58 +55,74 @@ void bv_rewriter::get_param_descrs(param_descrs & r) {
 br_status bv_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * const * args, expr_ref & result) {
     SASSERT(f->get_family_id() == get_fid());
 
+    br_status st = BR_FAILED;
     switch(f->get_decl_kind()) {
     case OP_BIT0: SASSERT(num_args == 0); result = mk_zero(1); return BR_DONE;
     case OP_BIT1: SASSERT(num_args == 0); result = mk_one(1); return BR_DONE;
     case OP_ULEQ:
         SASSERT(num_args == 2);
-        return mk_ule(args[0], args[1], result);
+        st = mk_ule(args[0], args[1], result);
+        break;
     case OP_UGEQ:
         SASSERT(num_args == 2);
-        return mk_uge(args[0], args[1], result);
+        st = mk_uge(args[0], args[1], result);
+        break;
     case OP_ULT:
         SASSERT(num_args == 2);
-        return mk_ult(args[0], args[1], result);
+        st = mk_ult(args[0], args[1], result);
+        break;
     case OP_UGT:
         SASSERT(num_args == 2);
-        return mk_ult(args[1], args[0], result);
+        st = mk_ult(args[1], args[0], result);
+        break;
     case OP_SLEQ:
         SASSERT(num_args == 2);
-        return mk_sle(args[0], args[1], result);
+        st = mk_sle(args[0], args[1], result);
+        break;
     case OP_SGEQ:
         SASSERT(num_args == 2);
-        return mk_sge(args[0], args[1], result);
+        st = mk_sge(args[0], args[1], result);
+        break;
     case OP_SLT:
         SASSERT(num_args == 2);
-        return mk_slt(args[0], args[1], result);
+        st = mk_slt(args[0], args[1], result);
+        break;
     case OP_SGT:
         SASSERT(num_args == 2);
-        return mk_slt(args[1], args[0], result);
+        st = mk_slt(args[1], args[0], result);
+        break;
     case OP_BADD:
         SASSERT(num_args > 0);
-        return mk_bv_add(num_args, args, result);
+        st = mk_bv_add(num_args, args, result);
+        break;
     case OP_BMUL:
         SASSERT(num_args > 0);
-        return mk_bv_mul(num_args, args, result);
+        st = mk_bv_mul(num_args, args, result);
+        break;
     case OP_BSUB:
         SASSERT(num_args > 0);
-        return mk_sub(num_args, args, result);
+        st = mk_sub(num_args, args, result);
+        break;
     case OP_BNEG:
         SASSERT(num_args == 1);
-        return mk_uminus(args[0], result);
+        st = mk_uminus(args[0], result);
+        break;
     case OP_BNEG_OVFL:
         SASSERT(num_args == 1);
-        return mk_bvneg_overflow(args[0], result);
-
+        st = mk_bvneg_overflow(args[0], result);
+        break;
     case OP_BSHL:
         SASSERT(num_args == 2);
-        return mk_bv_shl(args[0], args[1], result);
+        st = mk_bv_shl(args[0], args[1], result);
+        break;
     case OP_BLSHR:
         SASSERT(num_args == 2);
-        return mk_bv_lshr(args[0], args[1], result);
+        st = mk_bv_lshr(args[0], args[1], result);
+        break;
     case OP_BASHR:
         SASSERT(num_args == 2);
-        return mk_bv_ashr(args[0], args[1], result);
+        st = mk_bv_ashr(args[0], args[1], result);
+        break;
     case OP_BSDIV:
         SASSERT(num_args == 2);
         return mk_bv_sdiv(args[0], args[1], result);
@@ -137,13 +154,16 @@ br_status bv_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * cons
         SASSERT(num_args == 2);
         return mk_bv_smod_i(args[0], args[1], result);
     case OP_CONCAT:
-        return mk_concat(num_args, args, result);
+        st = mk_concat(num_args, args, result);
+        break;
     case OP_EXTRACT:
         SASSERT(num_args == 1);
-        return mk_extract(m_util.get_extract_high(f), m_util.get_extract_low(f), args[0], result);
+        st = mk_extract(m_util.get_extract_high(f), m_util.get_extract_low(f), args[0], result);
+        break;
     case OP_REPEAT:
         SASSERT(num_args == 1);
-        return mk_repeat(f->get_parameter(0).get_int(), args[0], result);
+        st = mk_repeat(f->get_parameter(0).get_int(), args[0], result);
+        break;
     case OP_ZERO_EXT:
         SASSERT(num_args == 1);
         return mk_zero_extend(f->get_parameter(0).get_int(), args[0], result);
@@ -220,6 +240,13 @@ br_status bv_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * cons
     default:
         return BR_FAILED;
     }
+
+    CTRACE("bv", st != BR_FAILED, tout << mk_pp(f, m) << "\n";
+           for (unsigned i = 0; i < num_args; ++i)
+               tout << " " << mk_bounded_pp(args[i], m) << "\n";
+           tout << mk_bounded_pp(result, m, 3) << "\n");
+           
+    return st;
 }
 
 br_status bv_rewriter::mk_ule(expr * a, expr * b, expr_ref & result) {
@@ -541,7 +568,7 @@ br_status bv_rewriter::mk_leq_core(bool is_signed, expr * a, expr * b, expr_ref 
         const br_status cst = rw_leq_concats(is_signed, a, b, result);
         if (cst != BR_FAILED) {
             TRACE("le_extra", tout << (is_signed ? "bv_sle\n" : "bv_ule\n")
-                      << mk_ismt2_pp(a, m, 2) <<  "\n" << mk_ismt2_pp(b, m, 2) <<  "\n--->\n"<< mk_ismt2_pp(result, m, 2) << "\n";);
+                      << mk_pp(a, m, 2) <<  "\n" << mk_pp(b, m, 2) <<  "\n--->\n"<< mk_pp(result, m, 2) << "\n";);
             return cst;
         }
     }
@@ -550,7 +577,7 @@ br_status bv_rewriter::mk_leq_core(bool is_signed, expr * a, expr * b, expr_ref 
         const br_status cst = rw_leq_overflow(is_signed, a, b, result);
         if (cst != BR_FAILED) {
             TRACE("le_extra", tout << (is_signed ? "bv_sle\n" : "bv_ule\n")
-                      << mk_ismt2_pp(a, m, 2) <<  "\n" << mk_ismt2_pp(b, m, 2) <<  "\n--->\n"<< mk_ismt2_pp(result, m, 2) << "\n";);
+                      << mk_pp(a, m, 2) <<  "\n" << mk_pp(b, m, 2) <<  "\n--->\n"<< mk_pp(result, m, 2) << "\n";);
             return cst;
         }
     }
@@ -575,28 +602,45 @@ br_status bv_rewriter::mk_leq_core(bool is_signed, expr * a, expr * b, expr_ref 
         //
         // a <=_u #x000f
         //
-        unsigned bv_sz = m_util.get_bv_size(b);
-        unsigned i     = bv_sz;
-        unsigned first_non_zero = UINT_MAX;
-        while (i > 0) {
-            --i;
-            if (!is_zero_bit(b, i)) {
-                first_non_zero = i;
-                break;
-            }
-        }
+        unsigned bv_sz = m_util.get_bv_size(a);
+        auto last_non_zero = [&](expr* x) {
+            for (unsigned i = bv_sz; i-- > 0; ) 
+                if (!is_zero_bit(x, i)) 
+                    return i;
+            return UINT_MAX;
+        };
+        
+        unsigned lnz = last_non_zero(b);
 
-        if (first_non_zero == UINT_MAX) {
+        if (lnz == UINT_MAX) {
             // all bits are zero
             result = m.mk_eq(a, mk_zero(bv_sz));
             return BR_REWRITE1;
         }
-        else if (first_non_zero < bv_sz - 1 && m_le2extract) {
-            result = m.mk_and(m.mk_eq(m_mk_extract(bv_sz - 1, first_non_zero + 1, a), mk_zero(bv_sz - first_non_zero - 1)),
-                                m_util.mk_ule(m_mk_extract(first_non_zero, 0, a), m_mk_extract(first_non_zero, 0, b)));
+        else if (lnz < bv_sz - 1 && m_le2extract) {
+            // a[sz-1:lnz+1] = 0 & a[lnz:0] <= b[lnz:0]
+            result = m.mk_and(m.mk_eq(m_mk_extract(bv_sz - 1, lnz + 1, a), mk_zero(bv_sz - lnz - 1)),
+                              m_util.mk_ule(m_mk_extract(lnz, 0, a), m_mk_extract(lnz, 0, b)));
+
             return BR_REWRITE3;
         }
 
+
+        lnz = last_non_zero(a);
+
+        if (lnz == UINT_MAX) {
+            // all bits are zero
+            result = m.mk_true();
+            return BR_DONE;
+        }
+        else if (lnz < bv_sz - 1 && m_le2extract) {
+            // use the equivalence to simplify:
+            // #x000f <=_u b <=> b[sz-1:lnz+1] != 0 or #xf <= b[lnz:0])
+
+            result = m.mk_implies(m.mk_eq(m_mk_extract(bv_sz - 1, lnz + 1, b), mk_zero(bv_sz - lnz - 1)),
+                                  m_util.mk_ule(m_mk_extract(lnz, 0, a), m_mk_extract(lnz, 0, b)));
+            return BR_REWRITE_FULL;
+        }
     }
 #endif
 
@@ -802,8 +846,8 @@ br_status bv_rewriter::mk_extract(unsigned high, unsigned low, expr * arg, expr_
         const unsigned ep_rm = propagate_extract(high, arg, ep_res);
         if (ep_rm != 0) {
             result = m_mk_extract(high, low, ep_res);
-            TRACE("extract_prop", tout << mk_ismt2_pp(arg, m) << "\n[" << high <<"," << low << "]\n" << ep_rm << "---->\n"
-                                       << mk_ismt2_pp(result.get(), m) << "\n";);
+            TRACE("extract_prop", tout << mk_pp(arg, m) << "\n[" << high <<"," << low << "]\n" << ep_rm << "---->\n"
+                                       << mk_pp(result.get(), m) << "\n";);
             return BR_REWRITE2;
         }
     }
@@ -1132,7 +1176,7 @@ br_status bv_rewriter::mk_bv_udiv_core(expr * arg1, expr * arg2, bool hi_div0, e
         m_util.mk_bv_udiv0(arg1),
         m_util.mk_bv_udiv_i(arg1, arg2));
 
-    TRACE("bv_udiv", tout << mk_ismt2_pp(arg1, m) << "\n" << mk_ismt2_pp(arg2, m) << "\n---->\n" << mk_ismt2_pp(result, m) << "\n";);
+    TRACE("bv_udiv", tout << mk_pp(arg1, m) << "\n" << mk_pp(arg2, m) << "\n---->\n" << mk_pp(result, m) << "\n";);
     return BR_REWRITE2;
 }
 
@@ -1401,18 +1445,49 @@ br_status bv_rewriter::mk_bv_smod_core(expr * arg1, expr * arg2, bool hi_div0, e
 br_status bv_rewriter::mk_int2bv(unsigned bv_size, expr * arg, expr_ref & result) {
     numeral val;
     bool is_int;
-
+    expr* x;
     if (m_autil.is_numeral(arg, val, is_int)) {
         val = m_util.norm(val, bv_size);
         result = mk_numeral(val, bv_size);
         return BR_DONE;
     }
 
-    // (int2bv (bv2int x)) --> x
-    if (m_util.is_bv2int(arg) && bv_size == get_bv_size(to_app(arg)->get_arg(0))) {
-        result = to_app(arg)->get_arg(0);
+    // int2bv (bv2int x) --> x
+    if (m_util.is_bv2int(arg, x) && bv_size == get_bv_size(x)) {
+        result = x;
         return BR_DONE;
     }
+
+    // int2bv (bv2int x) --> 0000x
+    if (m_util.is_bv2int(arg, x) && bv_size > get_bv_size(x)) {
+        mk_zero_extend(bv_size - get_bv_size(x), x, result);
+        return BR_REWRITE1;
+    }
+
+    // int2bv (bv2int x) --> x[sz-1:0]
+    if (m_util.is_bv2int(arg, x) && bv_size < get_bv_size(x)) {
+        result = m_mk_extract(bv_size - 1, 0, x);
+        return BR_REWRITE1;
+    }
+
+#if 0
+    // int2bv (a + b) --> int2bv(a) + int2bv(b)
+    if (m_autil.is_add(arg)) {
+        expr_ref_vector args(m);
+        for (expr* e : *to_app(arg)) 
+            args.push_back(m_util.mk_int2bv(bv_size, e));
+        result = m_util.mk_bv_add(args);
+        return BR_REWRITE3;
+    }
+        // int2bv (a * b) --> int2bv(a) * int2bv(b)
+    if (m_autil.is_mul(arg)) {
+        expr_ref_vector args(m);
+        for (expr* e : *to_app(arg)) 
+            args.push_back(m_util.mk_int2bv(bv_size, e));
+        result = m_util.mk_bv_mul(args);
+        return BR_REWRITE3;
+    }
+#endif
 
     return BR_FAILED;
 }
@@ -1792,8 +1867,8 @@ br_status bv_rewriter::mk_bv_or(unsigned num, expr * const * args, expr_ref & re
         std::reverse(exs.begin(), exs.end());
         result = m_util.mk_concat(exs.size(), exs.data());
         TRACE("mask_bug",
-              tout << "(assert (distinct (bvor (_ bv" << old_v1 << " " << sz << ")\n" << mk_ismt2_pp(t, m) << ")\n";
-              tout << mk_ismt2_pp(result, m) << "))\n";);
+              tout << "(assert (distinct (bvor (_ bv" << old_v1 << " " << sz << ")\n" << mk_pp(t, m) << ")\n";
+              tout << mk_pp(result, m) << "))\n";);
         return BR_REWRITE2;
     }
 
@@ -2463,7 +2538,7 @@ br_status bv_rewriter::mk_blast_eq_value(expr * lhs, expr * rhs, expr_ref & resu
     unsigned sz = get_bv_size(lhs);
     if (sz == 1)
         return BR_FAILED;
-    TRACE("blast_eq_value", tout << "sz: " << sz << "\n" << mk_ismt2_pp(lhs, m) << "\n";);
+    TRACE("blast_eq_value", tout << "sz: " << sz << "\n" << mk_pp(lhs, m) << "\n";);
     if (is_numeral(lhs))
         std::swap(lhs, rhs);
 
@@ -2573,7 +2648,6 @@ void bv_rewriter::mk_t1_add_t2_eq_c(expr * t1, expr * t2, expr * c, expr_ref & r
         result = m.mk_eq(t1, m_util.mk_bv_sub(c, t2));
 }
 
-#include "ast/ast_pp.h"
 
 bool bv_rewriter::isolate_term(expr* lhs, expr* rhs, expr_ref& result) {
     if (!m_util.is_numeral(lhs) || !is_add(rhs)) {
@@ -2697,6 +2771,34 @@ bool bv_rewriter::is_urem_any(expr * e, expr * & dividend,  expr * & divisor) {
     return true;
 }
 
+br_status bv_rewriter::mk_eq_bv2int(expr* lhs, expr* rhs, expr_ref& result) {
+    rational r;
+    expr* x, *y;
+    if (m_autil.is_numeral(lhs))
+        std::swap(lhs, rhs);
+   
+    if (m_autil.is_numeral(rhs, r) && m_util.is_bv2int(lhs, x)) {
+        unsigned bv_size = m_util.get_bv_size(x);
+        if (0 <= r && r < rational::power_of_two(bv_size)) 
+            result = m.mk_eq(m_util.mk_numeral(r, bv_size), x);
+        else
+            result = m.mk_false();        
+        return BR_REWRITE1;
+    }
+    if (m_util.is_bv2int(lhs, x) &&
+        m_util.is_bv2int(rhs, y)) {
+        auto szx = m_util.get_bv_size(x);
+        auto szy = m_util.get_bv_size(y);
+        if (szx < szy)
+            x = m_util.mk_zero_extend(szy - szx, x);
+        else if (szx > szy)
+            y = m_util.mk_zero_extend(szx - szy, y);
+        result = m.mk_eq(x, y);
+        return BR_REWRITE2;
+    }
+    return BR_FAILED;
+}
+
 br_status bv_rewriter::mk_eq_core(expr * lhs, expr * rhs, expr_ref & result) {
     if (lhs == rhs) {
         result = m.mk_true();
@@ -2730,15 +2832,16 @@ br_status bv_rewriter::mk_eq_core(expr * lhs, expr * rhs, expr_ref & result) {
 
     st = mk_mul_eq(lhs, rhs, result);
     if (st != BR_FAILED) {
-        TRACE("mk_mul_eq", tout << mk_ismt2_pp(lhs, m) << "\n=\n" << mk_ismt2_pp(rhs, m) << "\n----->\n" << mk_ismt2_pp(result,m) << "\n";);
+        TRACE("mk_mul_eq", tout << mk_pp(lhs, m) << "\n=\n" << mk_pp(rhs, m) << "\n----->\n" << mk_pp(result,m) << "\n";);
         return st;
     }
 
     st = mk_mul_eq(rhs, lhs, result);
     if (st != BR_FAILED) {
-        TRACE("mk_mul_eq", tout << mk_ismt2_pp(lhs, m) << "\n=\n" << mk_ismt2_pp(rhs, m) << "\n----->\n" << mk_ismt2_pp(result,m) << "\n";);
+        TRACE("mk_mul_eq", tout << mk_pp(lhs, m) << "\n=\n" << mk_pp(rhs, m) << "\n----->\n" << mk_pp(result,m) << "\n";);
         return st;
     }
+
 
     if (m_blast_eq_value) {
         st = mk_blast_eq_value(lhs, rhs, result);
@@ -2851,8 +2954,8 @@ bool bv_rewriter::is_eq_bit(expr * t, expr * & x, unsigned & val) {
 
 
 br_status bv_rewriter::mk_ite_core(expr * c, expr * t, expr * e, expr_ref & result) {
-    TRACE("bv_ite", tout << "mk_ite_core:\n" << mk_ismt2_pp(c, m) << "?\n"
-            << mk_ismt2_pp(t, m) << "\n:" << mk_ismt2_pp(e, m) << "\n";);
+    TRACE("bv_ite", tout << "mk_ite_core:\n" << mk_pp(c, m) << "?\n"
+            << mk_pp(t, m) << "\n:" << mk_pp(e, m) << "\n";);
     if (m.are_equal(t, e)) {
         result = e;
         return BR_REWRITE1;

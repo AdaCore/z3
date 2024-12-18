@@ -36,7 +36,7 @@ extern "C" {
         catch (z3_exception & ex) {
             // The error handler is only available for contexts
             // Just throw a warning.
-            warning_msg("%s", ex.msg());
+            warning_msg("%s", ex.what());
         }
     }
 
@@ -59,7 +59,7 @@ extern "C" {
         catch (z3_exception & ex) {
             // The error handler is only available for contexts
             // Just throw a warning.
-            warning_msg("%s", ex.msg());
+            warning_msg("%s", ex.what());
             return false;
         }
     }
@@ -84,7 +84,7 @@ extern "C" {
         } catch (z3_exception & ex) {
             // The error handler is only available for contexts
             // Just throw a warning.
-            warning_msg("%s", ex.msg());
+            warning_msg("%s", ex.what());
             return nullptr;
         }
     }
@@ -98,12 +98,15 @@ extern "C" {
         LOG_Z3_set_param_value(c, param_id, param_value);
         try {
             ast_context_params * p = reinterpret_cast<ast_context_params*>(c);
-            p->set(param_id, param_value);
+            if (p->is_shell_only_parameter(param_id)) 
+                warning_msg("parameter %s can only be set for the shell, not binary API", param_id);
+            else
+                p->set(param_id, param_value);
         }
         catch (z3_exception & ex) {
             // The error handler is only available for contexts
             // Just throw a warning.
-            warning_msg("%s", ex.msg());
+            warning_msg("%s", ex.what());
         }
     }
 
@@ -111,7 +114,10 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_update_param_value(c, param_id, param_value);
         RESET_ERROR_CODE();
-        mk_c(c)->params().set(param_id, param_value);
+        if (mk_c(c)->params().is_shell_only_parameter(param_id))
+            warning_msg("parameter %s can only be set for the shell, not binary API", param_id);
+        else
+            mk_c(c)->params().set(param_id, param_value);
         Z3_CATCH;
     }
 

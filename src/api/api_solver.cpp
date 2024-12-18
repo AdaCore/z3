@@ -170,8 +170,8 @@ extern "C" {
             if (g_is_threaded || g_thread_id != std::this_thread::get_id()) {
                 g_is_threaded = true;
                 std::ostringstream strm;
-                strm << smt2log << "-" << std::this_thread::get_id();
-                smt2log = symbol(strm.str());                
+                strm << smt2log << '-' << std::this_thread::get_id();
+                smt2log = symbol(std::move(strm).str());
             }
             to_solver(s)->m_pp = alloc(solver2smt2_pp, mk_c(c)->m(), smt2log.str());
         }
@@ -208,7 +208,7 @@ extern "C" {
         if (!smt_logics::supported_logic(to_symbol(logic))) {
             std::ostringstream strm;
             strm << "logic '" << to_symbol(logic) << "' is not recognized";
-            SET_ERROR_CODE(Z3_INVALID_ARG, strm.str());
+            SET_ERROR_CODE(Z3_INVALID_ARG, std::move(strm).str());
             RETURN_Z3(nullptr);
         }
         else {
@@ -306,7 +306,7 @@ extern "C" {
 
         if (!parse_smt2_commands(*ctx.get(), is)) {
             ctx = nullptr;
-            SET_ERROR_CODE(Z3_PARSER_ERROR, errstrm.str());
+            SET_ERROR_CODE(Z3_PARSER_ERROR, std::move(errstrm).str());
             return;
         }
 
@@ -333,7 +333,7 @@ extern "C" {
         std::stringstream err;
         sat::solver solver(to_solver_ref(s)->get_params(), m.limit());
         if (!parse_dimacs(is, err, solver)) {
-            SET_ERROR_CODE(Z3_PARSER_ERROR, err.str());
+            SET_ERROR_CODE(Z3_PARSER_ERROR, std::move(err).str());
             return;
         }
         sat2goal s2g;
@@ -400,7 +400,7 @@ extern "C" {
         if (!initialized)
             to_solver(s)->m_solver = nullptr;
         descrs.display(buffer);
-        return mk_c(c)->mk_external_string(buffer.str());
+        return mk_c(c)->mk_external_string(std::move(buffer).str());
         Z3_CATCH_RETURN("");
     }
 
@@ -508,6 +508,7 @@ extern "C" {
         LOG_Z3_solver_reset(c, s);
         RESET_ERROR_CODE();
         to_solver(s)->m_solver = nullptr;
+        to_solver(s)->m_cmd_context = nullptr;
         if (to_solver(s)->m_pp) to_solver(s)->m_pp->reset();
         Z3_CATCH;
     }
@@ -627,6 +628,9 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)    
+
     static Z3_lbool _solver_check(Z3_context c, Z3_solver s, unsigned num_assumptions, Z3_ast const assumptions[]) {
         for (unsigned i = 0; i < num_assumptions; i++) {
             if (!is_expr(to_ast(assumptions[i]))) {
@@ -654,22 +658,22 @@ extern "C" {
                 result = to_solver_ref(s)->check_sat(num_assumptions, _assumptions);
             }
             catch (z3_exception & ex) {
-                to_solver_ref(s)->set_reason_unknown(eh);
+                to_solver_ref(s)->set_reason_unknown(eh, ex);
                 to_solver(s)->set_eh(nullptr);
                 if (mk_c(c)->m().inc()) {
                     mk_c(c)->handle_exception(ex);
                 }
                 return Z3_L_UNDEF;
             }
-            catch (...) {
-                to_solver_ref(s)->set_reason_unknown(eh);
+            catch (std::exception& ex) {
+                to_solver_ref(s)->set_reason_unknown(eh, ex);
                 to_solver(s)->set_eh(nullptr);
                 return Z3_L_UNDEF;
             }
         }
         to_solver(s)->set_eh(nullptr);
         if (result == l_undef) {
-            to_solver_ref(s)->set_reason_unknown(eh);
+            to_solver_ref(s)->set_reason_unknown(eh, __FILE__ ":" TOSTRING(__LINE__));
         }
         return static_cast<Z3_lbool>(result);
     }
@@ -750,8 +754,8 @@ extern "C" {
             try {
                 to_solver_ref(s)->get_unsat_core(core);
             }
-            catch (...) {
-                to_solver_ref(s)->set_reason_unknown(eh);
+            catch (std::exception& ex) {
+                to_solver_ref(s)->set_reason_unknown(eh, ex);
                 to_solver(s)->set_eh(nullptr);
                 if (core.empty())
                     throw;
@@ -799,7 +803,7 @@ extern "C" {
         init_solver(c, s);
         std::ostringstream buffer;
         to_solver_ref(s)->display(buffer);
-        return mk_c(c)->mk_external_string(buffer.str());
+        return mk_c(c)->mk_external_string(std::move(buffer).str());
         Z3_CATCH_RETURN("");
     }
 
@@ -810,7 +814,7 @@ extern "C" {
         init_solver(c, s);
         std::ostringstream buffer;
         to_solver_ref(s)->display_dimacs(buffer, include_names);
-        return mk_c(c)->mk_external_string(buffer.str());
+        return mk_c(c)->mk_external_string(std::move(buffer).str());
         Z3_CATCH_RETURN("");
     }
 
@@ -876,7 +880,7 @@ extern "C" {
             }
             catch (z3_exception & ex) {
                 to_solver(s)->set_eh(nullptr);
-                to_solver_ref(s)->set_reason_unknown(eh);
+                to_solver_ref(s)->set_reason_unknown(eh, ex);
                 _assumptions.finalize(); _consequences.finalize(); _variables.finalize();
                 mk_c(c)->handle_exception(ex);
                 return Z3_L_UNDEF;
@@ -886,7 +890,7 @@ extern "C" {
         }
         to_solver(s)->set_eh(nullptr);
         if (result == l_undef) {
-            to_solver_ref(s)->set_reason_unknown(eh);
+            to_solver_ref(s)->set_reason_unknown(eh, __FILE__ ":" TOSTRING(__LINE__));
         }
         for (expr* e : _consequences) {
             to_ast_vector_ref(consequences).push_back(e);
@@ -960,6 +964,20 @@ extern "C" {
         init_solver(c, s);
         expr* sib = to_solver_ref(s)->congruence_next(to_expr(a));
         RETURN_Z3(of_expr(sib));
+        Z3_CATCH_RETURN(nullptr);
+    }
+
+    Z3_ast Z3_API Z3_solver_solve_for(Z3_context c, Z3_solver s, Z3_ast a) {
+        Z3_TRY;
+        LOG_Z3_solver_solve_for(c, s, a);
+        RESET_ERROR_CODE();
+        init_solver(c, s);
+        ast_manager& m = mk_c(c)->m();        
+        expr_ref term(m);
+        if (!to_solver_ref(s)->solve_for(to_expr(a), term)) 
+            term = to_expr(a);
+        mk_c(c)->save_ast_trail(term.get());
+        RETURN_Z3(of_expr(term.get()));
         Z3_CATCH_RETURN(nullptr);
     }
 
@@ -1141,6 +1159,24 @@ extern "C" {
         RETURN_Z3(of_func_decl(f));
         Z3_CATCH_RETURN(nullptr);
     }
+
+    void Z3_API Z3_solver_set_initial_value(Z3_context c, Z3_solver s, Z3_ast var, Z3_ast value) {
+        Z3_TRY;
+        LOG_Z3_solver_set_initial_value(c, s, var, value);
+        RESET_ERROR_CODE();
+        if (to_expr(var)->get_sort() != to_expr(value)->get_sort()) {
+            SET_ERROR_CODE(Z3_INVALID_USAGE, "variable and value should have same sort");
+            return;
+        }
+        ast_manager& m = mk_c(c)->m();
+        if (!m.is_value(to_expr(value))) {
+            SET_ERROR_CODE(Z3_INVALID_USAGE, "a proper value was not supplied");
+            return;
+        }
+        to_solver_ref(s)->user_propagate_initialize_value(to_expr(var), to_expr(value));
+        Z3_CATCH;        
+    }
+
 
 
 };

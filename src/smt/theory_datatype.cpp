@@ -762,8 +762,7 @@ namespace smt {
         m_util(m),
         m_autil(m),
         m_sutil(m),
-        m_find(*this),
-        m_trail_stack() {
+        m_find(*this) {
     }
 
     theory_datatype::~theory_datatype() {
@@ -915,7 +914,7 @@ namespace smt {
             }
             SASSERT(val == l_undef || (val == l_false && d->m_constructor == nullptr));
             d->m_recognizers[c_idx] = recognizer;
-            m_trail_stack.push(set_vector_idx_trail<enode>(d->m_recognizers, c_idx));
+            m_trail_stack.push(set_vector_idx_trail(d->m_recognizers, c_idx));
             if (val == l_false) {
                 propagate_recognizer(v, recognizer);
             }

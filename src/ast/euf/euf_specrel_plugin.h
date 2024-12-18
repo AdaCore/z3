@@ -34,10 +34,8 @@ namespace euf {
     public:
 
         specrel_plugin(egraph& g);
-
-        ~specrel_plugin() override {}
         
-        unsigned get_id() const override { return sp.get_family_id(); }
+        theory_id get_id() const override { return sp.get_family_id(); }
 
         void register_node(enode* n) override;
 

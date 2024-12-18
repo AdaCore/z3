@@ -24,7 +24,6 @@
 #include <algorithm>
 #ifdef lp_for_z3
 #include "util/rational.h"
-#include "util/sstream.h"
 #include "util/z3_exception.h"
 #else
 // include "util/numerics/mpq.h"
@@ -117,10 +116,7 @@ template <typename T>
 struct numeric_pair {
     T x;
     T y;
-    // empty constructor
-    numeric_pair() {}
-    // another constructor
-
+    numeric_pair() = default;
     numeric_pair(T xp, T yp) : x(xp), y(yp) {}
 
     template <typename X>

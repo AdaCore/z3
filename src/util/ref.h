@@ -21,7 +21,7 @@ Revision History:
 
 template<typename T>
 class ref {
-    T * m_ptr;
+    T * m_ptr = nullptr;
 
     void inc_ref() {
         if (m_ptr) {
@@ -36,9 +36,7 @@ class ref {
     }
 
 public:
-    ref():
-        m_ptr(nullptr) {
-    }
+    ref() = default;
 
     ref(T * ptr):
         m_ptr(ptr) {
@@ -50,9 +48,9 @@ public:
         inc_ref();
     }
 
-   ref (ref && r) noexcept : m_ptr(nullptr) {
-       std::swap(m_ptr, r.m_ptr);
-   }
+    ref(ref && r) noexcept {
+        std::swap(m_ptr, r.m_ptr);
+    }
 
     ~ref() {
         dec_ref();
@@ -97,7 +95,7 @@ public:
         return *this;
     }
 
-    ref & operator=(ref &&r) {
+    ref & operator=(ref &&r) noexcept {
         if (this != &r) {
            dec_ref ();
            m_ptr = r.detach ();
@@ -123,7 +121,7 @@ public:
     friend bool operator!=(const ref & r1, const ref & r2) {
         return r1.m_ptr != r2.m_ptr;
     }
-    friend void swap (ref &r1, ref &r2) {
+    friend void swap (ref &r1, ref &r2) noexcept {
         T* tmp = r1.m_ptr;
         r1.m_ptr = r2.m_ptr;
         r2.m_ptr = tmp;

@@ -21,12 +21,14 @@ Author:
 #include "sat/smt/sat_smt.h"
 #include "sat/smt/pb_solver.h"
 #include "sat/smt/bv_solver.h"
+#include "sat/smt/intblast_solver.h"
 #include "sat/smt/euf_solver.h"
 #include "sat/smt/array_solver.h"
 #include "sat/smt/arith_solver.h"
 #include "sat/smt/q_solver.h"
 #include "sat/smt/fpa_solver.h"
 #include "sat/smt/dt_solver.h"
+#include "sat/smt/sls_solver.h"
 #include "sat/smt/recfun_solver.h"
 #include "sat/smt/specrel_solver.h"
 
@@ -76,6 +78,7 @@ namespace euf {
             };
             m_egraph.set_on_merge(on_merge);
         }
+        
     }
 
     void solver::updt_params(params_ref const& p) {
@@ -134,8 +137,16 @@ namespace euf {
         special_relations_util sp(m);
         if (pb.get_family_id() == fid)
             ext = alloc(pb::solver, *this, fid);
-        else if (bvu.get_family_id() == fid)
-            ext = alloc(bv::solver, *this, fid);
+        else if (bvu.get_family_id() == fid) {
+            if (get_config().m_bv_solver == 0)
+                ext = alloc(bv::solver, *this, fid);
+            else if (get_config().m_bv_solver == 1)
+                throw default_exception("polysat solver is not integrated");
+            else if (get_config().m_bv_solver == 2)
+                ext = alloc(intblast::solver, *this);
+            else 
+                throw default_exception("unknown bit-vector solver. Accepted values 0 (bit blast), 1 (polysat), 2 (int blast)");
+        }
         else if (au.get_family_id() == fid)
             ext = alloc(array::solver, *this, fid);
         else if (fpa.get_family_id() == fid)
@@ -176,11 +187,37 @@ namespace euf {
         IF_VERBOSE(0, verbose_stream() << mk_pp(f, m) << " not handled\n");
     }
 
-    void solver::init_search() {        
+    void solver::init_search() {   
+        if (get_config().m_sls_enable)
+            add_solver(alloc(sls::solver, *this));
         TRACE("before_search", s().display(tout););
         m_reason_unknown.clear();
         for (auto* s : m_solvers)
             s->init_search();
+
+        for (auto const& [var, value] : m_initial_values) {
+            if (m.is_bool(var)) {
+                auto lit = expr2literal(var);
+                if (lit == sat::null_literal) {
+                    IF_VERBOSE(5, verbose_stream() << "no literal associated with " << mk_pp(var, m) << " := " << mk_pp(value, m) << "\n");
+                    continue;
+                }
+                if (m.is_true(value))
+                    s().set_phase(lit);
+                else if (m.is_false(value))
+                    s().set_phase(~lit);
+                else
+                    IF_VERBOSE(5, verbose_stream() << "malformed value " << mk_pp(var, m) << " := " << mk_pp(value, m) << "\n");                
+                continue;
+            }
+            auto* th = m_id2solver.get(var->get_sort()->get_family_id(), nullptr);
+            if (!th) {
+                IF_VERBOSE(5, verbose_stream() << "no default initialization associated with " << mk_pp(var, m) << " := " << mk_pp(value, m) << "\n");
+                continue;
+            }
+            th->initialize_value(var, value);
+        }
+
     }
 
     bool solver::is_external(bool_var v) {
@@ -207,6 +244,15 @@ namespace euf {
     void solver::propagate(literal lit, ext_justification_idx idx) {
         mark_relevant(lit);
         s().assign(lit, sat::justification::mk_ext_justification(s().scope_lvl(), idx));
+    }
+    
+    lbool solver::resolve_conflict() {
+        for (auto* s : m_solvers) {
+            lbool r = s->resolve_conflict();
+            if (r != l_undef)
+                return r;
+        }
+        return l_undef;
     }
 
     /**
@@ -255,9 +301,9 @@ namespace euf {
                 r.push_back(get_literal(e));            
             else {
                 multiple_theories = true;
-                size_t idx = get_justification(e);
+                size_t idx = get_justification(e);                
                 auto* ext = sat::constraint_base::to_extension(idx);
-                SASSERT(ext != this);
+                SASSERT(ext != this);             
                 sat::literal lit = sat::null_literal;
                 ext->get_antecedents(lit, idx, r, probing);
             }
@@ -280,6 +326,26 @@ namespace euf {
                 log_rup(l, r);
         }
     }
+
+    void solver::get_eq_antecedents(enode* a, enode* b, literal_vector& r) {
+        m_egraph.begin_explain();
+        m_explain.reset();
+	    m_egraph.explain_eq<size_t>(m_explain, nullptr, a, b);
+	    for (unsigned qhead = 0; qhead < m_explain.size(); ++qhead) {
+	        size_t* e = m_explain[qhead];
+	        if (is_literal(e)) 
+	            r.push_back(get_literal(e));            
+            else {
+                size_t idx = get_justification(e);
+                auto* ext = sat::constraint_base::to_extension(idx);
+                SASSERT(ext != this);
+                sat::literal lit = sat::null_literal;
+                ext->get_antecedents(lit, idx, r, true);
+            }
+        }
+        m_egraph.end_explain();
+    }
+
 
     void solver::get_th_antecedents(literal l, th_explain& jst, literal_vector& r, bool probing) {
         for (auto lit : euf::th_explain::lits(jst))
@@ -626,7 +692,9 @@ namespace euf {
         if (give_up)
             return sat::check_result::CR_GIVEUP;  
         if (m_qsolver && m_config.m_arith_ignore_int)
-            return sat::check_result::CR_GIVEUP;            
+            return sat::check_result::CR_GIVEUP; 
+        for (auto s : m_solvers)
+            s->finalize();
         return sat::check_result::CR_DONE;
     }
 
@@ -1074,7 +1142,7 @@ namespace euf {
             if (b != sat::null_bool_var) {
                 r->m_bool_var2expr.setx(b, n->get_expr(), nullptr);
                 SASSERT(r->m.is_bool(n->get_sort()));
-                IF_VERBOSE(11, verbose_stream() << "set bool_var " << b << " " << r->bpp(n) << " " << mk_bounded_pp(n->get_expr(), m) << "\n");
+                IF_VERBOSE(20, verbose_stream() << "set bool_var " << b << " " << r->bpp(n) << " " << mk_bounded_pp(n->get_expr(), m) << "\n");
             }
         }
         for (auto* s_orig : m_id2solver) {
@@ -1210,6 +1278,14 @@ namespace euf {
         m_user_propagator->add(ctx, push_eh, pop_eh, fresh_eh);
         add_solver(m_user_propagator);
     }
+
+    void solver::user_propagate_initialize_value(expr* var, expr* value) {
+
+        m_initial_values.push_back({expr_ref(var, m), expr_ref(value, m)});
+        push(push_back_vector(m_initial_values));
+        
+    }
+
 
     bool solver::watches_fixed(enode* n) const {
         return m_user_propagator && m_user_propagator->has_fixed() && n->get_th_var(m_user_propagator->get_id()) != null_theory_var;

@@ -50,7 +50,7 @@ public:
         SASSERT(j < n); 
         return a_ij[i*n + j]; }
     mpz & operator()(unsigned i, unsigned j) { SASSERT(i < m); SASSERT(j < n); return a_ij[i*n + j]; }
-    void swap(mpz_matrix & B) { std::swap(m, B.m); std::swap(n, B.n); std::swap(a_ij, B.a_ij); }
+    void swap(mpz_matrix & B) noexcept { std::swap(m, B.m); std::swap(n, B.n); std::swap(a_ij, B.a_ij); }
     mpz * row(unsigned i) const { SASSERT(i < m); return a_ij + i*n; }
 };
 
@@ -63,7 +63,6 @@ class mpz_matrix_manager {
     bool solve_core(mpz_matrix const & A, mpz * b, bool int_solver);
 public:
     mpz_matrix_manager(unsynch_mpz_manager & nm, small_object_allocator & a);
-    ~mpz_matrix_manager();
     unsynch_mpz_manager & nm() const { return m_nm; }
     void mk(unsigned m, unsigned n, mpz_matrix & A);
     void del(mpz_matrix & r);
@@ -136,7 +135,7 @@ public:
     mpz_matrix const & get() const { return A; }
     mpz_matrix & get() { return A; }
 
-    void swap(mpz_matrix & B) { A.swap(B); }
+    void swap(mpz_matrix & B) noexcept { A.swap(B); }
 
     void set(unsigned i, unsigned j, mpz const & v) { nm().set(A(i, j), v); }
     void set(unsigned i, unsigned j, int v) { nm().set(A(i, j), v); }

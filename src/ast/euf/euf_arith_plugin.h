@@ -7,7 +7,7 @@ Module Name:
 
 Abstract:
 
-    plugin structure for arithetic
+    plugin structure for arithmetic
 Author:
 
     Nikolaj Bjorner (nbjorner) 2023-11-11
@@ -33,9 +33,7 @@ namespace euf {
     public:
         arith_plugin(egraph& g);
 
-        ~arith_plugin() override {}
-
-        unsigned get_id() const override { return a.get_family_id(); }
+        theory_id get_id() const override { return a.get_family_id(); }
 
         void register_node(enode* n) override;
 

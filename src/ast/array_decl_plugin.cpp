@@ -49,7 +49,7 @@ sort * array_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, paramete
             m_manager->raise_exception("invalid array sort definition, invalid number of parameters");
             return nullptr;
         }
-        parameter params[2] = { parameters[0], parameter(m_manager->mk_bool_sort()) };
+        parameter params[2] = { parameter(parameters[0]), parameter(m_manager->mk_bool_sort()) };
         return mk_sort(ARRAY_SORT, 2, params);
     }
     SASSERT(k == ARRAY_SORT);
@@ -577,9 +577,9 @@ void array_decl_plugin::get_sort_names(svector<builtin_name>& sort_names, symbol
 void array_decl_plugin::get_op_names(svector<builtin_name>& op_names, symbol const & logic) {
     op_names.push_back(builtin_name("store",OP_STORE));
     op_names.push_back(builtin_name("select",OP_SELECT));
+    op_names.push_back(builtin_name("const",OP_CONST_ARRAY)); // github issue #7383
     if (logic == symbol::null || logic == symbol("HORN") || logic == symbol("ALL")) {
         // none of the SMT2 logics support these extensions
-        op_names.push_back(builtin_name("const",OP_CONST_ARRAY));
         op_names.push_back(builtin_name("map",OP_ARRAY_MAP));
         op_names.push_back(builtin_name("default",OP_ARRAY_DEFAULT));
         op_names.push_back(builtin_name("union",OP_SET_UNION));

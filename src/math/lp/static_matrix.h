@@ -79,7 +79,7 @@ public:
         ref(static_matrix & m, unsigned row, unsigned col):m_matrix(m), m_row(row), m_col(col) {}
         ref & operator=(T const & v) { m_matrix.set( m_row, m_col, v); return *this; }
 
-        ref operator=(ref & v) { m_matrix.set(m_row, m_col, v.m_matrix.get(v.m_row, v.m_col)); return *this; }
+        ref operator=(ref & v) { m_matrix.set(m_row, m_col, v.m_matrix.get_elem(v.m_row, v.m_col)); return *this; }
 
         operator T () const { return m_matrix.get_elem(m_row, m_col); }
     };
@@ -105,7 +105,7 @@ public:
     void init_row_columns(unsigned m, unsigned n);
 
         // constructor with no parameters
-    static_matrix() {}
+    static_matrix() = default;
 
     // constructor
     static_matrix(unsigned m, unsigned n): m_vector_of_row_offsets(n, -1)  {
@@ -346,14 +346,14 @@ public:
          // we use the form -it + 1 = 0
         m_work_vector.set_value(one_of_type<T>(), bj);
         for (auto p : row) {
-            m_work_vector.set_value(-p.coeff(), p.column().index());
+            m_work_vector.set_value(-p.coeff(), p.j());
             // but take care of the basis 1 later
         }
     
         // now iterate with pivoting
         fill_last_row_with_pivoting_loop_block(bj, basis_heading);
         for (auto p : row) {
-            fill_last_row_with_pivoting_loop_block(p.column().index(), basis_heading);
+            fill_last_row_with_pivoting_loop_block(p.j(), basis_heading);
         }
         unsigned last_row = row_count() - 1;
     

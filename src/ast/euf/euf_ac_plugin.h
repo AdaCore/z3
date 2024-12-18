@@ -40,14 +40,13 @@ namespace euf {
         struct node {
             enode* n;        // associated enode
             node* root;      // path compressed root
-            node* next;      // next in equaivalence class
+            node* next;      // next in equivalence class
             justification j; // justification for equality
             node* target = nullptr;    // justified next
             unsigned_vector shared;    // shared occurrences
             unsigned_vector eqs;       // equality occurrences
             
             unsigned root_id() const { return root->n->get_id(); }
-            ~node() {}
             static node* mk(region& r, enode* n);
         };
 
@@ -62,8 +61,7 @@ namespace euf {
                 node* operator*() { return m_first; }
                 iterator& operator++() { if (!m_last) m_last = m_first; m_first = m_first->next; return *this; }
                 iterator operator++(int) { iterator tmp = *this; ++*this; return tmp; }
-                bool operator==(iterator const& other) const { return m_last == other.m_last && m_first == other.m_first; }
-                bool operator!=(iterator const& other) const { return !(*this == other); }
+                bool operator!=(iterator const& other) const { return m_last != other.m_last || m_first != other.m_first; }
             };
             equiv(node& _n) :n(_n) {}
             equiv(node* _n) :n(*_n) {}
@@ -137,8 +135,8 @@ namespace euf {
             }
         };
 
-        unsigned                 m_fid = 0;
-        unsigned                 m_op = null_decl_kind;
+        theory_id                m_fid = 0;
+        decl_kind                m_op = null_decl_kind;
         func_decl*               m_decl = nullptr;
         vector<eq>               m_eqs;
         ptr_vector<node>         m_nodes;
@@ -270,10 +268,8 @@ namespace euf {
         ac_plugin(egraph& g, unsigned fid, unsigned op);
 
         ac_plugin(egraph& g, func_decl* f);
-
-        ~ac_plugin() override {}
         
-        unsigned get_id() const override { return m_fid; }
+        theory_id get_id() const override { return m_fid; }
 
         void register_node(enode* n) override;
 

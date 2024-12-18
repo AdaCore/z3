@@ -35,7 +35,7 @@ class hwf {
     }
 
 public:
-    void swap(hwf & other) { std::swap(value, other.value); }
+    void swap(hwf & other) noexcept { std::swap(value, other.value); }
 };
 
 
@@ -46,7 +46,6 @@ class hwf_manager {
 public:
     typedef hwf numeral;
     hwf_manager();
-    ~hwf_manager();
 
     void reset(hwf & o) { set(o, 0); }
     void set(hwf & o, int value);

@@ -1023,6 +1023,7 @@ typedef enum {
     Z3_OP_TO_INT,
     Z3_OP_IS_INT,
     Z3_OP_POWER,
+    Z3_OP_ABS,
 
     // Arrays & Sets
     Z3_OP_STORE = 0x300,
@@ -1193,6 +1194,10 @@ typedef enum {
     Z3_OP_SEQ_LAST_INDEX,
     Z3_OP_SEQ_TO_RE,
     Z3_OP_SEQ_IN_RE,
+    Z3_OP_SEQ_MAP,            
+    Z3_OP_SEQ_MAPI,           
+    Z3_OP_SEQ_FOLDL,          
+    Z3_OP_SEQ_FOLDLI,         
 
     // strings
     Z3_OP_STR_TO_INT,
@@ -1363,7 +1368,7 @@ typedef enum {
    - Z3_NO_PARSER:     Parser output is not available, that is, user didn't invoke #Z3_parse_smtlib2_string or #Z3_parse_smtlib2_file.
    - Z3_INVALID_PATTERN: Invalid pattern was used to build a quantifier.
    - Z3_MEMOUT_FAIL:   A memory allocation failure was encountered.
-   - Z3_FILE_ACCESS_ERRROR: A file could not be accessed.
+   - Z3_FILE_ACCESS_ERROR: A file could not be accessed.
    - Z3_INVALID_USAGE:   API call is invalid in the current state.
    - Z3_INTERNAL_FATAL: An error internal to Z3 occurred.
    - Z3_DEC_REF_ERROR: Trying to decrement the reference counter of an AST that was deleted or the reference counter was not initialized with #Z3_inc_ref.
@@ -1588,12 +1593,9 @@ extern "C" {
        although some parameters can be changed using #Z3_update_param_value.
        All main interaction with Z3 happens in the context of a \c Z3_context.
 
-       In contrast to #Z3_mk_context_rc, the life time of \c Z3_ast objects
-       are determined by the scope level of #Z3_solver_push and #Z3_solver_pop.
-       In other words, a \c Z3_ast object remains valid until there is a
-       call to #Z3_solver_pop that takes the current scope below the level where
-       the object was created.
-
+       In contrast to \c Z3_mk_context_rc the life time of \c Z3_ast objects
+       persists with the life time of the context.
+       
        Note that all other reference counted objects, including \c Z3_model,
        \c Z3_solver, \c Z3_func_interp have to be managed by the caller.
        Their reference counts are not handled by the context.
@@ -2544,6 +2546,13 @@ extern "C" {
     */
     Z3_ast Z3_API Z3_mk_power(Z3_context c, Z3_ast arg1, Z3_ast arg2);
 
+    /**
+       \brief Take the absolute value of an integer
+
+       def_API('Z3_mk_abs', AST, (_in(CONTEXT), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_abs(Z3_context c, Z3_ast arg);
+    
     /**
         \brief Create less than.
 
@@ -3797,6 +3806,30 @@ extern "C" {
        def_API('Z3_mk_seq_last_index', AST, (_in(CONTEXT), _in(AST), _in(AST)))
     */
     Z3_ast Z3_API Z3_mk_seq_last_index(Z3_context c, Z3_ast s, Z3_ast substr);
+
+    /**
+      \brief Create a map of the function \c f over the sequence \c s.
+      def_API('Z3_mk_seq_map', AST ,(_in(CONTEXT), _in(AST), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_seq_map(Z3_context c, Z3_ast f, Z3_ast s);
+
+    /**
+     \brief Create a map of the function \c f over the sequence \c s starting at index \c i.
+     def_API('Z3_mk_seq_mapi', AST ,(_in(CONTEXT), _in(AST), _in(AST), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_seq_mapi(Z3_context c, Z3_ast f, Z3_ast i, Z3_ast s);
+
+    /**
+      \brief Create a fold of the function \c f over the sequence \c s with accumulator a.
+      def_API('Z3_mk_seq_foldl', AST ,(_in(CONTEXT), _in(AST), _in(AST), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_seq_foldl(Z3_context c, Z3_ast f, Z3_ast a, Z3_ast s);
+
+    /**
+       \brief Create a fold with index tracking of the function \c f over the sequence \c s with accumulator \c a starting at index \c i.
+       def_API('Z3_mk_seq_foldli', AST ,(_in(CONTEXT), _in(AST), _in(AST), _in(AST), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_mk_seq_foldli(Z3_context c, Z3_ast f, Z3_ast i, Z3_ast a, Z3_ast s);
 
     /**
        \brief Convert string to integer.
@@ -6985,7 +7018,7 @@ extern "C" {
 
        def_API('Z3_solver_from_string', VOID, (_in(CONTEXT), _in(SOLVER), _in(STRING)))
     */
-    void Z3_API Z3_solver_from_string(Z3_context c, Z3_solver s, Z3_string file_name);
+    void Z3_API Z3_solver_from_string(Z3_context c, Z3_solver s, Z3_string str);
 
     /**
        \brief Return the set of asserted formulas on the solver.
@@ -7044,6 +7077,14 @@ extern "C" {
     Z3_ast Z3_API Z3_solver_congruence_next(Z3_context c, Z3_solver s, Z3_ast a);
 
 
+    /**
+       \brief retrieve a 'solution' for \c t as defined by equalities in maintained by solvers.
+       At this point, only linear solution are supported.
+
+       def_API('Z3_solver_solve_for', AST, (_in(CONTEXT), _in(SOLVER), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_solver_solve_for(Z3_context c, Z3_solver s, Z3_ast t);
+    
     /**
        \brief register a callback to that retrieves assumed, inferred and deleted clauses during search.
        
@@ -7184,19 +7225,41 @@ extern "C" {
     void Z3_API Z3_solver_propagate_register_cb(Z3_context c, Z3_solver_callback cb, Z3_ast e);
 
     /**
-       \brief propagate a consequence based on fixed values.
-       This is a callback a client may invoke during the fixed_eh callback.
-       The callback adds a propagation consequence based on the fixed values of the
-       \c ids.
+       \brief propagate a consequence based on fixed values and equalities.       
+       A client may invoke it during the \c propagate_fixed, \c propagate_eq, \c propagate_diseq, and \c propagate_final callbacks.
+       The callback adds a propagation consequence based on the fixed values passed \c ids and equalities \c eqs based on parameters \c lhs, \c rhs.
+       
        The solver might discard the propagation in case it is true in the current state.
        The function returns false in this case; otw. the function returns true.
        At least one propagation in the final callback has to return true in order to
        prevent the solver from finishing.
 
+       Assume the callback has the signature: \c propagate_consequence_eh(context, solver_cb, num_ids, ids, num_eqs, lhs, rhs, consequence).
+       \param c - context
+       \param solver_cb - solver callback
+       \param num_ids - number of fixed terms used as premise to propagation
+       \param ids - array of length \c num_ids containing terms that are fixed in the current scope
+       \param num_eqs - number of equalities used as premise to propagation
+       \param lhs - left side of equalities
+       \param rhs - right side of equalities
+       \param consequence - consequence to propagate. It is typically an atomic formula, but it can be an arbitrary formula. 
+
        def_API('Z3_solver_propagate_consequence', BOOL, (_in(CONTEXT), _in(SOLVER_CALLBACK), _in(UINT), _in_array(2, AST), _in(UINT), _in_array(4, AST), _in_array(4, AST), _in(AST)))
     */
 
     bool Z3_API Z3_solver_propagate_consequence(Z3_context c, Z3_solver_callback cb, unsigned num_fixed, Z3_ast const* fixed, unsigned num_eqs, Z3_ast const* eq_lhs, Z3_ast const* eq_rhs, Z3_ast conseq);
+
+
+    /**
+       \brief provide an initialization hint to the solver. The initialization hint is used to calibrate an initial value of the expression that
+       represents a variable. If the variable is Boolean, the initial phase is set according to \c value. If the variable is an integer or real,
+       the initial Simplex tableau is recalibrated to attempt to follow the value assignment.
+
+       def_API('Z3_solver_set_initial_value', VOID, (_in(CONTEXT), _in(SOLVER), _in(AST), _in(AST)))
+     */
+
+    void Z3_API Z3_solver_set_initial_value(Z3_context c, Z3_solver s, Z3_ast v, Z3_ast val);
+
 
     /**
        \brief Check whether the assertions in a given solver are consistent or not.
