@@ -57,11 +57,10 @@ goal::goal(ast_manager & m, bool proofs_enabled, bool models_enabled, bool core_
     m_ref_count(0),
     m_depth(0),
     m_models_enabled(models_enabled),
-    m_proofs_enabled(proofs_enabled),
+    m_proofs_enabled(proofs_enabled && m.proofs_enabled()),
     m_core_enabled(core_enabled),
     m_inconsistent(false),
     m_precision(PRECISE) {
-    SASSERT(!proofs_enabled || m.proofs_enabled());
     }
 
 goal::goal(goal const & src):
@@ -254,7 +253,7 @@ void goal::assert_expr(expr * f, proof * pr, expr_dependency * d) {
     }
     SASSERT(!proofs_enabled() || pr);
     if (pr) {
-        CTRACE("goal", f != m().get_fact(pr), tout << mk_pp(f, m()) << "\n" << mk_pp(pr, m()) << "\n";);
+        CTRACE(goal, f != m().get_fact(pr), tout << mk_pp(f, m()) << "\n" << mk_pp(pr, m()) << "\n";);
         SASSERT(f == m().get_fact(pr));
         slow_process(f, pr, d);
     }
@@ -296,6 +295,7 @@ void goal::update(unsigned i, expr * f, proof * pr, expr_dependency * d) {
         if (!m_inconsistent) {
             if (m().is_false(out_f)) {
                 push_back(out_f, out_pr, d);
+                m_inconsistent = true;
             }
             else {
                 m().set(m_forms, i, out_f);
@@ -486,22 +486,21 @@ void goal::shrink(unsigned j) {
 /**
    \brief Eliminate true formulas.
 */
-void goal::elim_true() {
-    unsigned sz = size();
-    unsigned j = 0;
-    for (unsigned i = 0; i < sz; i++) {
-        expr * f = form(i);
-        if (m().is_true(f))
-            continue;
-        if (i == j) {
-            j++;
+void goal::elim_true() {    
+    unsigned i = 0, j = 0;
+    for (const auto& [f, dep, pr] : *this) {
+        if (m().is_true(f)) {
+            ++i;
             continue;
         }
-        m().set(m_forms, j, f);
-        m().set(m_proofs, j, m().get(m_proofs, i));
-        if (unsat_core_enabled())
-            m().set(m_dependencies, j, m().get(m_dependencies, i));
-        j++;
+        if (i != j) {
+            m().set(m_forms, j, f);
+            m().set(m_proofs, j, pr);
+            if (unsat_core_enabled())
+                m().set(m_dependencies, j, dep);
+        }
+        ++i;
+        ++j;
     }
     shrink(j);
 }
@@ -539,7 +538,7 @@ void goal::elim_redundancies() {
     expr_ref_fast_mark1 neg_lits(m());
     expr_ref_fast_mark2 pos_lits(m());
     unsigned sz = size();
-    unsigned j  = 0;
+    unsigned j = 0;
     for (unsigned i = 0; i < sz; i++) {
         expr * f = form(i);
         if (m().is_true(f))
@@ -600,7 +599,7 @@ bool goal::is_well_formed() const {
             return false;
 #if 0
         if (pr(i) && m().get_fact(pr(i)) != form(i)) {
-            TRACE("tactic", tout << mk_ismt2_pp(pr(i), m()) << "\n" << mk_ismt2_pp(form(i), m()) << "\n";);
+            TRACE(tactic, tout << mk_ismt2_pp(pr(i), m()) << "\n" << mk_ismt2_pp(form(i), m()) << "\n";);
             SASSERT(m().get_fact(pr(i)) == form(i));
             return false;
         }

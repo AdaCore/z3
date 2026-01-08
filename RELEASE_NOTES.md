@@ -4,11 +4,61 @@ Version 4.next
 ================
 - Planned features
   - sat.euf 
-    - a new CDCL core for SMT queries. It extends the SAT engine with theory solver plugins.
-      the current state is unstable. It lacks efficient ematching.
-  - polysat
-    - native word level bit-vector solving.
-  - introduction of simple induction lemmas to handle a limited repertoire of induction proofs.
+    - CDCL core for SMT queries. It extends the SAT engine with theory solver plugins.
+  - add global incremental pre-processing for the legacy core.
+
+Version 4.15.4
+==============
+- Add methods to create polymorphic datatype constructors over the API. The prior method was that users had to manage 
+  parametricity using their own generation of instances. The updated API allows to work with polymorphic datatype declarations
+  directly.
+- MSVC build by default respect security flags, https://github.com/Z3Prover/z3/pull/7988 
+- Using a new algorithm for smt.threads=k, k > 1 using a shared search tree. Thanks to Ilana Shapiro.
+- Thanks for several pull requests improving usability, including
+  - https://github.com/Z3Prover/z3/pull/7955
+  - https://github.com/Z3Prover/z3/pull/7995
+  - https://github.com/Z3Prover/z3/pull/7947
+
+Version 4.15.3
+==============
+- Add UserPropagator callback option for quantifier instantiations. It allows the user propagator to
+  intercept quantifier instantiations. It can then inspect these in the callback. By returning false, 
+  the callback signals that the instantiation should be discarded by the solver. The user propagator 
+  is then able to apply finer control over instantiations. It can also use this mechanism to delay
+  instantiations.
+- Deprecate z3str3
+
+Version 4.15.2
+==============
+- #7690, #7691 - fix leak introduced in arithmetic solver.
+
+Version 4.15.1
+==============
+- #7672 - fix library header padding for install_name_tool
+- enable E-matching and conditional equations in euf-completion tactic
+- various bug fixes
+
+Version 4.15.0
+==============
+- Improved integer cut algorithms for linear integer arithmetic.
+  It integrates diophantine equation solving with stronger cuts.
+- C and OCaml API for accessing numerics, thanks to Josh Berdine
+- A minimal mcp server in src/api/z3mcp.py that can run locally.
+- Bug fixes.
+
+
+Version 4.14.1
+==============
+- Add ubv_to_int, sbv_to_int, int_to_bv to SMTLIB2 API.
+- Fix nuget package regression omitting Microsoft.Z3.* files
+
+Version 4.14.0
+==============
+- [SLS modulo theories](https://microsoft.github.io/z3guide/programming/Local%20Search/) engine v1 release.
+- API for accessing term [depth and groundness](https://github.com/Z3Prover/z3/pull/7479).
+- Two fixes to relevancy propagation thanks to Can Cebeci. Two instacnes where literals lemmas and axioms were not marked relevant and therefore not propagated to other theories. Theory lemmas are replayed during backjumping and have are now by default marked relevant. 
+- A new API for solving LRA variables modulo constraints.
+- Performance and bug fixes.
 
 Version 4.13.4
 ==============

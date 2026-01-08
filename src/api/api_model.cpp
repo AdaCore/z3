@@ -59,7 +59,7 @@ extern "C" {
         Z3_CATCH;
     }
 
-    Z3_ast_opt Z3_API Z3_model_get_const_interp(Z3_context c, Z3_model m, Z3_func_decl a) {
+    Z3_ast Z3_API Z3_model_get_const_interp(Z3_context c, Z3_model m, Z3_func_decl a) {
         Z3_TRY;
         LOG_Z3_model_get_const_interp(c, m, a);
         RESET_ERROR_CODE();
@@ -160,9 +160,6 @@ extern "C" {
         model * _m = to_model_ref(m);
         params_ref p;
         ast_manager& mgr = mk_c(c)->m();
-        if (!_m->has_solver()) {
-            _m->set_solver(alloc(api::seq_expr_solver, mgr, p));
-        }
         expr_ref result(mgr);
         model::scoped_model_completion _scm(*_m, model_completion);
         result = (*_m)(to_expr(t));
@@ -422,7 +419,7 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    Z3_API char const * Z3_model_to_string(Z3_context c, Z3_model m) {
+    Z3_string Z3_API Z3_model_to_string(Z3_context c, Z3_model m) {
         Z3_TRY;
         LOG_Z3_model_to_string(c, m);
         RESET_ERROR_CODE();

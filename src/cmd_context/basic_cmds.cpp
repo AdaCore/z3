@@ -334,6 +334,52 @@ public:
     }    
 };
 
+class prefer_cmd : public cmd {
+    expr *m_formula = nullptr;
+
+public:
+    prefer_cmd() : cmd("prefer") {}
+    char const *get_usage() const override {
+        return "<formula>";
+    }
+    char const *get_descr(cmd_context &ctx) const override {
+        return "set a preferred formula for the solver";
+    }
+    unsigned get_arity() const override {
+        return 1;
+    }
+    void prepare(cmd_context &ctx) override {
+        m_formula = nullptr;
+    }
+    cmd_arg_kind next_arg_kind(cmd_context &ctx) const override {
+        return CPK_EXPR;
+    }
+    void set_next_arg(cmd_context &ctx, expr *e) override {
+        m_formula = e;
+    }
+    void execute(cmd_context &ctx) override {
+        SASSERT(m_formula);
+        ctx.set_preferred(m_formula);
+    }
+};
+
+class reset_preferences_cmd : public cmd {
+    public:
+    reset_preferences_cmd() : cmd("reset-preferences") {}
+    char const *get_usage() const override {
+        return "";
+    }
+    char const *get_descr(cmd_context &ctx) const override {
+        return "reset all preferred formulas";
+    }
+    unsigned get_arity() const override {
+        return 0;
+    }
+    void execute(cmd_context &ctx) override {
+        ctx.reset_preferred();
+    }
+};
+
 class set_get_option_cmd : public cmd {
 protected:
     symbol      m_true;
@@ -433,7 +479,7 @@ class set_option_cmd : public set_get_option_cmd {
     }
 
     void set_param(cmd_context & ctx, char const * value) {
-        try {
+        try {            
             gparams::set(m_option, value);
             env_params::updt_params();
             ctx.global_params_updated();
@@ -693,7 +739,7 @@ public:
         m_rlimit(":rlimit") {
     }
     char const * get_usage() const override { return "<keyword>"; }
-    char const * get_descr(cmd_context & ctx) const override { return "get information."; }
+    char const * get_descr(cmd_context & ctx) const override { return "(get-info :?) for options."; }
     unsigned get_arity() const override { return 1; }
     cmd_arg_kind next_arg_kind(cmd_context & ctx) const override { return CPK_KEYWORD; }
     void set_next_arg(cmd_context & ctx, symbol const & opt) override {
@@ -707,7 +753,7 @@ public:
             ctx.regular_stream() << "(:name \"Z3\")" << std::endl;
         }
         else if (opt == m_authors) {
-            ctx.regular_stream() << "(:authors \"Leonardo de Moura, Nikolaj Bjorner and Christoph Wintersteiger\")" << std::endl;
+            ctx.regular_stream() << "(:authors \"Leonardo de Moura, Nikolaj Bjorner, Lev Nachmanson and Christoph Wintersteiger\")" << std::endl;
         }
         else if (opt == m_version) {
             ctx.regular_stream() << "(:version \"" << Z3_MAJOR_VERSION << "." << Z3_MINOR_VERSION << "." << Z3_BUILD_NUMBER
@@ -731,8 +777,21 @@ public:
         else if (opt == m_assertion_stack_levels) {
             ctx.regular_stream() << "(:assertion-stack-levels " << ctx.num_scopes() << ")" << std::endl;
         }
+        else if (opt == symbol(":parameters")) {
+            ctx.display_parameters(ctx.regular_stream());
+        }
         else {
-            ctx.print_unsupported(opt, m_line, m_pos);
+            if (opt != symbol(":?"))
+               ctx.print_unsupported(opt, m_line, m_pos);
+            ctx.regular_stream() << "; Suppported get-info parameters:\n";
+            ctx.regular_stream() << "; (get-info :reason-unknown)\n";
+            ctx.regular_stream() << "; (get-info :status)\n";
+            ctx.regular_stream() << "; (get-info :version)\n";
+            ctx.regular_stream() << "; (get-info :authors)\n";
+            ctx.regular_stream() << "; (get-info :error-behavior)\n";
+            ctx.regular_stream() << "; (get-info :parameters)\n";
+            ctx.regular_stream() << "; (get-info :rlimit)\n";
+            ctx.regular_stream() << "; (get-info :assertion-stack-levels)\n";
         }
     }
 };
@@ -913,6 +972,8 @@ void install_basic_cmds(cmd_context & ctx) {
     ctx.insert(alloc(get_info_cmd));
     ctx.insert(alloc(set_info_cmd));
     ctx.insert(alloc(set_initial_value_cmd));
+    ctx.insert(alloc(prefer_cmd));
+    ctx.insert(alloc(reset_preferences_cmd));
     ctx.insert(alloc(get_consequences_cmd));
     ctx.insert(alloc(builtin_cmd, "assert", "<term>", "assert term."));
     ctx.insert(alloc(builtin_cmd, "check-sat", "<boolean-constants>*", "check if the current context is satisfiable. If a list of boolean constants B is provided, then check if the current context is consistent with assigning every constant in B to true."));

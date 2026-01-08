@@ -19,6 +19,7 @@ Revision History:
 #pragma once
 
 #include "ast/quantifier_stat.h"
+#include "ast/simplifiers/dependent_expr_state.h"
 #include "smt/smt_clause.h"
 #include "smt/smt_setup.h"
 #include "smt/smt_enode.h"
@@ -63,8 +64,8 @@ namespace smt {
     class model_generator;
     class context;
 
-    struct cancel_exception : public std::exception {
-        char const * what() const noexcept override { return "smt-canceled"; }
+    struct oom_exception : public z3_error {
+        oom_exception() : z3_error(ERR_MEMOUT) {}
     };
 
     struct enode_pp {
@@ -130,7 +131,12 @@ namespace smt {
         class parallel*             m_par = nullptr;
         unsigned                    m_par_index = 0;
         bool                        m_internalizing_assertions = false;
-        lbool                       m_sls_completed = l_undef;
+        lbool                       m_internal_completed = l_undef;
+
+        scoped_ptr<dependent_expr_simplifier> m_simplifier;
+        scoped_ptr<base_dependent_expr_state> m_fmls;
+
+        svector<double> m_lit_scores[2];
 
 
         // -----------------------------------
@@ -263,6 +269,7 @@ namespace smt {
         // ----------------------------------
         vector<std::pair<expr_ref, expr_ref>> m_values;
         void initialize_value(expr* var, expr* value);
+        void initialize_values();
 
 
         // -----------------------------------
@@ -291,9 +298,9 @@ namespace smt {
 
         bool get_cancel_flag();
 
-        void set_sls_completed() {
-            if (m_sls_completed == l_undef)
-                m_sls_completed = l_true;
+        void set_internal_completed() {
+            if (m_internal_completed == l_undef)
+                m_internal_completed = l_true;
         }
 
         region & get_region() {
@@ -904,6 +911,8 @@ namespace smt {
 
         void add_or_rel_watches(app * n);
 
+        void add_implies_rel_watches(app* n);
+
         void add_ite_rel_watches(app * n);
 
         void mk_not_cnstr(app * n);
@@ -911,6 +920,8 @@ namespace smt {
         void mk_and_cnstr(app * n);
 
         void mk_or_cnstr(app * n);
+
+        void mk_implies_cnstr(app* n);
 
         void mk_iff_cnstr(app * n, bool sign);
 
@@ -1201,7 +1212,7 @@ namespace smt {
             if (act > ACTIVITY_LIMIT)
                 rescale_bool_var_activity();
             m_case_split_queue->activity_increased_eh(v);
-            TRACE("case_split", tout << "v" << v << " " << m_bvar_inc << " -> " << act << "\n";);
+            TRACE(case_split, tout << "v" << v << " " << m_bvar_inc << " -> " << act << "\n";);
         }
 
     protected:
@@ -1287,6 +1298,8 @@ namespace smt {
         void forget_phase_of_vars_in_current_level();
 
         virtual bool resolve_conflict();
+
+        void add_scores(unsigned n, literal const *lits);
 
 
         // -----------------------------------
@@ -1377,13 +1390,13 @@ namespace smt {
 
         // -----------------------------------
         //
-        // Model checking... (must be improved)
+        // Value extraction and solving
         //
         // -----------------------------------
     public:
         bool get_value(enode * n, expr_ref & value);
 
-        bool solve_for(enode* n, expr_ref& term);
+        void solve_for(vector<solution>& sol);
 
         // -----------------------------------
         //
@@ -1469,7 +1482,7 @@ namespace smt {
         unsigned display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents, literal consequent = false_literal, symbol const& logic = symbol::null) const;
         void display_lemma_as_smt_problem(std::ostream & out, unsigned num_antecedents, literal const * antecedents,
                                           unsigned num_antecedent_eqs, enode_pair const * antecedent_eqs,
-                                          literal consequent = false_literal, symbol const& logic = symbol::null) const;
+                                          literal consequent = false_literal, symbol const& logic = symbol::null, enode* x = nullptr, enode* y = nullptr) const;
 
         unsigned display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents,
                                           unsigned num_antecedent_eqs, enode_pair const * antecedent_eqs,
@@ -1575,6 +1588,13 @@ namespace smt {
         bool already_internalized_theory_core(theory * th, expr_ref_vector const & s) const;
 #endif
         bool check_preamble(bool reset_cancel);
+
+        struct search_completion {
+            context& ctx;
+            search_completion(context& ctx) : ctx(ctx) { ctx.m_search_finalized = false; }
+            ~search_completion() { if (!ctx.m_search_finalized) ctx.m_last_search_failure = CANCELED; }
+        };
+        bool m_search_finalized = true;
         lbool check_finalize(lbool r);
 
         // -----------------------------------
@@ -1801,6 +1821,14 @@ namespace smt {
             if (!m_user_propagator)
                 throw default_exception("user propagator must be initialized");
             m_user_propagator->register_decide(r);
+        }
+
+        void user_propagate_register_on_binding(user_propagator::binding_eh_t& t) {
+            m_user_propagator->register_on_binding(t);
+        }
+
+        void register_on_binding(std::function<bool(quantifier* q, expr* inst)>& f) {
+            m_qmanager->register_on_binding(f);
         }
 
         void user_propagate_initialize_value(expr* var, expr* value);

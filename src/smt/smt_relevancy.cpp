@@ -62,6 +62,13 @@ namespace smt {
         void operator()(relevancy_propagator & rp) override;
     };
 
+    class implies_relevancy_eh : public relevancy_eh {
+        app* m_parent;
+    public:
+        implies_relevancy_eh(app* p) :m_parent(p) {}
+        void operator()(relevancy_propagator& rp) override;
+    };
+
     class ite_relevancy_eh : public relevancy_eh {
         app * m_parent;
     public:
@@ -106,6 +113,11 @@ namespace smt {
     relevancy_eh * relevancy_propagator::mk_or_relevancy_eh(app * n) {
         SASSERT(get_manager().is_or(n));
         return mk_relevancy_eh(or_relevancy_eh(n));
+    }
+
+    relevancy_eh* relevancy_propagator::mk_implies_relevancy_eh(app* n) {
+        SASSERT(get_manager().is_implies(n));
+        return mk_relevancy_eh(implies_relevancy_eh(n));
     }
 
     relevancy_eh * relevancy_propagator::mk_and_relevancy_eh(app * n) {
@@ -276,7 +288,7 @@ namespace smt {
                 --i;
                 expr * n = m_relevant_exprs.get(i);
                 m_is_relevant.remove(n->get_id());
-                TRACE("propagate_relevancy", tout << "unmarking:\n" << mk_ismt2_pp(n, get_manager()) << "\n";);
+                TRACE(propagate_relevancy, tout << "unmarking:\n" << mk_ismt2_pp(n, get_manager()) << "\n";);
             }
             m_relevant_exprs.shrink(old_lim);
             m_qhead = m_relevant_exprs.size();
@@ -357,8 +369,38 @@ namespace smt {
                 --j;
                 mark_as_relevant(n->get_arg(j));
             }
-        }
+        } 
         
+        void propagate_relevant_implies(app* n) {
+            SASSERT(get_manager().is_implies(n));
+            lbool val = m_context.find_assignment(n);
+            // If val is l_undef, then the expression
+            // is a root, and no boolean variable was created for it.
+            if (val == l_undef)
+                val = l_true;
+            switch (val) {
+            case l_false:
+                propagate_relevant_app(n);
+                break;
+            case l_undef:
+                break;
+            case l_true: {
+                expr* true_arg = nullptr;
+                auto arg0 = n->get_arg(0);
+                auto arg1 = n->get_arg(1);
+                if (m_context.find_assignment(arg0) == l_false) {
+                    if (!is_relevant_core(arg0))
+                        mark_as_relevant(arg0);
+                    return;
+                }
+                if (m_context.find_assignment(arg1) == l_true) {
+                    if (!is_relevant_core(arg1))
+                        mark_as_relevant(arg1);
+                    return;
+                }
+            }
+            }
+        }
         /**
            \brief Propagate relevancy for an or-application.
         */
@@ -424,18 +466,18 @@ namespace smt {
            \brief Propagate relevancy for an ite-expression.
         */
         void propagate_relevant_ite(app * n) {
-            TRACE("propagate_relevant_ite", tout << "propagating relevancy for #" << n->get_id() << "\n" << mk_pp(n, get_manager()) << "\n";);
+            TRACE(propagate_relevant_ite, tout << "propagating relevancy for #" << n->get_id() << "\n" << mk_pp(n, get_manager()) << "\n";);
             mark_as_relevant(n->get_arg(0));
             switch (m_context.find_assignment(n->get_arg(0))) {
             case l_false:
-                TRACE("propagate_relevant_ite", tout << "marking as relevant: " << mk_pp(n->get_arg(2), get_manager()) << "\n";);
+                TRACE(propagate_relevant_ite, tout << "marking as relevant: " << mk_pp(n->get_arg(2), get_manager()) << "\n";);
                 mark_as_relevant(n->get_arg(2));
                 break;
             case l_undef:
-                TRACE("propagate_relevant_ite", tout << "ite c is unassigned\n";);
+                TRACE(propagate_relevant_ite, tout << "ite c is unassigned\n";);
                 break;
             case l_true:
-                TRACE("propagate_relevant_ite", tout << "marking as relevant: " << mk_pp(n->get_arg(1), get_manager()) << "\n";);
+                TRACE(propagate_relevant_ite, tout << "marking as relevant: " << mk_pp(n->get_arg(1), get_manager()) << "\n";);
                 mark_as_relevant(n->get_arg(1));
                 break;
             }
@@ -456,8 +498,8 @@ namespace smt {
             ast_manager & m = get_manager();
             while (m_qhead < m_relevant_exprs.size()) {
                 expr * n = m_relevant_exprs.get(m_qhead);
-                TRACE("propagate_relevancy_to_args", tout << "propagating relevancy to args of #" << n->get_id() << "\n";);
-                TRACE("propagate_relevancy", tout << "marking as relevant:\n" << mk_bounded_pp(n, m) << "\n";);
+                TRACE(propagate_relevancy_to_args, tout << "propagating relevancy to args of #" << n->get_id() << "\n";);
+                TRACE(propagate_relevancy, tout << "marking as relevant:\n" << mk_bounded_pp(n, m) << "\n";);
                 SASSERT(is_relevant_core(n));
                 m_qhead++;
                 if (is_app(n)) {
@@ -469,6 +511,9 @@ namespace smt {
                             break;
                         case OP_AND:
                             propagate_relevant_and(to_app(n));
+                            break;
+                        case OP_IMPLIES:
+                            propagate_relevant_implies(to_app(n));
                             break;
                         case OP_ITE:
                             propagate_relevant_ite(to_app(n));
@@ -505,6 +550,8 @@ namespace smt {
                     propagate_relevant_or(to_app(n));
                 else if (m.is_and(n))
                     propagate_relevant_and(to_app(n));
+                else if (m.is_implies(n))
+                    propagate_relevant_implies(to_app(n));
             }
             relevancy_ehs * ehs = get_watches(n, val);
             while (ehs != nullptr) {
@@ -528,7 +575,7 @@ namespace smt {
             SASSERT(is_relevant(n));
             unsigned num_args = n->get_num_args();
             for (unsigned i = 0; i < num_args; i++) {
-                CTRACE("relevancy_bug", !is_relevant(n->get_arg(i)), tout << "n: " << mk_ismt2_pp(n, get_manager()) << "\ni: " << i << "\n";);
+                CTRACE(relevancy_bug, !is_relevant(n->get_arg(i)), tout << "n: " << mk_ismt2_pp(n, get_manager()) << "\ni: " << i << "\n";);
                 SASSERT(is_relevant(n->get_arg(i)));
             }
             return true;
@@ -545,7 +592,7 @@ namespace smt {
                     if (m_context.find_assignment(arg) == l_true && is_relevant(arg))
                         return true;
                 }
-                TRACE("check_relevancy", tout << "failed:\n" << mk_ll_pp(n, get_manager()); display(tout););
+                TRACE(check_relevancy, tout << "failed:\n" << mk_ll_pp(n, get_manager()); display(tout););
                 UNREACHABLE();
             }
             return true;
@@ -572,7 +619,7 @@ namespace smt {
             switch (m_context.find_assignment(n->get_arg(0))) {
             case l_false:
                 if (get_manager().is_bool(n)) {
-                    TRACE("ite_bug", tout << mk_bounded_pp(n, get_manager()) << "\n";);
+                    TRACE(ite_bug, tout << mk_bounded_pp(n, get_manager()) << "\n";);
                     SASSERT(is_relevant(n->get_arg(2)));
                 }
                 else {
@@ -604,7 +651,7 @@ namespace smt {
             for (unsigned i = 0; i < sz; i++) {
                 expr * n    = v.get(i);
                 if (is_relevant(n)) {
-                    TRACE("check_relevancy", tout << "checking:\n" << mk_ll_pp(n, get_manager()) << "internalized: " << m_context.find_enode(n) << "\n";);
+                    TRACE(check_relevancy, tout << "checking:\n" << mk_ll_pp(n, get_manager()) << "internalized: " << m_context.find_enode(n) << "\n";);
                     if (m.is_or(n)) {
                         SASSERT(check_relevancy_or(to_app(n), false));
                     }
@@ -644,6 +691,11 @@ namespace smt {
             static_cast<relevancy_propagator_imp&>(rp).propagate_relevant_or(m_parent);
     }
 
+    void implies_relevancy_eh::operator()(relevancy_propagator& rp) {
+        if (rp.is_relevant(m_parent))
+            static_cast<relevancy_propagator_imp&>(rp).propagate_relevant_implies(m_parent);
+    }
+
     void ite_relevancy_eh::operator()(relevancy_propagator & rp) {
         if (rp.is_relevant(m_parent)) {
             static_cast<relevancy_propagator_imp&>(rp).propagate_relevant_ite(m_parent);
@@ -656,13 +708,13 @@ namespace smt {
         rp.mark_as_relevant(m_parent->get_arg(0));
         switch (rp.get_context().get_assignment(m_parent->get_arg(0))) {
         case l_false:
-            TRACE("ite_term_relevancy", tout << "marking else: #" << m_else_eq->get_id() << "\n";);
+            TRACE(ite_term_relevancy, tout << "marking else: #" << m_else_eq->get_id() << "\n";);
             rp.mark_as_relevant(m_else_eq);
             break;
         case l_undef:
             break;
         case l_true:
-            TRACE("ite_term_relevancy", tout << "marking then: #" << m_then_eq->get_id() << "\n";);
+            TRACE(ite_term_relevancy, tout << "marking then: #" << m_then_eq->get_id() << "\n";);
             rp.mark_as_relevant(m_then_eq);
             break;
         }

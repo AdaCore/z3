@@ -8,10 +8,8 @@ DEFINE_TYPE(Z3_symbol);
 DEFINE_TYPE(Z3_config);
 DEFINE_TYPE(Z3_context);
 DEFINE_TYPE(Z3_sort);
-#define Z3_sort_opt Z3_sort
 DEFINE_TYPE(Z3_func_decl);
 DEFINE_TYPE(Z3_ast);
-#define Z3_ast_opt Z3_ast
 DEFINE_TYPE(Z3_app);
 DEFINE_TYPE(Z3_pattern);
 DEFINE_TYPE(Z3_model);
@@ -31,7 +29,6 @@ DEFINE_TYPE(Z3_ast_vector);
 DEFINE_TYPE(Z3_ast_map);
 DEFINE_TYPE(Z3_apply_result);
 DEFINE_TYPE(Z3_func_interp);
-#define Z3_func_interp_opt Z3_func_interp
 DEFINE_TYPE(Z3_func_entry);
 DEFINE_TYPE(Z3_fixedpoint);
 DEFINE_TYPE(Z3_optimize);
@@ -119,6 +116,8 @@ typedef enum
    - Z3_PARAMETER_SORT is used for sort parameters.
    - Z3_PARAMETER_AST is used for expression parameters.
    - Z3_PARAMETER_FUNC_DECL is used for function declaration parameters.
+   - Z3_PARAMETER_INTERNAL is used for parameters that are private to Z3. They cannot be accessed.
+   - Z3_PARAMETER_ZSTRING is used for string parameters. 
 */
 typedef enum
 {
@@ -128,7 +127,9 @@ typedef enum
     Z3_PARAMETER_SYMBOL,
     Z3_PARAMETER_SORT,
     Z3_PARAMETER_AST,
-    Z3_PARAMETER_FUNC_DECL
+    Z3_PARAMETER_FUNC_DECL,
+    Z3_PARAMETER_INTERNAL,
+    Z3_PARAMETER_ZSTRING
 } Z3_parameter_kind;
 
 /**
@@ -363,13 +364,11 @@ typedef enum
 
    - Z3_OP_EXT_ROTATE_RIGHT (extended) Right rotation. Similar to Z3_OP_ROTATE_RIGHT, but it is a binary operator instead of a parametric one.
 
-   - Z3_OP_INT2BV Coerce integer to bit-vector. NB. This function
-       is not supported by the decision procedures. Only the most
-       rudimentary simplification rules are applied to this function.
+   - Z3_OP_INT2BV Coerce integer to bit-vector. 
 
-   - Z3_OP_BV2INT Coerce bit-vector to integer. NB. This function
-       is not supported by the decision procedures. Only the most
-       rudimentary simplification rules are applied to this function.
+   - Z3_OP_BV2INT Coerce bit-vector to integer. 
+
+   - Z3_OP_SBV2INT Coerce signed bit-vector to integer. 
 
    - Z3_OP_CARRY Compute the carry bit in a full-adder.
        The meaning is given by the equivalence
@@ -1102,6 +1101,7 @@ typedef enum {
     Z3_OP_BIT2BOOL,
     Z3_OP_INT2BV,
     Z3_OP_BV2INT,
+    Z3_OP_SBV2INT,
     Z3_OP_CARRY,
     Z3_OP_XOR3,
 
@@ -1440,6 +1440,7 @@ Z3_DECLARE_CLOSURE(Z3_eq_eh,      void, (void* ctx, Z3_solver_callback cb, Z3_as
 Z3_DECLARE_CLOSURE(Z3_final_eh,   void, (void* ctx, Z3_solver_callback cb));
 Z3_DECLARE_CLOSURE(Z3_created_eh, void, (void* ctx, Z3_solver_callback cb, Z3_ast t));
 Z3_DECLARE_CLOSURE(Z3_decide_eh,  void, (void* ctx, Z3_solver_callback cb, Z3_ast t, unsigned idx, bool phase));
+Z3_DECLARE_CLOSURE(Z3_on_binding_eh, bool, (void* ctx, Z3_solver_callback cb, Z3_ast q, Z3_ast inst));
 Z3_DECLARE_CLOSURE(Z3_on_clause_eh, void, (void* ctx, Z3_ast proof_hint, unsigned n, unsigned const* deps, Z3_ast_vector literals));
 
 
@@ -2080,7 +2081,7 @@ extern "C" {
                                             Z3_symbol recognizer,
                                             unsigned num_fields,
                                             Z3_symbol const field_names[],
-                                            Z3_sort_opt const sorts[],
+                                            Z3_sort const sorts[],
                                             unsigned sort_refs[]
                                             );
 
@@ -2127,6 +2128,33 @@ extern "C" {
                                   Z3_constructor constructors[]);
 
     /**
+       \brief Create a parametric datatype with explicit type parameters.
+       
+       This function is similar to #Z3_mk_datatype, except it takes an explicit set of type parameters.
+       The parameters can be type variables created with #Z3_mk_type_variable, allowing the definition
+       of polymorphic datatypes that can be instantiated with different concrete types.
+
+       \param c logical context
+       \param name name of the datatype
+       \param num_parameters number of type parameters (can be 0)
+       \param parameters array of type parameters (type variables or concrete sorts)
+       \param num_constructors number of constructors
+       \param constructors array of constructor specifications
+
+       \sa Z3_mk_datatype
+       \sa Z3_mk_type_variable
+       \sa Z3_mk_datatype_sort
+
+       def_API('Z3_mk_polymorphic_datatype', SORT, (_in(CONTEXT), _in(SYMBOL), _in(UINT), _in_array(2, SORT), _in(UINT), _inout_array(4, CONSTRUCTOR)))
+     */
+    Z3_sort Z3_API Z3_mk_polymorphic_datatype(Z3_context c,
+                                              Z3_symbol name,
+                                              unsigned num_parameters,
+                                              Z3_sort parameters[],
+                                              unsigned num_constructors,
+                                              Z3_constructor constructors[]);
+
+    /**
        \brief create a forward reference to a recursive datatype being declared.
        The forward reference can be used in a nested occurrence: the range of an array
        or as element sort of a sequence. The forward reference should only be used when
@@ -2135,9 +2163,14 @@ extern "C" {
        Forward references can replace the use sort references, that are unsigned integers
        in the \c Z3_mk_constructor call
 
-       def_API('Z3_mk_datatype_sort', SORT, (_in(CONTEXT), _in(SYMBOL)))
+       \param c logical context
+       \param name name of the datatype
+       \param num_params number of sort parameters  
+       \param params array of sort parameters
+
+       def_API('Z3_mk_datatype_sort', SORT, (_in(CONTEXT), _in(SYMBOL), _in(UINT), _in_array(2, SORT)))
      */
-    Z3_sort Z3_API Z3_mk_datatype_sort(Z3_context c, Z3_symbol name);
+    Z3_sort Z3_API Z3_mk_datatype_sort(Z3_context c, Z3_symbol name, unsigned num_params, Z3_sort const params[]);
 
     /**
        \brief Create list of constructors.
@@ -4498,6 +4531,17 @@ extern "C" {
     bool Z3_API Z3_get_finite_domain_sort_size(Z3_context c, Z3_sort s, uint64_t* r);
 
     /**
+        \brief Return the arity (number of dimensions) of the given array sort.
+
+        \pre Z3_get_sort_kind(s) == Z3_ARRAY_SORT
+
+        \sa Z3_get_array_sort_domain_n
+
+        def_API('Z3_get_array_arity', UINT, (_in(CONTEXT), _in(SORT)))
+    */
+    unsigned Z3_API Z3_get_array_arity(Z3_context c, Z3_sort s);
+
+    /**
        \brief Return the domain of the given array sort.
        In the case of a multi-dimensional array, this function returns the sort of the first dimension.
 
@@ -4576,6 +4620,13 @@ extern "C" {
        def_API('Z3_get_tuple_sort_field_decl', FUNC_DECL, (_in(CONTEXT), _in(SORT), _in(UINT)))
     */
     Z3_func_decl Z3_API Z3_get_tuple_sort_field_decl(Z3_context c, Z3_sort t, unsigned i);
+
+    /**
+       \brief Check if \c s is a recursive datatype sort.
+
+       def_API('Z3_is_recursive_datatype_sort', BOOL, (_in(CONTEXT), _in(SORT)))
+     */
+    bool Z3_API Z3_is_recursive_datatype_sort(Z3_context c, Z3_sort s);
 
     /**
         \brief Return number of constructors for datatype.
@@ -4993,6 +5044,16 @@ extern "C" {
     bool Z3_API Z3_is_app(Z3_context c, Z3_ast a);
 
     /**
+      def_API('Z3_is_ground', BOOL, (_in(CONTEXT), _in(AST)))
+    */
+    bool Z3_API Z3_is_ground(Z3_context c, Z3_ast a);
+
+    /**
+      def_API('Z3_get_depth', UINT, (_in(CONTEXT), _in(AST)))
+    */
+    unsigned Z3_API Z3_get_depth(Z3_context c, Z3_ast a);
+
+    /**
       def_API('Z3_is_numeral_ast', BOOL, (_in(CONTEXT), _in(AST)))
     */
     bool Z3_API Z3_is_numeral_ast(Z3_context c, Z3_ast a);
@@ -5087,6 +5148,8 @@ extern "C" {
        \param den denominator.
 
        Return \c true if the numeral value fits in 64 bit numerals, \c false otherwise.
+
+       Equivalent to \c Z3_get_numeral_rational_int64 except that for unsupported expression arguments \c Z3_get_numeral_small signals an error while \c Z3_get_numeral_rational_int64 returns \c false.
 
        \pre Z3_get_ast_kind(a) == Z3_NUMERAL_AST
 
@@ -5498,7 +5561,7 @@ extern "C" {
 
        def_API('Z3_model_get_const_interp', AST, (_in(CONTEXT), _in(MODEL), _in(FUNC_DECL)))
     */
-    Z3_ast_opt Z3_API Z3_model_get_const_interp(Z3_context c, Z3_model m, Z3_func_decl a);
+    Z3_ast Z3_API Z3_model_get_const_interp(Z3_context c, Z3_model m, Z3_func_decl a);
 
     /**
        \brief Test if there exists an interpretation (i.e., assignment) for \c a in the model \c m.
@@ -5519,7 +5582,7 @@ extern "C" {
 
        def_API('Z3_model_get_func_interp', FUNC_INTERP, (_in(CONTEXT), _in(MODEL), _in(FUNC_DECL)))
     */
-    Z3_func_interp_opt Z3_API Z3_model_get_func_interp(Z3_context c, Z3_model m, Z3_func_decl f);
+    Z3_func_interp Z3_API Z3_model_get_func_interp(Z3_context c, Z3_model m, Z3_func_decl f);
 
     /**
        \brief Return the number of constants assigned by the given model.
@@ -6020,7 +6083,6 @@ extern "C" {
 
     /** @name Error Handling */
     /**@{*/
-#ifndef SAFE_ERRORS
     /**
        \brief Return the error code for the last API call.
 
@@ -6046,7 +6108,6 @@ extern "C" {
        \sa Z3_get_error_code
     */
     void Z3_API Z3_set_error_handler(Z3_context c, Z3_error_handler h);
-#endif
 
     /**
        \brief Set an error.
@@ -6255,6 +6316,11 @@ extern "C" {
        \brief Convert a model of the formulas of a goal to a model of an original goal.
        The model may be null, in which case the returned model is valid if the goal was
        established satisfiable.
+
+       When using this feature it is advisable to set the parameter \c model.compact to \c false.
+       It is by default true, which erases variables created by the solver from models.
+       Without access to model values for intermediary variables, values of other variables
+       may end up having the wrong values.
 
        def_API('Z3_goal_convert_model', MODEL, (_in(CONTEXT), _in(GOAL), _in(MODEL)))
     */
@@ -7076,14 +7142,23 @@ extern "C" {
     */
     Z3_ast Z3_API Z3_solver_congruence_next(Z3_context c, Z3_solver s, Z3_ast a);
 
+    /**
+      \brief retrieve explanation for congruence.
+      \pre root(a) = root(b)
+
+      def_API('Z3_solver_congruence_explain', AST, (_in(CONTEXT), _in(SOLVER), _in(AST), _in(AST)))
+    */
+    Z3_ast Z3_API Z3_solver_congruence_explain(Z3_context c, Z3_solver s, Z3_ast a, Z3_ast b);
 
     /**
-       \brief retrieve a 'solution' for \c t as defined by equalities in maintained by solvers.
-       At this point, only linear solution are supported.
+      \brief retrieve a 'solution' for \c variables as defined by equalities in maintained by solvers.
+        At this point, only linear solution are supported.
+        The solution to \c variables may be presented in triangular form, such that
+        variables used in solutions themselves have solutions.
 
-       def_API('Z3_solver_solve_for', AST, (_in(CONTEXT), _in(SOLVER), _in(AST)))
+        def_API('Z3_solver_solve_for', VOID, (_in(CONTEXT), _in(SOLVER), _in(AST_VECTOR), _in(AST_VECTOR), _in(AST_VECTOR)))
     */
-    Z3_ast Z3_API Z3_solver_solve_for(Z3_context c, Z3_solver s, Z3_ast t);
+    void Z3_API Z3_solver_solve_for(Z3_context c, Z3_solver s, Z3_ast_vector variables, Z3_ast_vector terms, Z3_ast_vector guards);
     
     /**
        \brief register a callback to that retrieves assumed, inferred and deleted clauses during search.
@@ -7183,6 +7258,17 @@ extern "C" {
     */
     void Z3_API Z3_solver_propagate_decide(Z3_context c, Z3_solver s, Z3_decide_eh decide_eh);
 
+
+    /**
+       \brief register a callback when the solver instantiates a quantifier.
+       If the callback returns false, the actual instantiation of the quantifier is blocked.
+       This allows the user propagator selectively prioritize instantiations without relying on default
+       or configured weights.
+       
+       def_API('Z3_solver_propagate_on_binding', VOID, (_in(CONTEXT), _in(SOLVER), _fnptr(Z3_on_binding_eh)))
+    */
+
+    void Z3_API Z3_solver_propagate_on_binding(Z3_context c, Z3_solver s, Z3_on_binding_eh on_binding_eh);
     /**
         Sets the next (registered) expression to split on.
         The function returns false and ignores the given expression in case the expression is already assigned internally

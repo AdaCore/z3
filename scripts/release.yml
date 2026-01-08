@@ -6,7 +6,7 @@
 trigger: none
 
 variables:
-  ReleaseVersion: '4.13.4'
+  ReleaseVersion: '4.15.4'  # TODO: Auto-read from VERSION.txt when Azure DevOps supports it better
 
 stages:
 
@@ -16,6 +16,7 @@ stages:
 
   - job: MacBuild
     displayName: "Mac Build"
+    timeoutInMinutes: 90
     pool:
       vmImage: "macOS-13"
     steps:
@@ -45,6 +46,7 @@ stages:
 
   - job: MacBuildArm64
     displayName: "Mac ARM64 Build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "macOS-13"
     steps:
@@ -88,6 +90,7 @@ stages:
 
   - job: UbuntuArm64
     displayName: "Ubuntu ARM64 build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "ubuntu-latest"
     steps:
@@ -111,6 +114,7 @@ stages:
 
   - job: UbuntuDoc
     displayName: "Ubuntu Doc build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "ubuntu-latest"
     steps:
@@ -147,6 +151,7 @@ stages:
 
   - job: "ManylinuxPythonBuildAmd64"
     displayName: "Python bindings (manylinux Centos AMD64) build"
+    timeoutInMinutes: 90
     pool:
       vmImage: "ubuntu-latest"
     container: "quay.io/pypa/manylinux2014_x86_64:latest"
@@ -168,6 +173,7 @@ stages:
 
   - job: ManyLinuxPythonBuildArm64
     displayName: "Python bindings (manylinux Centos ARM64 cross) build"
+    timeoutInMinutes: 90    
     variables:
       name: ManyLinux
       python: "/opt/python/cp37-cp37m/bin/python"
@@ -235,6 +241,11 @@ stages:
         artifact: 'WindowsBuild-x64'
         path: $(Agent.TempDirectory)\package
     - task: DownloadPipelineArtifact@2
+      displayName: 'Download Win ARM64 Build'
+      inputs:
+        artifact: 'WindowsBuild-arm64'
+        path: $(Agent.TempDirectory)\package
+    - task: DownloadPipelineArtifact@2
       displayName: 'Download Ubuntu Build'
       inputs:
         artifact: 'UbuntuBuild'
@@ -255,9 +266,9 @@ stages:
         artifact: 'MacArm64'
         path: $(Agent.TempDirectory)\package
 
-    - task: NuGetToolInstaller@0
+    - task: NuGetToolInstaller@1
       inputs:
-        versionSpec: 5.x
+        versionSpec: 6.x
         checkLatest: false        
     - task: PythonScript@0
       displayName: 'Python: assemble files'
@@ -278,64 +289,6 @@ stages:
       inputs:
         command: custom
         arguments: 'pack $(Agent.TempDirectory)\package\out\Microsoft.Z3.sym.nuspec -OutputDirectory $(Build.ArtifactStagingDirectory) -Verbosity detailed -Symbols -SymbolPackageFormat snupkg -BasePath $(Agent.TempDirectory)\package\out' 
-    - task: EsrpCodeSigning@2
-      condition: eq(1,0)
-      continueOnError: true
-      displayName: 'Sign Package'
-      inputs:
-        ConnectedServiceName: 'z3-esrp-signing-2'
-        FolderPath: $(Build.ArtifactStagingDirectory)
-        Pattern: Microsoft.Z3.$(ReleaseVersion).nupkg
-        signConfigType: 'inlineSignParams'
-        inlineOperation: |
-          [
-            {
-              "KeyCode" : "CP-401405",
-              "OperationCode" : "NuGetSign",
-              "Parameters" : {},
-              "ToolName" : "sign",
-              "ToolVersion" : "2.0"
-            },
-            {
-              "KeyCode" : "CP-401405",
-              "OperationCode" : "NuGetVerify",
-              "Parameters" : {},
-              "ToolName" : "sign",
-              "ToolVersion" : "2.0"
-            }
-          ]
-        SessionTimeout: '60'
-        MaxConcurrency: '50'
-        MaxRetryAttempts: '5'
-    - task: EsrpCodeSigning@2
-      displayName: 'Sign Symbol Package'
-      condition: eq(1,0)
-      continueOnError: true
-      inputs:
-        ConnectedServiceName: 'z3-esrp-signing-2'
-        FolderPath: $(Build.ArtifactStagingDirectory)
-        Pattern: Microsoft.Z3.$(ReleaseVersion).snupkg
-        signConfigType: 'inlineSignParams'
-        inlineOperation: |
-          [
-            {
-              "KeyCode" : "CP-401405",
-              "OperationCode" : "NuGetSign",
-              "Parameters" : {},
-              "ToolName" : "sign",
-              "ToolVersion" : "2.0"
-            },
-            {
-              "KeyCode" : "CP-401405",
-              "OperationCode" : "NuGetVerify",
-              "Parameters" : {},
-              "ToolName" : "sign",
-              "ToolVersion" : "2.0"
-            }
-          ]
-        SessionTimeout: '60'
-        MaxConcurrency: '50'
-        MaxRetryAttempts: '5'        
     - task: PublishPipelineArtifact@1
       inputs:
         targetPath: $(Build.ArtifactStagingDirectory)
@@ -357,9 +310,9 @@ stages:
       inputs:
         artifact: 'WindowsBuild-x86'
         path: $(Agent.TempDirectory)\package
-    - task: NuGetToolInstaller@0
+    - task: NuGetToolInstaller@1
       inputs:
-        versionSpec: 5.x
+        versionSpec: 6.x
         checkLatest: false        
     - task: PythonScript@0
       displayName: 'Python: assemble files'
@@ -381,64 +334,6 @@ stages:
       inputs:
         command: custom
         arguments: 'pack $(Agent.TempDirectory)\package\out\Microsoft.Z3.x86.sym.nuspec -OutputDirectory $(Build.ArtifactStagingDirectory) -Verbosity detailed -Symbols -SymbolPackageFormat snupkg -BasePath $(Agent.TempDirectory)\package\out' 
-    - task: EsrpCodeSigning@2
-      condition: eq(1,0)
-      continueOnError: true
-      displayName: 'Sign Package'
-      inputs:
-        ConnectedServiceName: 'z3-esrp-signing-2'
-        FolderPath: $(Build.ArtifactStagingDirectory)
-        Pattern: Microsoft.Z3.x86.$(ReleaseVersion).nupkg
-        signConfigType: 'inlineSignParams'
-        inlineOperation: |
-          [
-            {
-              "KeyCode" : "CP-401405",
-              "OperationCode" : "NuGetSign",
-              "Parameters" : {},
-              "ToolName" : "sign",
-              "ToolVersion" : "1.0"
-            },
-            {
-              "KeyCode" : "CP-401405",
-              "OperationCode" : "NuGetVerify",
-              "Parameters" : {},
-              "ToolName" : "sign",
-              "ToolVersion" : "1.0"
-            }
-          ]
-        SessionTimeout: '60'
-        MaxConcurrency: '50'
-        MaxRetryAttempts: '5'
-    - task: EsrpCodeSigning@2
-      condition: eq(1,0)
-      continueOnError: true
-      displayName: 'Sign Symbol Package'
-      inputs:
-        ConnectedServiceName: 'z3-esrp-signing-2'
-        FolderPath: $(Build.ArtifactStagingDirectory)
-        Pattern: Microsoft.Z3.x86.$(ReleaseVersion).snupkg
-        signConfigType: 'inlineSignParams'
-        inlineOperation: |
-          [
-            {
-              "KeyCode" : "CP-401405",
-              "OperationCode" : "NuGetSign",
-              "Parameters" : {},
-              "ToolName" : "sign",
-              "ToolVersion" : "1.0"
-            },
-            {
-              "KeyCode" : "CP-401405",
-              "OperationCode" : "NuGetVerify",
-              "Parameters" : {},
-              "ToolName" : "sign",
-              "ToolVersion" : "1.0"
-            }
-          ]
-        SessionTimeout: '60'
-        MaxConcurrency: '50'
-        MaxRetryAttempts: '5'        
     - task: PublishPipelineArtifact@1
       inputs:
         targetPath: $(Build.ArtifactStagingDirectory)
@@ -448,7 +343,7 @@ stages:
   - job: Python
     displayName: "Python packaging"
     pool:
-      vmImage: "ubuntu-latest"
+      vmImage: "ubuntu-24.04"
     steps:
     - task: DownloadPipelineArtifact@2
       displayName: 'Download macOS Build'
@@ -564,16 +459,16 @@ stages:
       inputs:
         artifact: 'NuGet32'
         path: $(Agent.TempDirectory)	
-    - task: GitHubRelease@0
+    - task: GitHubRelease@1
       inputs:
         gitHubConnection: Z3Prover
         repositoryName: $(Build.Repository.Name)
         action: 'create'
         target: '$(Build.SourceVersion)'
-        tagSource: 'manual'
+        tagSource: 'userSpecifiedTag'
         tag: 'z3-$(ReleaseVersion)'
         title: 'z3-$(ReleaseVersion)'
-        releaseNotesSource: 'input'
+        releaseNotesSource: 'inline'
         releaseNotes: '$(ReleaseVersion) release'
         assets: '$(Agent.TempDirectory)/*.*'
         isDraft: true
@@ -581,7 +476,7 @@ stages:
 
      
   - job: NuGetPublish
-    condition: eq(0,1)
+    condition: eq(1,1)
     displayName: "Publish to NuGet.org"
     steps:
     - task: DownloadPipelineArtifact@2
@@ -589,9 +484,9 @@ stages:
       inputs:
         artifact: 'NuGetPackage'
         path: $(Agent.TempDirectory)
-    - task: NuGetToolInstaller@0
+    - task: NuGetToolInstaller@1
       inputs:
-        versionSpec: 5.x
+        versionSpec: 6.x
         checkLatest: false
     - task: NuGetCommand@2
       inputs:

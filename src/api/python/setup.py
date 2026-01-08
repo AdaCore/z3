@@ -88,6 +88,11 @@ else:
     LIBRARY_FILE = "libz3.so"
     EXECUTABLE_FILE = "z3"
 
+# check if cmake is available, and pull it in via PyPI if necessary
+SETUP_REQUIRES = []
+if not shutil.which("cmake"):
+    SETUP_REQUIRES += ["cmake"]
+
 def rmtree(tree):
     if os.path.exists(tree):
         shutil.rmtree(tree, ignore_errors=False)
@@ -108,14 +113,21 @@ def _clean_native_build():
 
 def _z3_version():
     post = os.getenv('Z3_VERSION_SUFFIX', '')
+    print("z3_version", "release dir", RELEASE_DIR)   
     if RELEASE_DIR is None:
-        fn = os.path.join(SRC_DIR, 'scripts', 'mk_project.py')
-        if os.path.exists(fn):
-            with open(fn) as f:
-                for line in f:
-                    n = re.match(r".*set_version\((.*), (.*), (.*), (.*)\).*", line)
-                    if not n is None:
-                        return n.group(1) + '.' + n.group(2) + '.' + n.group(3) + '.' + n.group(4) + post
+        dirs = [SRC_DIR, ROOT_DIR, SRC_DIR_REPO, SRC_DIR_LOCAL, os.path.join(ROOT_DIR, '..', '..')]
+        for d in dirs:
+            if os.path.exists(d):
+               print(d, ": ", os.listdir(d))
+        fns = [os.path.join(d, 'scripts', 'VERSION.txt') for d in dirs]        
+        for fn in fns:
+            print("loading version file", fn, "exists", os.path.exists(fn))
+            if os.path.exists(fn):
+                with open(fn) as f:
+                    for line in f:
+                        n = re.match(r"(.*)\.(.*)\.(.*)\.(.*)", line)
+                        if not n is None:
+                            return n.group(1) + '.' + n.group(2) + '.' + n.group(3) + '.' + n.group(4) + post
         return "?.?.?.?"
     else:
         version = RELEASE_METADATA[0]
@@ -240,6 +252,7 @@ def _copy_sources():
     shutil.rmtree(SRC_DIR_LOCAL, ignore_errors=True)
     os.mkdir(SRC_DIR_LOCAL)
 
+#   shutil.copy(os.path.join(SRC_DIR_REPO, 'LICENSE.txt'), ROOT_DIR)
     shutil.copy(os.path.join(SRC_DIR_REPO, 'LICENSE.txt'), SRC_DIR_LOCAL)
     shutil.copy(os.path.join(SRC_DIR_REPO, 'z3.pc.cmake.in'), SRC_DIR_LOCAL)
     shutil.copy(os.path.join(SRC_DIR_REPO, 'CMakeLists.txt'), SRC_DIR_LOCAL)
@@ -278,7 +291,7 @@ class sdist(_sdist):
 # The Azure Dev Ops pipelines use internal OS version tagging that don't correspond
 # to releases.
 
-internal_build_re = re.compile("(.+)\_7")
+internal_build_re = re.compile("(.+)_7")
 
 class bdist_wheel(_bdist_wheel):
 
@@ -298,6 +311,7 @@ class bdist_wheel(_bdist_wheel):
                 # linux tags cannot be deployed - they must be auditwheel'd to pick the right compatibility tag based on imported libc symbol versions
                 ("linux", "x86_64"): "linux_x86_64",
                 ("linux", "aarch64"): "linux_aarch64",
+                ('linux', "riscv64"): "linux_riscv64",
                 # windows arm64 is not supported by pypi yet
                 ("win", "x64"): "win_amd64",
                 ("win", "x86"): "win32",
@@ -327,6 +341,7 @@ setup(
     license='MIT License',
     keywords=['z3', 'smt', 'sat', 'prover', 'theorem'],
     packages=['z3'],
+    setup_requires = SETUP_REQUIRES,
     install_requires = ["importlib-resources; python_version < '3.9'"],
     include_package_data=True,
     package_data={

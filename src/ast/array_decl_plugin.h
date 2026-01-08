@@ -33,6 +33,18 @@ inline sort* get_array_domain(sort const * s, unsigned idx) {
     return to_sort(s->get_parameter(idx).get_ast());
 }
 
+inline expr_container array_select_indices(app* e) {
+    return expr_container(e->get_args() + 1, e->get_args() + e->get_num_args());
+}
+
+inline expr_container array_store_indices(app* e) {
+    return expr_container(e->get_args() + 1, e->get_args() + e->get_num_args() - 1);
+}
+
+inline expr* array_store_elem(app* e) {
+    return e->get_arg(e->get_num_args() - 1);
+}
+
 enum array_sort_kind {
     ARRAY_SORT,
     _SET_SORT
@@ -231,6 +243,11 @@ public:
     app * mk_select(expr* a, expr* i) const {
         expr* args[2] = { a, i };
         return mk_select(2, args);
+    }
+
+    app* mk_select(expr* a, expr* i, expr* j) const {
+        expr* args[3] = { a, i, j };
+        return mk_select(3, args);
     }
 
     app * mk_select(unsigned num_args, expr * const * args) const {

@@ -19,7 +19,7 @@ Revision History:
 #pragma once
 
 #include "ast/ast.h"
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 
 struct static_features;
 namespace smt {
@@ -108,7 +108,7 @@ namespace smt {
         void setup_mi_arith();
         void setup_lra_arith();
         void setup_fpa();
-        void setup_str();
+        void setup_relevancy(static_features& st);
 
     public:
         setup(context & c, smt_params & params);

@@ -46,6 +46,7 @@ Outline of a presumably better scheme:
 #include "ast/simplifiers/solve_context_eqs.h"
 #include "ast/converters/generic_model_converter.h"
 #include "params/tactic_params.hpp"
+#include "params/smt_params_helper.hpp"
 
 
 namespace euf {
@@ -118,7 +119,10 @@ namespace euf {
                     SASSERT(j == var2id(v));
                     if (m_fmls.frozen(v))
                         continue;
-                    
+
+                    if (!m_config.m_enable_non_ground && has_quantifiers(t)) 
+                        continue;                        
+
                     bool is_safe = true;                    
                     unsigned todo_sz = todo.size();
 
@@ -126,6 +130,8 @@ namespace euf {
                     // all time-stamps must be at or above current level
                     // unexplored variables that are part of substitution are appended to work list.
                     SASSERT(m_todo.empty());
+
+
                     m_todo.push_back(t);
                     expr_fast_mark1 visited;
                     while (!m_todo.empty()) {
@@ -188,7 +194,7 @@ namespace euf {
             // because all cached values there do not depend on v.
         }
 
-        TRACE("solve_eqs",
+        TRACE(solve_eqs,
             tout << "after normalizing variables\n";
         for (unsigned id : m_subst_ids) {
             auto const& eq = m_next[id][0];
@@ -223,6 +229,9 @@ namespace euf {
     }
     
     void solve_eqs::reduce() {
+
+        if (!m_config.m_enabled)
+            return;
 
         m_fmls.freeze_suffix();
 
@@ -300,13 +309,13 @@ namespace euf {
             return true;
         unsigned num = 0;
         m_num_occs.find(t, num);
-        TRACE("solve_eqs_check_occs", tout << mk_ismt2_pp(t, m) << " num_occs: " << num << " max: " << m_config.m_max_occs << "\n";);
+        TRACE(solve_eqs_check_occs, tout << mk_ismt2_pp(t, m) << " num_occs: " << num << " max: " << m_config.m_max_occs << "\n";);
         return num <= m_config.m_max_occs;
     }
 
     void solve_eqs::save_subst(vector<dependent_expr> const& old_fmls) {
         if (!m_subst->empty())   
-            m_fmls.model_trail().push(m_subst.detach(), old_fmls);                
+            m_fmls.model_trail().push(m_subst.detach(), old_fmls, false);                
     }
 
     void solve_eqs::filter_unsafe_vars() {
@@ -330,6 +339,9 @@ namespace euf {
         for (auto* ex : m_extract_plugins)
             ex->updt_params(p);
         m_rewriter.updt_params(p);
+        smt_params_helper sp(p);
+        m_config.m_enabled = sp.solve_eqs();
+        m_config.m_enable_non_ground = sp.solve_eqs_non_ground();
     }
 
     void solve_eqs::collect_param_descrs(param_descrs& r) {

@@ -7,9 +7,12 @@ z3_add_component(euf
     euf_enode.cpp
     euf_etable.cpp
     euf_justification.cpp
+    euf_mam.cpp
     euf_plugin.cpp
     euf_specrel_plugin.cpp
+    ho_matcher.cpp
   COMPONENT_DEPENDENCIES
     ast
     util
+    rewriter
 )

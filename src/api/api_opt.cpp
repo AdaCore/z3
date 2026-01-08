@@ -154,7 +154,7 @@ extern "C" {
         bool     use_ctrl_c  = to_optimize_ptr(o)->get_params().get_bool("ctrl_c", true);
         api::context::set_interruptable si(*(mk_c(c)), eh);        
         {
-            scoped_ctrl_c ctrlc(eh, false, use_ctrl_c);
+            scoped_ctrl_c ctrlc(eh, use_ctrl_c);
             scoped_timer timer(timeout, &eh);
             scoped_rlimit _rlimit(mk_c(c)->m().limit(), rlimit);
             try {
@@ -313,7 +313,7 @@ extern "C" {
         param_descrs descrs;
         to_optimize_ptr(d)->collect_param_descrs(descrs);
         descrs.display(buffer);
-        return mk_c(c)->mk_external_string(buffer.str());
+        return mk_c(c)->mk_external_string(std::move(buffer).str());
         Z3_CATCH_RETURN("");
     }
 

@@ -29,6 +29,12 @@ namespace smt {
     class model_generator;
     class model_value_proc;
 
+    struct solution {
+        expr* var;
+        expr_ref term;
+        expr_ref guard;
+    };
+
     class theory {
     protected:
         theory_id       m_id;
@@ -277,7 +283,6 @@ namespace smt {
         /**
            \brief This method is called by smt_context before the search starts
            to get any extra assumptions the theory wants to use.
-           (See theory_str for an example)
         */
         virtual void add_theory_assumptions(expr_ref_vector & assumptions) {
         }
@@ -506,22 +511,22 @@ namespace smt {
         */
         template<typename VarValueTable>
         bool assume_eqs(VarValueTable & table) {
-            TRACE("assume_eqs", tout << "starting...\n";);
+            TRACE(assume_eqs, tout << "starting...\n";);
             table.reset();
             bool result   = false;
             int num       = get_num_vars();
             for (theory_var v = 0; v < num; v++) {
                 enode * n        = get_enode(v);
                 theory_var other = null_theory_var;
-                TRACE("assume_eqs",
+                TRACE(assume_eqs,
                       tout << "#" << n->get_owner_id() << " is_relevant_and_shared: " << is_relevant_and_shared(n) << "\n";);
                 if (n != nullptr && is_relevant_and_shared(n)) {
                     other = table.insert_if_not_there(v);
                     if (other != v) {
                         enode * n2 = get_enode(other);
-                        TRACE("assume_eqs", tout << "value(#" << n->get_owner_id() << ") = value(#" << n2->get_owner_id() << ")\n";);
+                        TRACE(assume_eqs, tout << "value(#" << n->get_owner_id() << ") = value(#" << n2->get_owner_id() << ")\n";);
                         if (assume_eq(n, n2)) {
-                            TRACE("assume_eqs", tout << "new assumed eq\n";);
+                            TRACE(assume_eqs, tout << "new assumed eq\n";);
                             result = true;
                         }
                     }
@@ -605,7 +610,7 @@ namespace smt {
 
         virtual char const * get_name() const { return "unknown"; }
 
-        virtual bool solve_for(enode* n, expr_ref& r) { return false; }
+        virtual void solve_for(vector<solution>& s) {}
 
         // -----------------------------------
         //

@@ -98,27 +98,128 @@ of z3 is required that may not match with the system version. With the following
 cmake file of your project, z3 version 4.12.1 is downloaded to the build directory and the
 cmake targets are added to the project:
 
-```
-FetchContent_Declare(z3
+```cmake
+include(FetchContent)
+FetchContent_Declare(Z3
         GIT_REPOSITORY https://github.com/Z3Prover/z3
-        GIT_TAG        z3-4.12.1
+        GIT_TAG        z3-4.15.3
 )
-FetchContent_MakeAvailable(z3)
+FetchContent_MakeAvailable(Z3)
+
+# Add the C++ API include directory for z3++.h
+if(TARGET libz3)
+    target_include_directories(libz3 INTERFACE
+        $<BUILD_INTERFACE:${z3_SOURCE_DIR}/src/api/c++>
+    )
+endif()
 ```
 
-The header files can be added to the included directories as follows:
+Once fetched, you can link the z3 library to your target:
 
-```
-include_directories( ${z3_SOURCE_DIR}/src/api )
+```cmake
+target_link_libraries(yourTarget PRIVATE libz3)
 ```
 
-Finally, the z3 library can be linked to a `yourTarget` using
+**Important notes for FetchContent approach**:
+- The target name is `libz3` (referring to the library target from `src/CMakeLists.txt`)
+- An additional include directory for `src/api/c++` is added to enable `#include "z3++.h"` in C++ code
+- Without the additional include directory, you would need `#include "c++/z3++.h"` instead
 
-```
-target_link_libraries(yourTarget libz3)
-```
-Note that this is `libz3` not `z3` (`libz3` refers to the library target from `src/CMakeLists.txt`).
+**Recommended: Create an alias for consistency with system installs**:
 
+```cmake
+# Create an alias for consistency with system install
+if(NOT TARGET z3::libz3)
+    add_library(z3::libz3 ALIAS libz3)
+endif()
+target_link_libraries(yourTarget PRIVATE z3::libz3)
+```
+
+#### Using system-installed Z3
+
+If you have Z3 installed on your system (e.g., via package manager or by building and installing Z3 yourself), you can use CMake's `find_package` to locate it:
+
+```cmake
+set(Z3_MIN_VERSION "4.15.3")
+find_package(Z3 ${Z3_MIN_VERSION} REQUIRED CONFIG)
+```
+
+Once found, you can link to Z3 using the exported target (recommended):
+
+```cmake
+target_link_libraries(yourTarget PRIVATE z3::libz3)
+```
+
+**Alternative using variables** (for compatibility with older CMake code):
+
+```cmake
+# For C projects
+target_include_directories(yourTarget PRIVATE ${Z3_C_INCLUDE_DIRS})
+target_link_libraries(yourTarget PRIVATE ${Z3_LIBRARIES})
+
+# For C++ projects  
+target_include_directories(yourTarget PRIVATE ${Z3_CXX_INCLUDE_DIRS})
+target_link_libraries(yourTarget PRIVATE ${Z3_LIBRARIES})
+```
+
+The `find_package(Z3 CONFIG)` approach uses Z3's provided `Z3Config.cmake` file, which is installed to a standard location (typically `<prefix>/lib/cmake/z3/`). If CMake cannot automatically find Z3, you can help it by setting `-DZ3_DIR=<path>` where `<path>` is the directory containing the `Z3Config.cmake` file.
+
+**Note**: This approach requires that Z3 was built and installed using CMake. Z3 installations from the Python build system may not provide the necessary CMake configuration files. The exported target `z3::libz3` automatically provides the correct include directories and linking flags.
+
+#### Using system-installed Z3 with FetchContent fallback
+
+This approach combines the benefits of both methods above: it uses a system-installed Z3 if available and meets the minimum version requirement, otherwise falls back to fetching Z3 from the repository. This is often the most practical approach for projects.
+
+```cmake
+set(Z3_MIN_VERSION "4.15.3")
+
+# First, try to find Z3 on the system
+find_package(Z3 ${Z3_MIN_VERSION} CONFIG QUIET)
+
+if(Z3_FOUND)
+    message(STATUS "Found system Z3 version ${Z3_VERSION_STRING}")
+    # Z3_LIBRARIES will contain z3::libz3
+else()
+    message(STATUS "System Z3 not found or version too old, fetching Z3 ${Z3_MIN_VERSION}")
+    
+    # Fallback to FetchContent
+    include(FetchContent)
+    FetchContent_Declare(Z3
+        GIT_REPOSITORY https://github.com/Z3Prover/z3
+        GIT_TAG        z3-${Z3_MIN_VERSION}
+    )
+    FetchContent_MakeAvailable(Z3)
+    
+    # Add the C++ API include directory for z3++.h
+    if(TARGET libz3)
+        target_include_directories(libz3 INTERFACE
+            $<BUILD_INTERFACE:${z3_SOURCE_DIR}/src/api/c++>
+        )
+    endif()
+    
+    # Create an alias to match the system install target name
+    if(NOT TARGET z3::libz3)
+        add_library(z3::libz3 ALIAS libz3)
+    endif()
+endif()
+
+# Now use Z3 consistently regardless of how it was found
+target_link_libraries(yourTarget PRIVATE z3::libz3)
+```
+
+**Key benefits of this approach:**
+
+- **Consistent interface**: Both paths result in the same `z3::libz3` target
+- **Version control**: Ensures minimum version requirements are met
+- **Flexible deployment**: Works whether Z3 is pre-installed or not
+- **Proper linking**: Uses CMake targets which handle include directories and linking automatically
+
+**Important notes:**
+
+- Use `z3::libz3` target instead of raw library names for better CMake integration
+- The target automatically provides the correct include directories, so no need for manual `target_include_directories`
+- When using FetchContent, an alias is created to ensure target name consistency
+- Set `QUIET` in `find_package` to avoid error messages when Z3 isn't found
 
 
 ### Ninja
@@ -264,6 +365,35 @@ build type when invoking ``cmake`` by passing ``-DCMAKE_BUILD_TYPE=<build_type>`
 For multi-configuration generators (e.g. Visual Studio) you don't set the build type
 when invoking CMake and instead set the build type within Visual Studio itself.
 
+## MSVC Security Features
+
+When building with Microsoft Visual C++ (MSVC), Z3 automatically enables several security features by default:
+
+### Control Flow Guard (CFG)
+- **CMake Option**: `Z3_ENABLE_CFG` - Defaults to `ON` for MSVC builds
+- **Compiler flag**: `/guard:cf` - Automatically enabled when `Z3_ENABLE_CFG=ON`
+- **Linker flag**: `/GUARD:CF` - Automatically enabled when `Z3_ENABLE_CFG=ON`
+- **Purpose**: Control Flow Guard analyzes control flow for indirect call targets at compile time and inserts runtime verification code to detect attempts to compromise your code by redirecting control flow to attacker-controlled locations
+- **Note**: Automatically enables `/DYNAMICBASE` as required by `/GUARD:CF`
+
+### Address Space Layout Randomization (ASLR)
+- **Linker flag**: `/DYNAMICBASE` - Enabled when Control Flow Guard is active
+- **Purpose**: Randomizes memory layout to make exploitation more difficult
+- **Note**: Required for Control Flow Guard to function properly
+
+### Incompatibilities
+Control Flow Guard is incompatible with:
+- `/ZI` (Edit and Continue debug information format)
+- `/clr` (Common Language Runtime compilation)
+
+When these incompatible options are detected, Control Flow Guard will be automatically disabled with a warning message.
+
+### Disabling Control Flow Guard
+To disable Control Flow Guard, set the CMake option:
+```bash
+cmake -DZ3_ENABLE_CFG=OFF ../
+```
+
 ## Useful options
 
 The following useful options can be passed to CMake whilst configuring.
@@ -292,6 +422,9 @@ The following useful options can be passed to CMake whilst configuring.
 * ``Z3_INSTALL_JAVA_BINDINGS`` - BOOL. If set to ``TRUE`` and ``Z3_BUILD_JAVA_BINDINGS`` is ``TRUE`` then running the ``install`` target will install Z3's Java bindings.
 * ``Z3_JAVA_JAR_INSTALLDIR`` - STRING. The path to directory to install the Z3 Java ``.jar`` file. This path should be relative to ``CMAKE_INSTALL_PREFIX``.
 * ``Z3_JAVA_JNI_LIB_INSTALLDIRR`` - STRING. The path to directory to install the Z3 Java JNI bridge library. This path should be relative to ``CMAKE_INSTALL_PREFIX``.
+* ``Z3_BUILD_OCAML_BINDINGS`` - BOOL. If set to ``TRUE`` then Z3's OCaml bindings will be built.
+* ``Z3_BUILD_JULIA_BINDINGS`` - BOOL. If set to ``TRUE`` then Z3's Julia bindings will be built.
+* ``Z3_INSTALL_JULIA_BINDINGS`` - BOOL. If set to ``TRUE`` and ``Z3_BUILD_JULIA_BINDINGS`` is ``TRUE`` then running the ``install`` target will install Z3's Julia bindings.
 * ``Z3_INCLUDE_GIT_DESCRIBE`` - BOOL. If set to ``TRUE`` and the source tree of Z3 is a git repository then the output of ``git describe`` will be included in the build.
 * ``Z3_INCLUDE_GIT_HASH`` - BOOL. If set to ``TRUE`` and the source tree of Z3 is a git repository then the git hash will be included in the build.
 * ``Z3_BUILD_DOCUMENTATION`` - BOOL. If set to ``TRUE`` then documentation for the API bindings can be built by invoking the ``api_docs`` target.
@@ -300,8 +433,11 @@ The following useful options can be passed to CMake whilst configuring.
 * ``Z3_ALWAYS_BUILD_DOCS`` - BOOL. If set to ``TRUE`` and ``Z3_BUILD_DOCUMENTATION`` is ``TRUE`` then documentation for API bindings will always be built.
     Disabling this is useful for faster incremental builds. The documentation can be manually built by invoking the ``api_docs`` target.
 * ``Z3_LINK_TIME_OPTIMIZATION`` - BOOL. If set to ``TRUE`` link time optimization will be enabled.
-* ``Z3_ENABLE_CFI`` - BOOL. If set to ``TRUE`` will enable Control Flow Integrity security checks. This is only supported by MSVC and Clang and will
+* ``Z3_ENABLE_CFI`` - BOOL. If set to ``TRUE`` will enable Control Flow Integrity security checks. This is only supported by Clang and will
     fail on other compilers. This requires Z3_LINK_TIME_OPTIMIZATION to also be enabled.
+* ``Z3_ENABLE_CFG`` - BOOL. If set to ``TRUE`` will enable Control Flow Guard security checks. This is only supported by MSVC and will
+    fail on other compilers. This does not require link time optimization. Control Flow Guard is enabled by default for MSVC builds.
+    Note: Control Flow Guard is incompatible with ``/ZI`` (Edit and Continue debug information) and ``/clr`` (Common Language Runtime compilation).
 * ``Z3_API_LOG_SYNC`` - BOOL. If set to ``TRUE`` will enable experimental API log sync feature.
 * ``WARNINGS_AS_ERRORS`` - STRING. If set to ``ON`` compiler warnings will be treated as errors. If set to ``OFF`` compiler warnings will not be treated as errors.
     If set to ``SERIOUS_ONLY`` a subset of compiler warnings will be treated as errors.
@@ -311,6 +447,7 @@ The following useful options can be passed to CMake whilst configuring.
 * ``Z3_SAVE_CLANG_OPTIMIZATION_RECORDS`` - BOOL. If set to ``TRUE`` saves Clang optimization records by setting the compiler flag ``-fsave-optimization-record``.
 * ``Z3_SINGLE_THREADED`` - BOOL. If set to ``TRUE`` compiles Z3 for single threaded mode.
 * ``Z3_POLLING_TIMER`` - BOOL. If set to ``TRUE`` compiles Z3 to use polling based timer instead of requiring a thread. This is useful for wasm builds and avoids spawning threads that interfere with how WASM is run.
+* ``Z3_ADDRESS_SANITIZE`` - BOOL. If set to ``TRUE`` compiles Z3 with address sanitization enabled. 
 
 
 On the command line these can be passed to ``cmake`` using the ``-D`` option. In ``ccmake`` and ``cmake-gui`` these can be set in the user interface.
@@ -437,3 +574,16 @@ relevant `*_WARNINGS_AS_ERRORS` list defined in
 
 Additional warnings should only be added here if the warnings has no false
 positives.
+
+### Building TPTP with CMAKE
+
+
+Build instructions:
+
+1. cd z3
+2. mkdir release
+3. cd release
+4. cmake3 -DZ3_BUILD_LIBZ3_SHARED=FALSE -DCMAKE_BUILD_TYPE=RelWithDebInfo -G "Unix Makefiles" ../
+5. make
+6. make z3_tptp5
+7. cp examples/tptp_build_dir/z3_tptp5 ../../bin/z3_tptp
