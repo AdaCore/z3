@@ -126,7 +126,7 @@ public:
     }
 
     solver* translate(ast_manager& m, params_ref const& p) override {
-        TRACE("solver", tout << "translate\n";);
+        TRACE(solver, tout << "translate\n";);
         solver* s1 = m_solver1->translate(m, p);
         solver* s2 = m_solver2->translate(m, p);
         combined_solver* r = alloc(combined_solver, s1, s2, p);
@@ -177,11 +177,11 @@ public:
         switch_inc_mode();
         m_solver1->push();
         m_solver2->push();        
-        TRACE("pop", tout << "push\n";);
+        TRACE(pop, tout << "push\n";);
     }
     
     void pop(unsigned n) override {
-        TRACE("pop", tout << n << "\n";);
+        TRACE(pop, tout << n << "\n";);
         switch_inc_mode();
         m_solver1->pop(n);
         m_solver2->pop(n);
@@ -277,6 +277,7 @@ public:
 
     expr* congruence_next(expr* e) override { switch_inc_mode(); return m_solver2->congruence_next(e); }
     expr* congruence_root(expr* e) override { switch_inc_mode(); return m_solver2->congruence_root(e); }
+    expr_ref congruence_explain(expr* a, expr* b) override { switch_inc_mode(); return m_solver2->congruence_explain(a, b); }
 
 
     expr * get_assumption(unsigned idx) const override {
@@ -378,6 +379,10 @@ public:
     void user_propagate_register_diseq(user_propagator::eq_eh_t& diseq_eh) override {
         m_solver2->user_propagate_register_diseq(diseq_eh);
     }
+
+    void user_propagate_register_on_binding(user_propagator::binding_eh_t& binding_eh) override {
+        m_solver2->user_propagate_register_on_binding(binding_eh);
+    }
     
     void user_propagate_register_expr(expr* e) override {
         m_solver2->user_propagate_register_expr(e);
@@ -418,6 +423,12 @@ public:
         return mk_combined_solver((*m_f1)(m, p, proofs_enabled, models_enabled, unsat_core_enabled, logic),
                                   (*m_f2)(m, p, proofs_enabled, models_enabled, unsat_core_enabled, logic),
                                   p);
+    }
+    
+    solver_factory* translate(ast_manager& m) override {
+        solver_factory* translated_f1 = m_f1->translate(m);
+        solver_factory* translated_f2 = m_f2->translate(m);
+        return alloc(combined_solver_factory, translated_f1, translated_f2);
     }
 };
 

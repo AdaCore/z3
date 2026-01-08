@@ -15,7 +15,7 @@
 #include "util/map.h"
 #include "util/uint_set.h"
 #include "math/lp/nla_core.h"
-#include "smt/params/smt_params_helper.hpp"
+#include "params/smt_params_helper.hpp"
 
 
 namespace nra {
@@ -63,6 +63,8 @@ struct solver::imp {
 
         for (auto ci : lra.constraints().indices()) {
             auto const& c = lra.constraints()[ci];
+            if (c.is_auxiliary())
+                continue;
             for (auto const& [coeff, v] : c.coeffs()) {
                 var2occurs.reserve(v + 1);
                 var2occurs[v].constraints.push_back(ci);
@@ -160,7 +162,7 @@ struct solver::imp {
         for (unsigned i : m_term_set)
             add_term(i);
 
-        TRACE("nra", m_nlsat->display(tout));
+        TRACE(nra, m_nlsat->display(tout));
 
         smt_params_helper p(m_params);
         if (p.arith_nl_log()) {
@@ -194,7 +196,7 @@ struct solver::imp {
             }
         }
         m_nlsat->collect_statistics(st);
-        TRACE("nra",
+        TRACE(nra,
               m_nlsat->display(tout << r << "\n");
               display(tout);
               for (auto [j, x] : m_lp2nl) tout << "j" << j << " := x" << x << "\n";);
@@ -209,7 +211,7 @@ struct solver::imp {
                     UNREACHABLE();
                     return l_undef;
                 }
-            for (auto const& m : m_nla_core.emons()) {
+            for (auto const &m : m_nla_core.emons()) {
                 if (!check_monic(m)) {
                     IF_VERBOSE(0, verbose_stream() << "monic " << m << " violated\n";
                                lra.constraints().display(verbose_stream()));
@@ -224,9 +226,9 @@ struct solver::imp {
             for (auto c : core) {
                 unsigned idx = static_cast<unsigned>(static_cast<imp*>(c) - this);
                 ex.push_back(idx);
-                TRACE("nra", lra.display_constraint(tout << "ex: " << idx << ": ", idx) << "\n";);
+                TRACE(nra, lra.display_constraint(tout << "ex: " << idx << ": ", idx) << "\n";);
             }
-            nla::new_lemma lemma(m_nla_core, __FUNCTION__);
+            nla::lemma_builder lemma(m_nla_core, __FUNCTION__);
             lemma &= ex;
             m_nla_core.set_use_nra_model(true);
             break;
@@ -414,7 +416,7 @@ struct solver::imp {
                 dm.linearize(static_cast<u_dependency*>(c), lv);
             for (auto ci : lv)
                 ex.push_back(ci);
-            nla::new_lemma lemma(m_nla_core, __FUNCTION__);
+            nla::lemma_builder lemma(m_nla_core, __FUNCTION__);
             lemma &= ex;
             break;
         }

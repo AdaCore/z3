@@ -1,7 +1,6 @@
 # 
 # Copyright (c) 2018 Microsoft Corporation
 #
-
 # 1. copy over dlls
 # 2. copy over libz3.dll for the different architectures
 # 3. copy over Microsoft.Z3.dll from suitable distribution
@@ -28,12 +27,11 @@ os_info = {  'x64-ubuntu-latest' : ('so', 'linux-x64'),
              'x64-glibc-2.35' : ('so', 'linux-x64'),
              'x64-win' : ('dll', 'win-x64'),
              'x86-win' : ('dll', 'win-x86'),
+             'arm64-win' : ('dll', 'win-arm64'),
              'x64-osx' : ('dylib', 'osx-x64'),
+             'arm64-glibc' : ('so', 'linux-arm64'),
+             'arm64-osx' : ('dylib', 'osx-arm64'),
              'debian' : ('so', 'linux-x64') }
-
-# Nuget not supported for ARM
-#'arm-glibc-2.35' : ('so', 'linux-arm64'),
-#'arm64-osx' : ('dylib', 'osx-arm64'),
 
         
 
@@ -70,23 +68,31 @@ def unpack(packages, symbols, arch):
             zip_ref.extract(f"{package_dir}/bin/libz3.{ext}", f"{tmp}")
             mk_dir(f"out/runtimes/{dst}/native")
             replace(f"{tmp}/{package_dir}/bin/libz3.{ext}", f"out/runtimes/{dst}/native/libz3.{ext}")            
-            if "x64-win" in f or "x86-win" in f:
+            if "x64-win" in f or "x86-win" in f or "arm64-win" in f:
                 mk_dir("out/lib/netstandard2.0/")
                 if symbols:
                     zip_ref.extract(f"{package_dir}/bin/libz3.pdb", f"{tmp}")
                     replace(f"{tmp}/{package_dir}/bin/libz3.pdb", f"out/runtimes/{dst}/native/libz3.pdb") 
-                files = ["Microsoft.Z3.dll"]                
-                if symbols:
-                    files += ["Microsoft.Z3.pdb", "Microsoft.Z3.xml"]
+                files = ["Microsoft.Z3.dll", "Microsoft.Z3.pdb", "Microsoft.Z3.xml"]                
                 for b in files:
-                    file = f"{package_dir}/bin/{b}"
-                    if os.path.exists(file):
-                        zip_ref.extract(file, f"{tmp}")
-                        replace(f"{tmp}/{package_dir}/bin/{b}", f"out/lib/netstandard2.0/{b}")
-                    file = os.path.join(file,"netstandard2.0")
-                    if os.path.exists(file):
-                        zip_ref.extract(file, f"{tmp}")
-                        replace(f"{tmp}/{package_dir}/bin/netstandard2.0/{b}", f"out/lib/netstandard2.0/{b}")
+                    file1 = f"{package_dir}/bin/{b}"
+                    file2 = f"{package_dir}/bin/netstandard2.0/{b}"
+                    found_path = False
+                    # check that file1 exists in zip_ref:
+                    try:
+                        zip_ref.extract(file1, f"{tmp}")
+                        replace(f"{tmp}/{file1}", f"out/lib/netstandard2.0/{b}")
+                        found_path = True
+                    except:
+                        pass
+                    try:
+                        zip_ref.extract(file2, f"{tmp}")
+                        replace(f"{tmp}/{file2}", f"out/lib/netstandard2.0/{b}")
+                        found_path = True
+                    except:
+                        pass
+                    if not found_path:
+                        print(f"Could not find file path {file1} nor {file2}")
 
 
 def mk_targets(source_root):
@@ -96,7 +102,7 @@ def mk_targets(source_root):
 def mk_icon(source_root):
     mk_dir("out/content")
     shutil.copy(f"{source_root}/resources/icon.jpg", "out/content/icon.jpg")
-#   shutil.copy(f"{source_root}/src/api/dotnet/README.md", "out/content/README.md")
+    shutil.copy(f"{source_root}/src/api/dotnet/README.md", "out/content/README.md")
 
 
     
@@ -117,6 +123,7 @@ Linux Dependencies:
         <copyright>&#169; Microsoft Corporation. All rights reserved.</copyright>
         <tags>smt constraint solver theorem prover</tags>
         <icon>content/icon.jpg</icon>
+        <readme>content/README.md</readme>
         <projectUrl>https://github.com/Z3Prover/z3</projectUrl>
         <license type="expression">MIT</license>
         <repository type="git" url="{1}" branch="{2}" commit="{3}" />

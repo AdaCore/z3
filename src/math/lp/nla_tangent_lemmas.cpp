@@ -50,7 +50,7 @@ public:
        
     void operator()() {    
         get_points();
-        TRACE("nla_solver", print_tangent_domain(tout << "tang domain = ") << std::endl;);
+        TRACE(nla_solver, print_tangent_domain(tout << "tang domain = ") << std::endl;);
         generate_line1();
         generate_line2();
         generate_plane(m_a);
@@ -61,7 +61,7 @@ private:
 
     core & c() { return m_tang.c(); }
 
-    void explain(new_lemma& lemma) {
+    void explain(lemma_builder& lemma) {
         if (!m_is_mon) {
             lemma &= m_m;
             lemma &= m_x;
@@ -70,7 +70,10 @@ private:
     }
 
     void generate_plane(const point & pl) {
-        new_lemma lemma(c(), "generate tangent plane");
+        if (c().throttle().insert_new(nla_throttle::TANGENT_LEMMA, m_j, m_jx, m_jy, m_below))
+            return;
+            
+        lemma_builder lemma(c(), "generate tangent plane");
         c().negate_relation(lemma, m_jx, m_x.rat_sign()*pl.x);
         c().negate_relation(lemma, m_jy, m_y.rat_sign()*pl.y);
 #if Z3DEBUG
@@ -91,15 +94,23 @@ private:
     }
 
     void generate_line1() {
-        new_lemma lemma(c(), "tangent line 1");
+        // Use plane_type 1 to distinguish line1 from other tangent lemmas
+        if (c().throttle().insert_new(nla_throttle::TANGENT_LEMMA, m_j, m_jx, m_jy, m_below, 1))
+            return;
+            
+        lemma_builder lemma(c(), "tangent line 1");
         // Should be  v = val(m_x)*val(m_y), and val(factor) = factor.rat_sign()*var(factor.var())
         lemma |= ineq(m_jx, llc::NE, c().val(m_jx));
         lemma |= ineq(lp::lar_term(m_j,  - m_y.rat_sign() * m_xy.x,  m_jy), llc::EQ, 0);
         explain(lemma);
     }
 
-    void generate_line2() {            
-        new_lemma lemma(c(), "tangent line 2");
+    void generate_line2() {
+        // Use plane_type 2 to distinguish line2 from other tangent lemmas
+        if (c().throttle().insert_new(nla_throttle::TANGENT_LEMMA, m_j, m_jx, m_jy, m_below, 2))
+            return;
+            
+        lemma_builder lemma(c(), "tangent line 2");
         lemma |= ineq(m_jy, llc::NE, c().val(m_jy));
         lemma |= ineq(lp::lar_term(m_j, - m_x.rat_sign() * m_xy.y, m_jx), llc::EQ, 0);
         explain(lemma);
@@ -113,7 +124,7 @@ private:
         rational delta = rational(1);
         if (!all_ints )
             delta = std::min(delta, abs(m_correct_v - m_v));
-        TRACE("nla_solver", tout << "delta = " << delta << "\n";);
+        TRACE(nla_solver, tout << "delta = " << delta << "\n";);
         if (!m_below){
             m_a = point(x - delta, y + delta);
             m_b = point(x + delta, y - delta);
@@ -140,9 +151,9 @@ private:
         while (steps-- && !c().done()) {
             del *= rational(2);
             point na = m_xy + del;
-            TRACE("nla_solver_tp", tout << "del = " << del << std::endl;);
+            TRACE(nla_solver_tp, tout << "del = " << del << std::endl;);
             if (!plane_is_correct_cut(na)) {
-                TRACE("nla_solver_tp", tout << "exit\n";);
+                TRACE(nla_solver_tp, tout << "exit\n";);
                 return;
             }
             a = na;
@@ -155,11 +166,11 @@ private:
 
     void get_points() {
         get_initial_points();
-        TRACE("nla_solver", tout << "xy = " << m_xy << ", correct val = " << m_correct_v;
+        TRACE(nla_solver, tout << "xy = " << m_xy << ", correct val = " << m_correct_v;
               print_tangent_domain(tout << "\ntang points:") << std::endl;);
         push_point(m_a);        
         push_point(m_b);
-        TRACE("nla_solver",
+        TRACE(nla_solver,
               tout << "pushed a = " << m_a << std::endl 
               << "pushed b = " << m_b << std::endl
               << "tang_plane(a) = " << tang_plane(m_a) << " , val = " << m_a << ", "
@@ -171,7 +182,7 @@ private:
     }
 
     bool plane_is_correct_cut(const point& plane) const {
-        TRACE("nla_solver", tout << "plane = " << plane << "\n";
+        TRACE(nla_solver, tout << "plane = " << plane << "\n";
               tout << "tang_plane() = " << tang_plane(plane) << ", v = " << m_v << ", correct_v = " << m_correct_v << "\n";);
         SASSERT((m_below && m_v < m_correct_v) ||
                 ((!m_below) && m_v > m_correct_v));

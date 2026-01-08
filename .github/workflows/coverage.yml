@@ -1,12 +1,8 @@
 name: Code Coverage
 
 on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
   schedule:
-    - cron: "0 11 * * *"
+    - cron: '0 0 */2 * *'
 
 permissions:
   contents: read
@@ -23,7 +19,7 @@ jobs:
       COV_DETAILS_PATH: ${{github.workspace}}/cov-details
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Setup
       run: |
@@ -93,13 +89,13 @@ jobs:
       id: date
       run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         name: coverage-${{steps.date.outputs.date}}
         path: ${{github.workspace}}/coverage.html
         retention-days: 4
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         name: coverage-details-${{steps.date.outputs.date}}
         path: ${{env.COV_DETAILS_PATH}}

@@ -641,6 +641,7 @@ def mk_java(java_src, java_dir, package_name):
   public static native void propagateRegisterEq(Object o, long ctx, long solver);
   public static native void propagateRegisterDecide(Object o, long ctx, long solver);
   public static native void propagateRegisterFinal(Object o, long ctx, long solver);
+  public static native void propagateRegisterOnBinding(Object o, long ctx, long solver);
   public static native void propagateAdd(Object o, long ctx, long solver, long javainfo, long e);
   public static native boolean propagateConsequence(Object o, long ctx, long solver, long javainfo, int num_fixed, long[] fixed, long num_eqs, long[] eq_lhs, long[] eq_rhs, long conseq);
   public static native boolean propagateNextSplit(Object o, long ctx, long solver, long javainfo, long e, long idx, int phase);
@@ -684,6 +685,10 @@ def mk_java(java_src, java_dir, package_name):
     protected final void registerFinal() {
         Native.propagateRegisterFinal(this, ctx, solver);
     }
+    
+    protected final void registerOnBinding() {
+        Native.propagateRegisterOnBinding(this, ctx, solver);
+    }
 
     protected abstract void pushWrapper();
 
@@ -700,6 +705,8 @@ def mk_java(java_src, java_dir, package_name):
     protected abstract void fixedWrapper(long lvar, long lvalue);
 
     protected abstract void decideWrapper(long lvar, int bit, boolean is_pos);
+
+    protected abstract boolean onBindingWrapper(long q, long inst);
   }
     """)
     java_native.write('\n')
@@ -1392,6 +1399,7 @@ z3_ml_callbacks = frozenset([
     'Z3_solver_propagate_diseq',
     'Z3_solver_propagate_created',
     'Z3_solver_propagate_decide',
+    'Z3_solver_propagate_on_binding',
     'Z3_solver_register_on_clause'
     ])
 
@@ -1798,9 +1806,9 @@ def write_log_h_preamble(log_h):
   log_h.write('#include "util/mutex.h"\n')
   log_h.write('extern atomic<bool> g_z3_log_enabled;\n')
   log_h.write('void ctx_enable_logging();\n')
-  log_h.write('class z3_log_ctx { bool m_prev; public: z3_log_ctx() { ATOMIC_EXCHANGE(m_prev, g_z3_log_enabled, false); } ~z3_log_ctx() { if (m_prev) g_z3_log_enabled = true; } bool enabled() const { return m_prev; } };\n')
-  log_h.write('void SetR(void * obj);\nvoid SetO(void * obj, unsigned pos);\nvoid SetAO(void * obj, unsigned pos, unsigned idx);\n')
-  log_h.write('#define RETURN_Z3(Z3RES) do { auto tmp_ret = Z3RES; if (_LOG_CTX.enabled()) { SetR(tmp_ret); } return tmp_ret; } while (0)\n')
+  log_h.write('class z3_log_ctx { bool m_prev; public: z3_log_ctx() { ATOMIC_EXCHANGE(m_prev, g_z3_log_enabled, false); } ~z3_log_ctx() { if (m_prev) [[unlikely]] g_z3_log_enabled = true; } bool enabled() const { return m_prev; } };\n')
+  log_h.write('void SetR(const void * obj);\nvoid SetO(void * obj, unsigned pos);\nvoid SetAO(void * obj, unsigned pos, unsigned idx);\n')
+  log_h.write('#define RETURN_Z3(Z3RES) do { auto tmp_ret = Z3RES; if (_LOG_CTX.enabled()) [[unlikely]] { SetR(tmp_ret); } return tmp_ret; } while (0)\n')
 
 
 def write_log_c_preamble(log_c):
@@ -1944,6 +1952,7 @@ Z3_eq_eh    = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_
 
 Z3_created_eh = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
 Z3_decide_eh = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_int)
+Z3_on_binding_eh = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
 
 _lib.Z3_solver_register_on_clause.restype = None
 _lib.Z3_solver_propagate_init.restype = None

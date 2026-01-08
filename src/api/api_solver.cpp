@@ -146,6 +146,8 @@ extern "C" {
         bool proofs_enabled = true, models_enabled = true, unsat_core_enabled = false;
         params_ref p = s->m_params;
         mk_c(c)->params().get_solver_params(p, proofs_enabled, models_enabled, unsat_core_enabled);
+        if (!s->m_solver_factory)
+            s->m_solver_factory = mk_smt_solver_factory();
         s->m_solver = (*(s->m_solver_factory))(mk_c(c)->m(), p, proofs_enabled, models_enabled, unsat_core_enabled, s->m_logic);
         
         param_descrs r;
@@ -274,7 +276,11 @@ extern "C" {
         LOG_Z3_solver_translate(c, s, target);
         RESET_ERROR_CODE();
         params_ref const& p = to_solver(s)->m_params; 
-        Z3_solver_ref * sr = alloc(Z3_solver_ref, *mk_c(target), (solver_factory *)nullptr);
+        solver_factory* translated_factory = nullptr;
+        if (to_solver(s)->m_solver_factory.get()) {
+            translated_factory = to_solver(s)->m_solver_factory->translate(mk_c(target)->m());
+        }
+        Z3_solver_ref * sr = alloc(Z3_solver_ref, *mk_c(target), translated_factory);
         init_solver(c, s);
         sr->m_solver = to_solver(s)->m_solver->translate(mk_c(target)->m(), p);
         mk_c(target)->save_object(sr);
@@ -650,7 +656,7 @@ extern "C" {
         api::context::set_interruptable si(*(mk_c(c)), eh);
         lbool result = l_undef;
         {
-            scoped_ctrl_c ctrlc(eh, false, use_ctrl_c);
+            scoped_ctrl_c ctrlc(eh, use_ctrl_c);
             scoped_timer timer(timeout, &eh);
             scoped_rlimit _rlimit(mk_c(c)->m().limit(), rlimit);
             try {
@@ -748,7 +754,7 @@ extern "C" {
         cancel_eh<reslimit> eh(mk_c(c)->m().limit());
         to_solver(s)->set_eh(&eh);
         {
-            scoped_ctrl_c ctrlc(eh, false, use_ctrl_c);
+            scoped_ctrl_c ctrlc(eh, use_ctrl_c);
             scoped_timer timer(timeout, &eh);
             scoped_rlimit _rlimit(mk_c(c)->m().limit(), rlimit);
             try {
@@ -871,7 +877,7 @@ extern "C" {
         to_solver(s)->set_eh(&eh);
         api::context::set_interruptable si(*(mk_c(c)), eh);
         {
-            scoped_ctrl_c ctrlc(eh, false, use_ctrl_c);
+            scoped_ctrl_c ctrlc(eh, use_ctrl_c);
             scoped_timer timer(timeout, &eh);
             scoped_rlimit _rlimit(mk_c(c)->m().limit(), rlimit);
             try {
@@ -919,7 +925,7 @@ extern "C" {
         to_solver(s)->set_eh(&eh);
         api::context::set_interruptable si(*(mk_c(c)), eh);
         {
-            scoped_ctrl_c ctrlc(eh, false, use_ctrl_c);
+            scoped_ctrl_c ctrlc(eh, use_ctrl_c);
             scoped_timer timer(timeout, &eh);
             scoped_rlimit _rlimit(mk_c(c)->m().limit(), rlimit);
             try {
@@ -967,18 +973,41 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    Z3_ast Z3_API Z3_solver_solve_for(Z3_context c, Z3_solver s, Z3_ast a) {
+    Z3_ast Z3_API Z3_solver_congruence_explain(Z3_context c, Z3_solver s, Z3_ast a, Z3_ast b) {
         Z3_TRY;
-        LOG_Z3_solver_solve_for(c, s, a);
+        LOG_Z3_solver_congruence_explain(c, s, a, b);
         RESET_ERROR_CODE();
         init_solver(c, s);
-        ast_manager& m = mk_c(c)->m();        
-        expr_ref term(m);
-        if (!to_solver_ref(s)->solve_for(to_expr(a), term)) 
-            term = to_expr(a);
-        mk_c(c)->save_ast_trail(term.get());
-        RETURN_Z3(of_expr(term.get()));
+        auto exp = to_solver_ref(s)->congruence_explain(to_expr(a), to_expr(b));
+        mk_c(c)->save_ast_trail(exp.get());
+        RETURN_Z3(of_expr(exp));
         Z3_CATCH_RETURN(nullptr);
+    }
+
+    void Z3_API Z3_solver_solve_for(Z3_context c, Z3_solver s, Z3_ast_vector vars, Z3_ast_vector terms, Z3_ast_vector guards) {
+        Z3_TRY;
+        LOG_Z3_solver_solve_for(c, s, vars, terms, guards);
+        RESET_ERROR_CODE();
+        init_solver(c, s);
+        ast_manager& m = mk_c(c)->m();
+        auto& _vars = to_ast_vector_ref(vars);
+        auto& _terms = to_ast_vector_ref(terms);
+        auto& _guards = to_ast_vector_ref(guards);
+        vector<solver::solution> solutions;
+        for (auto t : _vars) 
+            solutions.push_back({ to_expr(t), expr_ref(m), expr_ref(m) });        
+        to_solver_ref(s)->solve_for(solutions);
+        _vars.reset();
+        _terms.reset();
+        _guards.reset();
+        for (solver::solution const& s : solutions) {
+            if (!s.term)
+                continue;
+            _vars.push_back(s.var);
+            _terms.push_back(s.term);
+            _guards.push_back(s.guard ? s.guard : m.mk_true());
+        }
+        Z3_CATCH;
     }
 
     class api_context_obj : public user_propagator::context_obj {
@@ -1137,6 +1166,14 @@ extern "C" {
         Z3_CATCH;
     }
 
+    void Z3_API Z3_solver_propagate_on_binding(Z3_context c, Z3_solver s, Z3_on_binding_eh binding_eh) {
+        Z3_TRY;
+        RESET_ERROR_CODE();
+        user_propagator::binding_eh_t c = (bool(*)(void*, user_propagator::callback*, expr*, expr*))binding_eh;
+        to_solver_ref(s)->user_propagate_register_on_binding(c);
+        Z3_CATCH;
+    }
+
     bool Z3_API Z3_solver_next_split(Z3_context c, Z3_solver_callback cb,  Z3_ast t, unsigned idx, Z3_lbool phase) {
         Z3_TRY;
         LOG_Z3_solver_next_split(c, cb, t, idx, phase);
@@ -1164,6 +1201,7 @@ extern "C" {
         Z3_TRY;
         LOG_Z3_solver_set_initial_value(c, s, var, value);
         RESET_ERROR_CODE();
+        init_solver(c, s);
         if (to_expr(var)->get_sort() != to_expr(value)->get_sort()) {
             SET_ERROR_CODE(Z3_INVALID_USAGE, "variable and value should have same sort");
             return;

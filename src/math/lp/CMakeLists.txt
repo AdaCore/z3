@@ -2,6 +2,7 @@ z3_add_component(lp
   SOURCES
     core_solver_pretty_printer.cpp
     dense_matrix.cpp
+    dioph_eq.cpp
     emonics.cpp
     factorization.cpp
     factorization_factory_imp.cpp
@@ -31,8 +32,10 @@ z3_add_component(lp
     nla_monotone_lemmas.cpp
     nla_order_lemmas.cpp
     nla_powers.cpp
+    nla_pp.cpp
     nla_solver.cpp
     nla_tangent_lemmas.cpp
+    nla_throttle.cpp
     nra_solver.cpp    
     permutation_matrix.cpp
     random_updater.cpp      
@@ -41,7 +44,9 @@ z3_add_component(lp
     util
     polynomial
     nlsat
-    smt_params
+    params
+  PYG_FILES
+    lp_params_helper.pyg
 )
 
 include_directories(${src_SOURCE_DIR})

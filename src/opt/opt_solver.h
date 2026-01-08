@@ -26,7 +26,7 @@ Notes:
 #include "util/params.h"
 #include "solver/solver_na2as.h"
 #include "smt/smt_kernel.h"
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 #include "smt/smt_types.h"
 #include "smt/theory_opt.h"
 #include "ast/converters/generic_model_converter.h"
@@ -111,11 +111,55 @@ namespace opt {
         expr_ref_vector cube(expr_ref_vector&, unsigned) override { return expr_ref_vector(m); }
         expr* congruence_root(expr* e) override { return e; }
         expr* congruence_next(expr* e) override { return e; }
+        expr_ref congruence_explain(expr* a, expr* b) override { return expr_ref(m.mk_eq(a, b), m); }
         void set_phase(expr* e) override { m_context.set_phase(e); }
         phase* get_phase() override { return m_context.get_phase(); }
         void set_phase(phase* p) override { m_context.set_phase(p); }
         void move_to_front(expr* e) override { m_context.move_to_front(e); }
         void user_propagate_initialize_value(expr* var, expr* value) override { m_context.user_propagate_initialize_value(var, value); }
+        void user_propagate_init(void *ctx, user_propagator::push_eh_t &push_eh, user_propagator::pop_eh_t &pop_eh, user_propagator::fresh_eh_t &fresh_eh) override {
+            m_context.user_propagate_init(ctx, push_eh, pop_eh, fresh_eh);
+            m_first = false;
+        }
+
+        void user_propagate_register_fixed(user_propagator::fixed_eh_t &fixed_eh) override {
+            m_context.user_propagate_register_fixed(fixed_eh);
+        }
+
+        void user_propagate_register_final(user_propagator::final_eh_t &final_eh) override {
+            m_context.user_propagate_register_final(final_eh);
+        }
+
+        void user_propagate_register_eq(user_propagator::eq_eh_t &eq_eh) override {
+            m_context.user_propagate_register_eq(eq_eh);
+        }
+
+        void user_propagate_register_diseq(user_propagator::eq_eh_t &diseq_eh) override {
+            m_context.user_propagate_register_diseq(diseq_eh);
+        }
+
+        void user_propagate_register_expr(expr *e) override {
+            m_context.user_propagate_register_expr(e);
+        }
+
+        void user_propagate_register_created(user_propagator::created_eh_t &r) override {
+            m_context.user_propagate_register_created(r);   
+        }
+
+        void user_propagate_register_decide(user_propagator::decide_eh_t &r) override {
+            m_context.user_propagate_register_decide(r);
+        }
+
+        void user_propagate_register_on_binding(user_propagator::binding_eh_t &r) override {
+            m_context.user_propagate_register_on_binding(r);
+        }
+
+         void user_propagate_clear() override {
+        }
+
+        void register_on_clause(void *, user_propagator::on_clause_eh_t &r) override {
+            m_context.register_on_clause(nullptr, r);
+        }
 
         void set_logic(symbol const& logic);
 

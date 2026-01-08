@@ -24,8 +24,8 @@ Notes:
 #include "solver/tactic2solver.h"
 #include "solver/solver_na2as.h"
 #include "solver/mus.h"
-#include "smt/params/smt_params.h"
-#include "smt/params/smt_params_helper.hpp"
+#include "params/smt_params.h"
+#include "params/smt_params_helper.hpp"
 
 
 /**
@@ -115,6 +115,10 @@ public:
         m_tactic->user_propagate_register_diseq(diseq_eh);
     }
 
+    void user_propagate_register_on_binding(user_propagator::binding_eh_t& binding_eh) override {
+        m_tactic->user_propagate_register_on_binding(binding_eh);
+    }
+
     void user_propagate_register_expr(expr* e) override {
         m_tactic->user_propagate_register_expr(e);
     }
@@ -145,6 +149,7 @@ public:
 
     expr* congruence_next(expr* e) override { return e; }
     expr* congruence_root(expr* e) override { return e; }
+    expr_ref congruence_explain(expr* a, expr* b) override { return expr_ref(get_manager().mk_eq(a, b), get_manager()); }
 
     model_converter_ref get_model_converter() const override { return m_mc; }
 
@@ -200,12 +205,12 @@ void tactic2solver::push_core() {
     m_last_assertions_valid = false;
     m_scopes.push_back(m_assertions.size());
     m_result = nullptr;
-    TRACE("pop", tout << m_scopes.size() << "\n";);
+    TRACE(pop, tout << m_scopes.size() << "\n";);
 }
 
 void tactic2solver::pop_core(unsigned n) {
     m_last_assertions_valid = false;
-    TRACE("pop", tout << m_scopes.size() << " " << n << "\n";);
+    TRACE(pop, tout << m_scopes.size() << " " << n << "\n";);
     n = std::min(m_scopes.size(), n);
     unsigned new_lvl = m_scopes.size() - n;
     unsigned old_sz  = m_scopes[new_lvl];
@@ -239,7 +244,7 @@ lbool tactic2solver::check_sat_core2(unsigned num_assumptions, expr * const * as
     expr_dependency_ref core(m);
     std::string         reason_unknown = "unknown";
     labels_vec labels;
-    TRACE("tactic", g->display(tout););
+    TRACE(tactic, g->display(tout););
     try {
         switch (::check_sat(*m_tactic, g, md, labels, pr, core, reason_unknown)) {
         case l_true: 
@@ -259,8 +264,8 @@ lbool tactic2solver::check_sat_core2(unsigned num_assumptions, expr * const * as
             }
             break;
         }
-        CTRACE("tactic", md.get(), tout << *md.get() << "\n";);
-        TRACE("tactic", 
+        CTRACE(tactic, md.get(), tout << *md.get() << "\n";);
+        TRACE(tactic, 
               if (m_mc) m_mc->display(tout << "mc:\n");
               if (g->mc()) g->mc()->display(tout << "\ng:\n");
               if (md) tout << "\nmodel:\n" << *md.get() << "\n";
@@ -269,12 +274,12 @@ lbool tactic2solver::check_sat_core2(unsigned num_assumptions, expr * const * as
 
     }
     catch (z3_error & ex) {
-        TRACE("tactic2solver", tout << "exception: " << ex.what() << "\n";);
+        TRACE(tactic2solver, tout << "exception: " << ex.what() << "\n";);
         m_result->m_proof = pr;
         throw ex;
     }
     catch (z3_exception & ex) {
-        TRACE("tactic2solver", tout << "exception: " << ex.what() << "\n";);
+        TRACE(tactic2solver, tout << "exception: " << ex.what() << "\n";);
         m_result->set_status(l_undef);
         m_result->m_unknown = ex.what();
         m_result->m_proof = pr;
@@ -308,6 +313,8 @@ solver* tactic2solver::translate(ast_manager& m, params_ref const& p) {
 
 void tactic2solver::collect_statistics(statistics & st) const {    
     st.copy(m_stats);
+    if (m_stats.size() == 0 && m_tactic)
+        m_tactic->collect_statistics(st);
     //SASSERT(m_stats.size() > 0);
 }
 
@@ -383,6 +390,11 @@ public:
     solver * operator()(ast_manager & m, params_ref const & p, bool proofs_enabled, bool models_enabled, bool unsat_core_enabled, symbol const & logic) override {
         return mk_tactic2solver(m, m_tactic.get(), p, proofs_enabled, models_enabled, unsat_core_enabled, logic);
     }
+    
+    solver_factory* translate(ast_manager& m) override {
+        tactic* translated_tactic = m_tactic->translate(m);
+        return alloc(tactic2solver_factory, translated_tactic);
+    }
 };
 
 class tactic_factory2solver_factory : public solver_factory {
@@ -394,6 +406,10 @@ public:
     solver * operator()(ast_manager & m, params_ref const & p, bool proofs_enabled, bool models_enabled, bool unsat_core_enabled, symbol const & logic) override {
         tactic * t = (*m_factory)(m, p);
         return mk_tactic2solver(m, t, p, proofs_enabled, models_enabled, unsat_core_enabled, logic);
+    }
+    
+    solver_factory* translate(ast_manager& m) override {
+        return alloc(tactic_factory2solver_factory, m_factory);
     }
 };
 }

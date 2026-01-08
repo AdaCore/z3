@@ -42,9 +42,10 @@ type context
     - timeout (unsigned)         default timeout (in milliseconds) used for solvers
     - well_sorted_check          type checker
     - auto_config                use heuristics to automatically select solver and configure it
-    - model                      model generation for solvers, this parameter can be overwritten when creating a solver
-    - model_validate             validate models produced by solvers
-    - unsat_core                 unsat-core generation for solvers, this parameter can be overwritten when creating a solver
+    - model  (Boolean)           model generation for solvers, this parameter can be overwritten when creating a solver
+    - model_validate  (Boolean)  validate models produced by solvers
+    - unsat_core  (Boolean)      unsat-core generation for solvers, this parameter can be overwritten when creating a solver
+    - encoding                   the string encoding used internally (must be either "unicode" - 18 bit, "bmp" - 16 bit or "ascii" - 8 bit)
 *)
 val mk_context : (string * string) list -> context
 
@@ -303,11 +304,13 @@ sig
     type parameter =
         P_Int of int
       | P_Dbl of float
+      | P_Rat of string
       | P_Sym of Symbol.symbol
       | P_Srt of Sort.sort
       | P_Ast of AST.ast
       | P_Fdl of func_decl
-      | P_Rat of string
+      | P_Internal of string
+      | P_ZStr of string
 
     (** The kind of the parameter. *)
     val get_kind : parameter -> Z3enums.parameter_kind
@@ -1083,6 +1086,12 @@ sig
 
   (* [mk_sort_ref_s ctx s] is [mk_sort_ref ctx (Symbol.mk_string ctx s)] *)
   val mk_sort_ref_s : context -> string -> Sort.sort
+
+  (** Create a forward reference to a parametric datatype sort. *)
+  val mk_sort_ref_p : context -> Symbol.symbol -> Sort.sort list -> Sort.sort
+
+  (** Create a forward reference to a parametric datatype sort. *)
+  val mk_sort_ref_ps : context -> string -> Sort.sort list -> Sort.sort
 
   (** Create a new datatype sort. *)
   val mk_sort : context -> Symbol.symbol -> Constructor.constructor list -> Sort.sort
@@ -3712,6 +3721,9 @@ end
     For example:
     (set_global_param "pp.decimal" "true")
     will set the parameter "decimal" in the module "pp" to true.
+
+    Legal parameters are provided by running "z3 -p" or by consulting https://microsoft.github.io/z3guide/programming/Parameters.
+
 *)
 val set_global_param : string -> string -> unit
 

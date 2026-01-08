@@ -44,6 +44,7 @@ namespace nlsat {
         void set_full_dimensional(bool f);
         void set_minimize_cores(bool f);
         void set_factor(bool f);
+        void set_add_all_coeffs(bool f);
         void set_signed_project(bool f);
 
         /**
@@ -63,7 +64,7 @@ namespace nlsat {
                  - s_1, ..., s_m do not contain variable x.
                  - s_1, ..., s_m are false in the current interpretation
         */
-        void operator()(unsigned n, literal const * ls, scoped_literal_vector & result);
+        void main_operator(unsigned n, literal const * ls, scoped_literal_vector & result);
 
         
         /**
@@ -109,4 +110,3 @@ namespace nlsat {
     };
 
 };
-

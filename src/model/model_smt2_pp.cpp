@@ -42,8 +42,13 @@ static unsigned pp_symbol(std::ostream & out, symbol const & s) {
         return static_cast<unsigned>(str.length());
     }
     else {
-        out << s.bare_str();
-        return static_cast<unsigned>(strlen(s.bare_str()));
+        if (s.is_null()) {
+            out << "null";
+            return 4; // length of "null"
+        } else {
+            out << s.bare_str();
+            return static_cast<unsigned>(strlen(s.bare_str()));
+        }
     }
 }
 
@@ -212,7 +217,7 @@ static void pp_funs(std::ostream & out, ast_printer_context & ctx, model_core co
         else {
             ctx.pp(f_i->get_else(), f->get_arity(), "x", body, var_names);  
         }
-        TRACE("model_smt2_pp", for (unsigned i = 0; i < var_names.size(); i++) tout << var_names[i] << "\n";);
+        TRACE(model_smt2_pp, for (unsigned i = 0; i < var_names.size(); i++) tout << var_names[i] << "\n";);
         f_var_names.reset();
         for (auto const& vn : var_names) 
             f_var_names.push_back(mk_string(m, vn.bare_str()));

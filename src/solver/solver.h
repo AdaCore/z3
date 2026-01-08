@@ -27,10 +27,16 @@ class solver;
 class model_converter;
 
 
+
 class solver_factory {
 public:
     virtual ~solver_factory() = default;
     virtual solver * operator()(ast_manager & m, params_ref const & p, bool proofs_enabled, bool models_enabled, bool unsat_core_enabled, symbol const & logic) = 0;
+    /**
+       \brief Create a clone of the solver factory for the given ast_manager.
+       The clone should be functionally equivalent but associated with the target manager.
+    */
+    virtual solver_factory* translate(ast_manager& m) = 0;
 };
 
 solver_factory * mk_smt_strategic_solver_factory(symbol const & logic = symbol::null);
@@ -79,6 +85,11 @@ public:
        parameters available in this solver.
     */
     virtual void collect_param_descrs(param_descrs & r);
+
+    /**
+    * \brief display parameters
+    */
+    std::ostream& display_parameters(std::ostream& out);
 
     /**
        \brief Push a parameter state. It is restored upon pop.
@@ -249,9 +260,17 @@ public:
     virtual expr* congruence_next(expr* e) = 0;
 
     /**
-       \brief try to solve for term e (when e is arithmetical).
+       \brief expose explanation for congruence.
     */
-    virtual bool solve_for(expr* e, expr_ref& term) { return false; }
+    virtual expr_ref congruence_explain(expr* a, expr* b) = 0;
+
+    struct solution {
+        expr* var;
+        expr_ref term;
+        expr_ref guard;
+    };
+
+    virtual void solve_for(vector<solution>& s) {}
 
     /**
        \brief Display the content of this solver.
